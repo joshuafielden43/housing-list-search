@@ -69,7 +69,7 @@ def generic_scrape(authority: str, url: str, html: str):
             listings.append(listing)
 
     # Extract from PDF flyers
-    from pdf_scraper import extract_from_pdf
+    from housing_list_search.pdf_scraper import extract_from_pdf
     for pdf_url in pdf_links[:12]:
         pdf_listings = extract_from_pdf(pdf_url, authority)
         listings.extend(pdf_listings)

@@ -62,10 +62,10 @@ def main():
                     from housing_list_search.adapters.sccha import scrape_sccha
                     all_listings.extend(scrape_sccha(url))
                 elif "playwright_needed" in measures or "js_heavy" in measures:
-                    from playwright_scraper import playwright_scrape
+                    from housing_list_search.playwright_scraper import playwright_scrape
                     all_listings.extend(playwright_scrape(authority, url))
                 else:
-                    from generic_scraper import generic_scrape
+                    from housing_list_search.generic_scraper import generic_scrape
                     from housing_list_search.scraper import polite_get
                     resp = polite_get(url)
                     if resp:

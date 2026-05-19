@@ -13,7 +13,7 @@ def scrape_housekeys(authority: str, url: str):
     seen = set()
 
     from housing_list_search.scraper import polite_get
-    from pdf_scraper import extract_from_pdf
+    from housing_list_search.pdf_scraper import extract_from_pdf
 
     # Get main page
     resp = polite_get(url)
