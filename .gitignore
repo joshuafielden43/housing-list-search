@@ -1,0 +1,23 @@
+# === Python ===
+venv/
+.env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# === Project Outputs (generated files) ===
+housing_registry.db
+*.db
+current_full.csv
+daily_summary.md
+changelog_diffs.*
+*.log
+
+# === Playwright ===
+ms-playwright/
+
+# === OS / IDE ===
+.DS_Store
+.idea/
+.vscode/
+*.swp

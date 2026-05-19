@@ -1,2 +1,14 @@
 # housing-list-search
-Modular, adapter-based scraper and aggregator for low/no-income housing waitlists by city/county. Nonprofit-first, Python/Hermes friendly, MIT license. Produces CSV + changelog for technical data teams.
+
+**Modular Low/No-Income Housing Waitlist Aggregator**  
+Built for Santa Clara County nonprofits. Portable to any county.
+
+## Quick Start
+```bash
+git clone https://github.com/joshuafielden43/housing-list-search.git
+cd housing-list-search
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py --discover   # First time only
+./run_daily.sh              # Normal run
