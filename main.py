@@ -30,7 +30,7 @@ def main():
         
         mode = input("\n3. A) Full auto-discovery or B) Seed-only? [default A]\n→ ").strip().upper() or "A"
         
-        from discovery import run_first_discovery
+        from housing_list_search.discovery import run_first_discovery
         run_first_discovery(county, seeds, mode)
 
     elif args.run:
@@ -40,8 +40,8 @@ def main():
         load_targets_to_db()
         
         from housing_list_search.normalizer import save_current_full
-        from changelog import generate_changelog
-        from outputs import generate_daily_summary
+        from housing_list_search.changelog import generate_changelog
+        from housing_list_search.outputs import generate_daily_summary
         
         all_listings = []
         
