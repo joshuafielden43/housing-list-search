@@ -55,12 +55,26 @@ def main():
         for authority, url, measures in c.fetchall():
             print(f"\n→ Processing: {authority}")
             try:
+                # NEW high-quality extraction path (preferred)
+                from housing_list_search.extraction import extract_target
+                new_records = extract_target(url, authority)
+                if new_records:
+                    print(f"   [extraction] {len(new_records)} structured records via new path")
+                    for r in new_records:
+                        all_listings.append(r.to_dict())
+                    continue
+
+                # Legacy adapters / scrapers for targets not yet ported
                 if "housekeys" in authority.lower() or "housekeys" in url.lower():
                     from housing_list_search.adapters.housekeys import scrape_housekeys
                     all_listings.extend(scrape_housekeys(authority, url))
-                elif "sccha" in authority.lower() or "john stewart" in authority.lower():
-                    from housing_list_search.adapters.sccha import scrape_sccha
-                    all_listings.extend(scrape_sccha(url))
+                elif "properties-list" in url.lower() and "scchousingauthority.org" in url.lower():
+                    # SCCHA custom front-end (mostly John Stewart properties underneath)
+                    from housing_list_search.adapters.john_stewart import scrape_john_stewart
+                    all_listings.extend(scrape_john_stewart(url))
+                elif "john stewart" in authority.lower() or "jscosccha" in url.lower():
+                    from housing_list_search.adapters.john_stewart import scrape_john_stewart
+                    all_listings.extend(scrape_john_stewart(url))
                 elif "playwright_needed" in measures or "js_heavy" in measures:
                     from housing_list_search.playwright_scraper import playwright_scrape
                     all_listings.extend(playwright_scrape(authority, url))
@@ -75,6 +89,10 @@ def main():
         
         conn.close()
         
+        # Deduplicate across sources (San José portal + SCCHA directory + others will overlap)
+        from housing_list_search.dedupe import deduplicate_listings
+        all_listings = deduplicate_listings(all_listings)
+
         save_current_full(all_listings)
         generate_changelog([], all_listings)
         generate_daily_summary(all_listings)

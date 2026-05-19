@@ -77,7 +77,8 @@ def check_package_imports() -> bool:
         import housing_list_search
         from housing_list_search.scraper import polite_get
         from housing_list_search.registry import load_targets_to_db
-        from housing_list_search.adapters.sccha import scrape_sccha
+        from housing_list_search.adapters.john_stewart import scrape_john_stewart
+        from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
         print("✅ housing_list_search package imports cleanly")
         return True
     except ImportError:
@@ -94,7 +95,8 @@ def check_package_imports() -> bool:
         import housing_list_search
         from housing_list_search.scraper import polite_get
         from housing_list_search.registry import load_targets_to_db
-        from housing_list_search.adapters.sccha import scrape_sccha
+        from housing_list_search.adapters.john_stewart import scrape_john_stewart
+        from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
         print("✅ housing_list_search imports successfully (development mode)")
         return True
     except Exception as e:
