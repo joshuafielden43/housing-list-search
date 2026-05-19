@@ -1,33 +1,47 @@
-# generic_scraper.py
+# adapters/housekeys.py
 from bs4 import BeautifulSoup
 import re
 from urllib.parse import urljoin
 
-def generic_scrape(authority: str, url: str, html: str):
-    soup = BeautifulSoup(html, 'html.parser')
+def is_housekeys_url(url: str) -> bool:
+    return "housekeys" in url.lower()
+
+
+def scrape_housekeys(authority: str, url: str):
+    print(f"🧩 Running HouseKeys adapter on {url}")
     listings = []
     seen = set()
 
+    from scraper import polite_get
+    from pdf_scraper import extract_from_pdf
+
+    # Get main page
+    resp = polite_get(url)
+    if not resp:
+        return []
+
+    soup = BeautifulSoup(resp.text, 'html.parser')
+
+    # Find relevant sub-pages and PDF flyers
     pdf_links = []
     sub_links = []
 
     for a in soup.find_all('a', href=True):
-        href = a['href']
+        href = a['href'].lower()
         text = a.get_text(" ", strip=True).lower()
-        full_url = urljoin(url, href)
+        full_url = urljoin(url, a['href'])
 
-        if href.lower().endswith('.pdf') or 'documentcenter/view' in href.lower():
+        if href.endswith('.pdf') or 'documentcenter/view' in href:
             pdf_links.append(full_url)
-        elif any(kw in text for kw in ["affordable apartment", "available units", "bmr", "rental"]):
-            if full_url not in sub_links and full_url != url:
+        elif any(kw in text for kw in ["affordable apartment", "available units", "bmr", "rental", "opportunity"]):
+            if full_url not in sub_links:
                 sub_links.append(full_url)
 
-    # Scrape HTML pages
-    pages = [(url, html, authority)] + [(link, None, authority) for link in sub_links[:6]]
+    # Scrape HTML sub-pages
+    pages = [(url, resp.text)] + [(link, None) for link in sub_links[:8]]
 
-    for page_url, page_html, page_authority in pages:
+    for page_url, page_html in pages:
         if page_html is None:
-            from scraper import polite_get
             resp = polite_get(page_url)
             if not resp:
                 continue
@@ -35,7 +49,7 @@ def generic_scrape(authority: str, url: str, html: str):
 
         page_soup = BeautifulSoup(page_html, 'html.parser')
 
-        for elem in page_soup.find_all(['h1','h2','h3','p','a','li','strong','div']):
+        for elem in page_soup.find_all(['h1','h2','h3','p','li','div']):
             text = elem.get_text(" ", strip=True)
             if len(text) < 40:
                 continue
@@ -44,9 +58,9 @@ def generic_scrape(authority: str, url: str, html: str):
             if not any(kw in lower for kw in ["available units", "available unit", "now open", "apply now", "lottery"]):
                 continue
 
-            clean_name = re.sub(r'\s+', ' ', text).strip()[:110]
+            clean_name = re.sub(r'\s+', ' ', text).strip()[:120]
 
-            key = (clean_name.lower()[:55], page_authority)
+            key = clean_name.lower()[:60]
             if key in seen:
                 continue
             seen.add(key)
@@ -55,7 +69,7 @@ def generic_scrape(authority: str, url: str, html: str):
             deadline = deadline_match.group(2) if deadline_match else ""
 
             listing = {
-                "authority": page_authority,
+                "authority": authority,
                 "property_name": clean_name,
                 "url": page_url,
                 "status": "Open",
@@ -63,16 +77,15 @@ def generic_scrape(authority: str, url: str, html: str):
                 "income_limits": "Low/Very Low (varies)",
                 "unit_types": "Varies",
                 "eligibility_flags": ["low_income"],
-                "notes": text[:400].replace('\n', ' ').strip(),
-                "confidence": 0.75
+                "notes": text[:450].replace('\n', ' ').strip(),
+                "confidence": 0.85
             }
             listings.append(listing)
 
-    # Extract from PDF flyers
-    from pdf_scraper import extract_from_pdf
+    # Extract from PDF flyers (the real gold)
     for pdf_url in pdf_links[:12]:
         pdf_listings = extract_from_pdf(pdf_url, authority)
         listings.extend(pdf_listings)
 
-    print(f"   → Generic scraper found {len(listings)} cleaned listings (including PDFs)")
+    print(f"   → HouseKeys adapter found {len(listings)} listings")
     return listings
