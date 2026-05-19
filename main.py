@@ -66,7 +66,7 @@ def main():
                     all_listings.extend(playwright_scrape(authority, url))
                 else:
                     from generic_scraper import generic_scrape
-                    from scraper import polite_get
+                    from housing_list_search.scraper import polite_get
                     resp = polite_get(url)
                     if resp:
                         all_listings.extend(generic_scrape(authority, url, resp.text))

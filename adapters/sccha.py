@@ -4,7 +4,7 @@ import re
 
 def scrape_sccha(url: str):
     print(f"🧩 Running SCCHA/John Stewart adapter on {url}")
-    from scraper import polite_get
+    from housing_list_search.scraper import polite_get
     resp = polite_get(url)
     if not resp:
         return []

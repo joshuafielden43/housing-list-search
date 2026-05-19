@@ -27,7 +27,7 @@ def generic_scrape(authority: str, url: str, html: str):
 
     for page_url, page_html, page_authority in pages:
         if page_html is None:
-            from scraper import polite_get
+            from housing_list_search.scraper import polite_get
             resp = polite_get(page_url)
             if not resp:
                 continue
