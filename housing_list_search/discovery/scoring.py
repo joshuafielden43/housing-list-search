@@ -39,7 +39,7 @@ NEGATIVE_PATTERNS = [
     (r"developer.?roundtable|event", "Event / roundtable", -70),
     (r"block.?grant|plha|grant.?fund", "Grant program overview (not opportunity list)", -60),
     (r"tenant.?landlord|fair.?housing|rights", "Tenant rights / fair housing (important but not opportunity list)", -50),
-    (r"DocumentCenter/View", "Generic document center link (often slides/minutes)", -40),
+    # DocumentCenter handling moved to context-aware logic below (no blanket penalty)
 ]
 
 
@@ -67,6 +67,18 @@ def score_link(url: str, link_text: str) -> LinkCandidate:
         if re.search(pattern, combined, re.I):
             score += penalty
             reasons.append(f"{penalty} {reason}")
+
+    # Special handling for DocumentCenter links (avoid blanket punishment)
+    if "documentcenter/view" in combined:
+        if any(kw in text_lower for kw in ["list of", "updated", "affordable", "senior living", "rentals in"]):
+            score += 65
+            reasons.append("+65 Looks like an actual updated list of properties")
+        elif any(kw in text_lower for kw in ["workshop", "presentation", "recorded", "flyer"]):
+            score -= 75
+            reasons.append("-75 Workshop/presentation material")
+        else:
+            score -= 10
+            reasons.append("-10 Generic DocumentCenter link")
 
     # Base score for any internal housing-related page
     if "housing" in combined or "community" in combined:

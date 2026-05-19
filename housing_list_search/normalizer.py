@@ -3,17 +3,35 @@ import csv
 from datetime import datetime
 
 def normalize_listing(raw_data: dict) -> dict:
-    """Core + flexible fields"""
+    """Core + flexible fields. Now preserves rich fields from new HousingRecord extractors."""
+    notes = raw_data.get("notes", "")
+    # If we have separate rich fields, surface the best contact/apply info into notes
+    extra = []
+    if raw_data.get("address") and raw_data.get("address") not in notes:
+        extra.append(f"addr: {raw_data['address']}")
+    if raw_data.get("phone"):
+        extra.append(f"phone: {raw_data['phone']}")
+    if raw_data.get("email"):
+        extra.append(f"email: {raw_data['email']}")
+    if raw_data.get("bedrooms"):
+        extra.append(f"br: {raw_data['bedrooms']}")
+    if extra:
+        notes = (notes + " | " + " | ".join(extra)).strip(" |")
+
     return {
         "source_authority": raw_data.get("authority", ""),
         "property_name": raw_data.get("property_name", ""),
-        "url": raw_data.get("url", ""),
+        "url": raw_data.get("url") or raw_data.get("document_url", ""),
+        "address": raw_data.get("address", ""),
+        "phone": raw_data.get("phone", ""),
+        "email": raw_data.get("email", ""),
+        "bedrooms": raw_data.get("bedrooms", ""),
         "status": raw_data.get("status", "Unknown"),
         "deadline": raw_data.get("deadline", ""),
         "income_limits": raw_data.get("income_limits", ""),
-        "unit_types": raw_data.get("unit_types", ""),
+        "unit_types": raw_data.get("bedrooms") or raw_data.get("unit_types", ""),
         "eligibility_flags": raw_data.get("eligibility_flags", []),
-        "notes": raw_data.get("notes", ""),
+        "notes": notes,
         "scrape_date": datetime.now().isoformat(),
         "confidence": raw_data.get("confidence", 1.0)
     }
@@ -24,7 +42,8 @@ def save_current_full(listings: list):
         return
     
     fieldnames = [
-        "source_authority", "property_name", "url", "status", "deadline",
+        "source_authority", "property_name", "address", "phone", "email",
+        "bedrooms", "url", "status", "deadline",
         "income_limits", "unit_types", "eligibility_flags", "notes",
         "scrape_date", "confidence"
     ]

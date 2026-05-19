@@ -1,9 +1,11 @@
 # Housing List Aggregator — Project Contract (v0.1)
 
+**Note:** This document originated as v0.1 but has been updated to reflect the actual state at v0.8.1. The filename is kept for historical continuity.
+
 **Project Name:** Housing List Aggregator (Santa Clara County + Portable Skill)  
-**Status:** Alpha (Aligned on Discovery Philosophy)  
+**Status:** Alpha (First-class Adapters + Guardrails Established)  
 **Date:** 2026-05-18  
-**Last Updated:** 2026-05-18 (Discovery modes + versioning clarified)  
+**Last Updated:** 2026-05-21 (v0.8.1 release: first-class adapters, Scope & Guardrails, GIS pattern)  
 **Owner:** Joshua Fielden (for local Santa Clara County nonprofits)  
 **Goal:** Create a modular, reusable "skill" that helps nonprofits deal with fragmented city-by-city housing waitlists.
 
@@ -28,62 +30,63 @@ Key requirements from the founding vision:
 
 ## 2. Current Built State (What We Actually Have)
 
-As of the latest run we have:
+As of v0.8.1 we have:
 
 **Core Components:**
-- Interactive first-run discovery (`--discover`) that builds `TARGETS.md`
+- `TARGETS.md` as the human-editable source of truth for targets
 - SQLite registry for targets
-- Polite static scraper + generic keyword-based extractor
-- Playwright support for JS-heavy sites (San José portal, SCCHA)
-- Dedicated SCCHA adapter (good quality)
-- John Stewart Company support
-- `current_full.csv` output (ready for database import)
-- `daily_summary.md` for internal tech mailing list
-- Basic changelog diffing
+- Dedicated high-quality adapters:
+  - `john_stewart.py` (first-class, consolidated for direct + custom front-ends)
+  - `gis_extraction.py` (first-class reference for municipal GIS + federated manager patterns)
+  - `housekeys.py`
+- Extraction layer (`extraction/`) with PDF table extraction and San José portal support
+- `current_full.csv` + `daily_summary.md` outputs
+- Deduplication across sources
+- Basic daily run path in CLI
+- Explicit Scope & Guardrails + Known Low-Value Patterns documented in adapters and AGENTS.md
 
-**Current Metrics (latest run):**
-- 17 targets discovered
-- ~149 listings extracted per run
-- Playwright successfully pulling from SCCHA (22) and San José (9–12)
-- Many city sites still return 403 or very noisy data
+**Key Achievements in v0.8.1:**
+- Two reference first-class adapters with clear Scope & Guardrails sections
+- Standardized "name after the tool, not the city" rule
+- Explicit handling of "city as coordinator / federated managers" model (e.g. Cupertino GIS + Rise Housing + multiple nonprofits)
+- Documented low-value patterns (anonymous lottery waitlists, broad keyword scraping)
+- Clear extension philosophy so future one-offs can be added without archaeology
 
-**Strengths:**
-- Auto-discovery works and is human-editable
-- Modular adapter pattern started
-- Playwright integration exists for dynamic sites
-- Outputs are useful for a data team
+**Current Reality:**
+- Strong, maintainable adapter pattern established
+- Discovery is de-emphasized in favor of reliable extraction from known good sources
+- Focus on actionable, deduplicated records with real contacts and application paths where available
 
-**Gaps vs Vision:**
-- Summary is still noisy (duplicates, long junk titles, closed waitlists appearing)
-- Not yet packaged as a clean "skill" with clear metadata for agents
-- No review/approval gate yet
-- No easy daily runner + cron instructions
-- Not yet documented for easy replication by another nonprofit
-- Some major city sites (Sunnyvale, Mountain View, etc.) are blocked or return poor data
-- No clear versioning or release process
+**Gaps vs Original Vision:**
+- Still not fully packaged as a "plug-and-play skill" for Hermes/other agents
+- Daily runner exists but could be more robust
+- Documentation for replication by other nonprofits is improving but not complete
+- Some cities remain low-signal (require per-city one-off work)
 
 ---
 
 ## 3. The Contract (Agreed Scope)
 
-### In Scope for v0.8 (Next Milestone)
-1. **Clean, usable daily output** for a nonprofit data/tech team
-   - Significantly improved title cleaning + deduplication in parsers
-   - Better filtering of closed/old listings from the "Open" section
-   - Clear note about blocked sites
+### In Scope for v0.8 / v0.8.1 (Current Milestone — Largely Delivered)
+1. **First-class, maintainable adapters**
+   - Consolidated, well-documented adapters named after tools (John Stewart, GIS Extraction)
+   - Explicit Scope & Guardrails in every adapter
+   - Known Low-Value Patterns documented
+   - Clear rules on what is in-scope vs out-of-scope (no hunting individuals, only published data, etc.)
 
-2. **Make it a proper reusable Skill**
-   - Clear `TARGETS.md` + metadata that an agent can read
-   - Simple `run_daily.sh` + instructions
-   - Minimal README that explains how another nonprofit can fork/adapt it
+2. **Support for real municipal patterns**
+   - Centralized vendor platforms (John Stewart)
+   - City-coordinated / federated models (GIS portfolio + multiple managers, e.g. Cupertino)
+   - Ability to extend cleanly for new one-off scenarios
 
-3. **Hermes-friendly + Portable**
-   - Document the engine + metadata structure so it can be understood by other agents
-   - Keep dependencies reasonable (Playwright is acceptable but noted)
+3. **Operational foundation**
+   - Deduplication across sources
+   - Stable CSV + summary outputs
+   - Basic daily run capability
 
-4. **Basic operational quality**
-   - Optional `--review` gate before final files are written
-   - Stable outputs (`current_full.csv` + clean `daily_summary.md`)
+4. **Documentation & Portability**
+   - Strong agent instructions (AGENTS.md) with extension guidance
+   - Clear philosophy so the skill improves over time without losing consistency
 
 ### Out of Scope (for now)
 - Full county-wide coverage of every possible property (impossible via public scraping)
@@ -92,12 +95,19 @@ As of the latest run we have:
 - Multi-county support in v0.8 (design for it, implement later)
 - Advanced LLM-based discovery (can be added later as optional enhancement)
 
-### Success Criteria for v0.8
-- A nonprofit staff member can run the tool daily and get a **clean, actionable** list of currently open waitlists/lotteries.
-- Another nonprofit in a different county can read the code + `TARGETS.md` and understand how to adapt it in < 2 hours.
-- The tool produces stable, importable CSV + human-readable summary.
+### Success Criteria for v0.8 / v0.8.1 (Updated)
+- A nonprofit can run the tool against real county data and get usable, deduplicated records.
+- New one-off municipal sources can be added by extending existing first-class adapters without creating technical debt or requiring deep archaeology.
+- The project has clear, written guardrails (Scope, Known Low-Value Patterns, "only published data", city manages the list, etc.) so future work stays consistent.
+- Another nonprofit or agent can understand the architecture and extension model from the code + AGENTS.md.
 
-### Discovery Philosophy (Agreed 2026-05-18)
+### Discovery Philosophy (Original, 2026-05-18) + Current Adapter Standards (2026-05-21)
+
+**Original Philosophy (still valid):**
+Start from broad, Googleable county pages → conservative high-precision discovery → human curation into TARGETS.md → reliable extraction.
+
+**Current Reality (v0.8.1):**
+The project has matured into a set of first-class adapters with explicit guardrails. The emphasis has shifted from pure discovery to **reliable, extensible extraction** with clear rules so that one-off scenarios (especially GIS + federated managers) can be handled consistently and the overall skill improves over time.
 - **Two distinct modes**:
   - `--discover` (or first run): Interactive bootstrap. Can be heavier. Uses search to propose targets. Human approves the initial list. During bootstrap, the system asks the user about auto-proposal preferences (review gate vs conservative auto-accept vs fully manual).
   - `--run`: Lightweight daily scrape of known targets only.
