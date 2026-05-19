@@ -36,10 +36,10 @@ def main():
     elif args.run:
         print(f"=== Normal Run Started at {datetime.now()} ===")
         
-        from registry import load_targets_to_db
+        from housing_list_search.registry import load_targets_to_db
         load_targets_to_db()
         
-        from normalizer import save_current_full
+        from housing_list_search.normalizer import save_current_full
         from changelog import generate_changelog
         from outputs import generate_daily_summary
         
