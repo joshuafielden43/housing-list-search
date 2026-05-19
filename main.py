@@ -56,10 +56,10 @@ def main():
             print(f"\n→ Processing: {authority}")
             try:
                 if "housekeys" in authority.lower() or "housekeys" in url.lower():
-                    from adapters.housekeys import scrape_housekeys
+                    from housing_list_search.adapters.housekeys import scrape_housekeys
                     all_listings.extend(scrape_housekeys(authority, url))
                 elif "sccha" in authority.lower() or "john stewart" in authority.lower():
-                    from adapters.sccha import scrape_sccha
+                    from housing_list_search.adapters.sccha import scrape_sccha
                     all_listings.extend(scrape_sccha(url))
                 elif "playwright_needed" in measures or "js_heavy" in measures:
                     from playwright_scraper import playwright_scrape
