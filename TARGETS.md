@@ -1,16 +1,14 @@
 # TARGETS.md – Housing Waitlist Targets
-
-County: [To be set on first discovery run]
+County: Santa Clara, CA
 Last Discovery: 2026-05-19
-Scope: controlled | full
+Scope: controlled (seed mode)
 
 ## Instructions
-Edit this file to add/remove/tweak targets. Scraping Measures column tells the system what tools are needed (native_requests, playwright, etc.).
+Human review required. Edit freely. Scraping Measures guide the adapter (native_requests, playwright, etc.).
 
 City/Authority | URL | Notes | Scraping Measures | Priority | Last Seen
 ---|---|---|---|---|---
-Santa Clara County Housing Authority (SCCHA) | https://www.scchousingauthority.org/ | Interest lists + properties | playwright, portal | High | 2026-05-19
-John Stewart Co (SCCHA) | https://jscosccha.com/ | Property waitlists | native_requests | High |
-City of San José | https://housing.sanjoseca.gov/ | Affordable portal | playwright | High |
-
-(Add more after first discovery run)
+Santa Clara County Housing Authority (SCCHA) | https://www.scchousingauthority.org/ | Online Interest Lists + property-specific. Portal: https://portal.scchousingauthority.org | playwright, rentcafe_portal, robots_respect | High | 2026-05-19
+John Stewart Company (SCCHA properties) | https://jscosccha.com/ | Property waitlists & lotteries | native_requests, table_based | High | 2026-05-19
+City of San José Affordable Housing Portal | https://housing.sanjoseca.gov/ | Current accepting applications + map | playwright, js_dynamic | High | 2026-05-19
+Campbell | https://www.campbellca.gov/635/Below-Market-Rate-Program | BMR program | native_requests | Medium |
