@@ -20,15 +20,21 @@ Use this when the user says things like "fewer questions", "just do the work", "
 
 This was documented after repeated frustration during the housing-list-search development session in May 2026.
 
-## Current Project Focus (as of last update)
+## Current Project Focus (v0.8.2 — as of May 2026)
 
-- Building first-class, well-documented adapters for different housing data sources.
-- Reference adapter: John Stewart platform (consolidated handling of direct + custom front-ends).
-- New pattern: GIS Extraction for municipal "city as coordinator" models (e.g. Cupertino BMR with GIS portfolio + federated managers).
-- Establishing clear Scope & Guardrails, Known Low-Value Patterns, and extension guidance so adapters can be reliably extended over time.
-- Emphasis on consistency, maintainability, and avoiding "archaeology" when extending for new one-off scenarios.
+- Five first-class adapters, all named after the recurring tool/company (never the city):
+  - `john_stewart.py` — vendor + custom front-end properties (SCCHA and others)
+  - `gis_extraction.py` — municipal GIS layers + federated managers (Cupertino + Rise Housing reference)
+  - `housekeys.py` — delegated registration/notification/lottery portals
+  - `cdn.py` — CDN/WAF-protected document viewers (DocumentCenter, showdocument, docaccess) — primary path for Housing Group cities
+  - `alta.py` — Alta Housing delegated administrator pattern (Palo Alto reference)
+- Preferred high-quality `extraction/` layer for structured portals (San José example).
+- Full freshness schema (`last_seen`, `first_seen`, `source`, `source_url`, `expires_at`) on every record.
+- Registry nanny layer + `scripts/doctor.py --fix` for safe, repeatable TARGETS.md ingestion.
+- Operational `no_public_list` handling with human-visible documentation.
+- Strong emphasis on clean, quiet logging and "PATTERN FOR NEW USE CASES" documentation in every adapter.
 
-Last updated: 2026-05-21
+Last updated: 2026-05-20 (post v0.8.2 release + contract alignment)
 
 ## Adapter Development Standards
 

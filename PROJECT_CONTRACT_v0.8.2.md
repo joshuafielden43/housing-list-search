@@ -30,7 +30,7 @@ Key requirements from the founding vision:
 
 ## 2. Current Built State (What We Actually Have)
 
-As of v0.8.1 we have:
+As of v0.8.2 we have:
 
 **Core Components:**
 - `TARGETS.md` as the human-editable source of truth (20 rows: 15 Santa Clara cities + SCCHA variants + 2 San Mateo Housing Group cities + Palo Alto)
@@ -65,11 +65,11 @@ As of v0.8.1 we have:
 - All records carry provenance and freshness for trustworthy downstream use
 - Adding a new city that uses an existing administrator is now configuration, not new code
 
-**Gaps vs Original Vision:**
-- Still not fully packaged as a "plug-and-play skill" for Hermes/other agents
-- Daily runner exists but could be more robust
-- Documentation for replication by other nonprofits is improving but not complete
-- Some cities remain low-signal (require per-city one-off work)
+**Remaining Deliberate Scope Boundaries (Not Gaps)**
+- Full "plug-and-play skill" packaging for Hermes / autonomous agents is intentionally deferred until the extraction spine and freshness model are more battle-tested in daily nonprofit use.
+- High-frequency delta runs + trash compactor logic (using the existing `last_seen` / `first_seen` fields) are the next major feature layer.
+- Replication guide for other counties/nonprofits exists in AGENTS.md + per-adapter PATTERN sections but will continue to be refined based on real usage feedback.
+- Cities without any public structured source are correctly handled via `no_public_list` + human documentation rather than forced scraping.
 
 ---
 
@@ -133,19 +133,19 @@ The project has matured into a platform of five first-class, company-named adapt
 
 ---
 
-## 4. Current State vs Contract Gap Analysis
+## 4. Maturity vs Contract (v0.8.2 Status)
 
-| Area                        | Vision / Contract                                      | Current State (v0.8.2)                          | Gap Level | Priority |
+| Area                        | Vision / Contract                                      | Current State (v0.8.2)                          | Status    | Priority |
 |----------------------------|-------------------------------------------------------|--------------------------------------------------|-----------|----------|
-| Target list independence   | Fully independent (`TARGETS.md`)                      | Excellent (20 rows, active/skipped split)       | Low       | Done     |
-| First-class adapters       | Named after tools/companies, reusable patterns        | Delivered (5 adapters: john_stewart, gis, housekeys, cdn, alta) | Low       | Done     |
-| Freshness / delta schema   | Every record carries last_seen / source / provenance  | Delivered across all paths + normalizer         | Low       | Done     |
-| Operational `no_public_list` | Intentional skips documented but never pollute output | Fully working (WARN + human sections in summaries) | Low     | Done     |
-| Registry & doctor          | Safe ingest, easy re-synchronization                  | `doctor --fix` + sanitize nanny                 | Low       | Done     |
-| Logging quality            | Professional, quiet, no spam on non-matching targets  | Good (GIS moved to debug, consistent prefixes)  | Low       | Done     |
-| Reusable as a Skill        | Easy for other nonprofits/agents                      | Strong (AGENTS.md + per-adapter PATTERN sections) | Medium    | Medium   |
-| Clean daily output         | Actionable for data team                              | Very good (74 records, deduped, freshness)      | Low       | Done     |
-| Hermes / Agent ready       | Metadata + engine clearly separable                   | Good (registry + extraction + adapters)         | Low       | Done     |
+| Target list independence   | Fully independent (`TARGETS.md`)                      | Excellent (20 rows, active/skipped split)       | Delivered | Done     |
+| First-class adapters       | Named after tools/companies, reusable patterns        | Delivered (5 adapters: john_stewart, gis, housekeys, cdn, alta) | Delivered | Done     |
+| Freshness / delta schema   | Every record carries last_seen / source / provenance  | Delivered across all paths + normalizer         | Delivered | Done     |
+| Operational `no_public_list` | Intentional skips documented but never pollute output | Fully working (WARN + human sections in summaries) | Delivered | Done     |
+| Registry & doctor          | Safe ingest, easy re-synchronization                  | `doctor --fix` + sanitize nanny                 | Delivered | Done     |
+| Logging quality            | Professional, quiet, no spam on non-matching targets  | Good (GIS moved to debug, consistent prefixes)  | Delivered | Done     |
+| Reusable as a Skill        | Easy for other nonprofits/agents                      | Strong (AGENTS.md + per-adapter PATTERN sections) | In Progress | Medium   |
+| Clean daily output         | Actionable for data team                              | Very good (74 records, deduped, freshness)      | Delivered | Done     |
+| Hermes / Agent ready       | Metadata + engine clearly separable                   | Good (registry + extraction + adapters)         | Delivered | Done     |
 
 ---
 
