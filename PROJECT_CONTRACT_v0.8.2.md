@@ -1,6 +1,6 @@
 # Housing List Aggregator — Project Contract (v0.8.2)
 
-**Note:** Filename retains historical "v0.1" for git continuity. Content is current as of the v0.8.2 release.
+**Note:** Filename is now versioned to match the release (iterated via `git mv`). Content is the authoritative contract for v0.8.2.
 
 **Project Name:** Housing List Aggregator (Santa Clara County + Portable Skill)  
 **Status:** Alpha (First-class Recurring Administrators + Freshness Schema + Reliable Extraction Spine)  
