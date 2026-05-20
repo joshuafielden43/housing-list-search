@@ -86,6 +86,58 @@ def _get_realistic_headers() -> dict[str, str]:
     }
 
 
+def _parse_froala_availability_blocks(container, authority: str) -> list[dict]:
+    """Parse Froala-generated availability lists.
+
+    These appear as repeated <ul role="presentation"> blocks (one per listing),
+    each containing a <li> whose <strong> holds the full line:
+        "The Cannery Apartments - 5 available units"
+
+    This pattern is common on Froala-powered municipal sites.
+    """
+    records = []
+    for ul in container.find_all("ul", attrs={"role": "presentation"}):
+        for li in ul.find_all("li"):
+            strong = li.find("strong")
+            if not strong:
+                continue
+
+            strong_text = strong.get_text(" ", strip=True)
+
+            # Match "Name - 5 available units" or "Name – 3 units available"
+            units_match = re.search(r'(\d+)\s*(?:available\s*)?units?', strong_text, re.IGNORECASE)
+            if not units_match:
+                units_match = re.search(r'units?\s*(?:available)?:?\s*(\d+)', strong_text, re.IGNORECASE)
+
+            units = units_match.group(1) if units_match else None
+            if not units:
+                continue
+
+            # Strip the units portion to get a clean property name
+            property_name = re.sub(r'\s*[-–—]?\s*\d+\s*(?:available\s*)?units?.*$', '', strong_text, flags=re.IGNORECASE).strip()
+
+            # Pull contact info from the whole <li>
+            full_text = li.get_text(" ", strip=True)
+            email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', full_text)
+            phone_match = re.search(r'\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}', full_text)
+
+            record = {
+                "source_url": "",  # filled by caller if needed
+                "authority": authority,
+                "extraction_method": "froala_availability_list",
+                "property_name": property_name,
+                "available_units": units,
+                "email": email_match.group(0) if email_match else "",
+                "phone": phone_match.group(0) if phone_match else "",
+                "last_seen": _dt.now().isoformat(),
+                "first_seen": _dt.now().isoformat(),
+                "source": f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}",
+            }
+            records.append(record)
+
+    return records
+
+
 def extract_underlying_records(
     source: str,
     authority: str = "",
@@ -143,6 +195,22 @@ def extract_underlying_records(
 
         page = context.new_page()
 
+        # Capture any JSON responses that look like they might contain availability data
+        captured_json = []
+
+        def _on_response(response):
+            try:
+                if "json" in response.headers.get("content-type", "").lower():
+                    url = response.url.lower()
+                    if any(kw in url for kw in ["housing", "available", "units", "bmr", "affordable", "list"]):
+                        data = response.json()
+                        if isinstance(data, (list, dict)):
+                            captured_json.append({"url": response.url, "data": data})
+            except Exception:
+                pass  # ignore parsing errors
+
+        page.on("response", _on_response)
+
         # Light jitter before navigation
         _jitter(0.8)
 
@@ -169,6 +237,110 @@ def extract_underlying_records(
             _jitter(1.2)
             page.evaluate("window.scrollTo(0, 0)")
             _jitter(0.6)
+
+            # More patient wait for JS-heavy / Froala sites
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+
+            # Try to wait for signals that the availability section has rendered
+            try:
+                page.wait_for_selector(
+                    "div.fr-view, ul[role='presentation'], text='available units'",
+                    timeout=12000
+                )
+            except Exception:
+                pass
+
+            # Keep trying for up to ~25s until the real availability lists appear
+            # (the ones with <strong> containing "Property - X available units" inside role="presentation" uls)
+            try:
+                page.wait_for_function("""
+                    () => {
+                        const lists = document.querySelectorAll("ul[role='presentation']");
+                        let found = 0;
+                        for (let ul of lists) {
+                            const strongs = ul.querySelectorAll("strong");
+                            for (let s of strongs) {
+                                const t = s.innerText.toLowerCase();
+                                if ((t.includes('available') || t.includes('units')) && 
+                                    (t.includes('apartments') || t.includes('manor') || t.includes('gardens') || t.includes('housing'))) {
+                                    found++;
+                                }
+                            }
+                        }
+                        return found >= 2;   // wait until we see at least a couple real listings
+                    }
+                """, timeout=25000, polling=500)
+            except Exception:
+                pass
+
+            # Final broad text sweep after everything else: look for any text on the page that
+            # looks like a real availability entry ("Property Name - 5 available units" style).
+            # This is the last clean HTML attempt before we accept that the data may only be
+            # in the linked PDFs or behind additional client-side rendering.
+            try:
+                page.wait_for_function("""
+                    () => {
+                        const bodyText = document.body.innerText.toLowerCase();
+                        return bodyText.includes('available units') || bodyText.includes('units available');
+                    }
+                """, timeout=5000)
+            except Exception:
+                pass
+
+            # One last attempt: after maximum waiting, walk the DOM one more time looking for
+            # any text node that contains both a housing keyword and an availability indicator.
+            # If we find strong candidates, try to turn them into lightweight records right here.
+            try:
+                final_candidates = page.evaluate("""
+                    () => {
+                        const results = [];
+                        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                        let node;
+                        while ((node = walker.nextNode())) {
+                            const t = node.textContent.trim();
+                            if (t.length > 15 && 
+                                (t.toLowerCase().includes('available') || t.toLowerCase().includes('units')) &&
+                                (t.toLowerCase().includes('apartments') || t.toLowerCase().includes('manor') || 
+                                 t.toLowerCase().includes('gardens') || t.toLowerCase().includes('housing'))) {
+                                results.push(t.substring(0, 250));
+                            }
+                        }
+                        return results.slice(0, 15);
+                    }
+                """)
+                if final_candidates and len(final_candidates) > 0:
+                    print("[DEBUG] Final broad text candidates found:", final_candidates)
+                    # Attempt to turn promising strings into lightweight records
+                    for candidate in final_candidates:
+                        units_match = re.search(r'(\d+)\s*(?:available\s*)?units?', candidate, re.IGNORECASE)
+                        if units_match:
+                            units = units_match.group(1)
+                            # Rough name extraction: take text before the units part
+                            name = re.sub(r'\s*[-–—]?\s*\d+\s*(?:available\s*)?units?.*$', '', candidate, flags=re.IGNORECASE).strip()
+                            if name and len(name) > 3:
+                                records.append({
+                                    "source_url": source,
+                                    "authority": authority,
+                                    "extraction_method": "final_text_sweep",
+                                    "property_name": name,
+                                    "available_units": units,
+                                    "last_seen": _dt.now().isoformat(),
+                                    "first_seen": _dt.now().isoformat(),
+                                    "source": f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}",
+                                })
+            except Exception:
+                pass
+
+            # Extra scroll + settle pass (some lists only appear after scrolling)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.6)")
+            _jitter(1.0)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            _jitter(1.2)
+            page.evaluate("window.scrollTo(0, 0)")
+            _jitter(0.8)
 
             # Wait for network to settle (important for JS-rendered content)
             try:
@@ -353,18 +525,71 @@ def extract_underlying_records(
                         except Exception as e:
                             logger.warning(f"[cdn] Failed to extract PDF {pdf_url}: {e}")
 
-            # Fallback: grab any large text blocks that look like property entries
-            if len(records) < 3:
+            # Fallback: focus on the main content area (fr-view for Froala sites like Gilroy)
+            if len(records) < 5:
                 logger.info("[cdn] Falling back to raw text extraction")
-                for elem in soup.find_all(["p", "li", "div", "span"]):
-                    text = elem.get_text(" ", strip=True)
-                    if any(kw in text.lower() for kw in ["park", "court", "apartments", "housing", "subsidized", "special needs"]) and len(text) > 20:
-                        records.append({
-                            "source_url": source,
-                            "authority": authority,
-                            "extraction_method": "raw_text_fallback",
-                            "raw_text": text[:500]
-                        })
+
+                main_content = soup.find("div", class_="fr-view") or soup
+
+                # === TEMP DEBUG (Gilroy Froala investigation) ===
+                pres_lists = main_content.find_all("ul", attrs={"role": "presentation"})
+                print(f"[DEBUG] Found {len(pres_lists)} <ul role='presentation'> inside main_content")
+
+                for i, ul in enumerate(pres_lists[:6]):  # limit noise
+                    txt = ul.get_text(" ", strip=True)[:220]
+                    print(f"[DEBUG]   pres_list[{i}] inner text: {txt}")
+
+                # Look for any <strong> containing "available" or "units" anywhere in main_content
+                strongs = main_content.find_all("strong")
+                interesting_strongs = [s.get_text(" ", strip=True) for s in strongs if "available" in s.get_text().lower() or "units" in s.get_text().lower()]
+                print(f"[DEBUG] Strong tags with 'available' or 'units': {interesting_strongs[:5]}")
+                # === END TEMP DEBUG ===
+
+                # Handle Froala-generated lists (one <ul role="presentation"> per item)
+                records.extend(_parse_froala_availability_blocks(main_content, authority))
+
+            # Look for availability-related links (property flyers, AMI flyers, etc.)
+            # Try to associate them with a nearby <strong> (property name) when possible
+            for a in soup.find_all("a", href=True):
+                link_text = a.get_text(" ", strip=True)
+                link_lower = link_text.lower()
+                href_lower = a.get("href", "").lower()
+
+                is_flyer = ("flyer" in link_lower or 
+                            "official flyer" in link_lower or 
+                            "available" in link_lower or
+                            "50%" in link_text or "60%" in link_text or
+                            "ami" in link_lower)
+
+                if is_flyer:
+                    # Try to find a nearby <strong> (often the property name)
+                    # Walk up a couple levels if needed
+                    parent = a.parent
+                    nearby_strong = None
+                    search_node = parent
+                    for _ in range(3):  # walk up a few levels
+                        if search_node:
+                            nearby_strong = search_node.find("strong")
+                            if nearby_strong:
+                                break
+                            search_node = getattr(search_node, 'parent', None)
+
+                    context_name = nearby_strong.get_text(strip=True) if nearby_strong else ""
+                    parent = a.parent
+                    nearby_context = parent.get_text(" ", strip=True)[:200] if parent else ""
+
+                    records.append({
+                        "source_url": source,
+                        "authority": authority,
+                        "extraction_method": "flyer_link",
+                        "property_name": context_name,
+                        "flyer_text": link_text,
+                        "flyer_url": a.get("href", ""),
+                        "nearby_context": nearby_context,
+                        "last_seen": _dt.now().isoformat(),
+                        "first_seen": _dt.now().isoformat(),
+                        "source": f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}",
+                    })
 
             # Ultimate fallback: save screenshot + return page title + any visible text for debugging
             if len(records) == 0:
@@ -390,4 +615,18 @@ def extract_underlying_records(
             browser.close()
 
     logger.info(f"[cdn] Extracted {len(records)} underlying records from {authority or source}")
+
+    # Diagnostic: show any housing-related JSON we intercepted during the source page load
+    if 'captured_json' in locals() and captured_json:
+        print(f"[DEBUG] Intercepted {len(captured_json)} housing-related JSON responses:")
+        for item in captured_json[:5]:
+            print(f"    {item['url']}")
+            if isinstance(item.get('data'), dict):
+                keys = list(item['data'].keys())[:8]
+                print(f"      keys: {keys}")
+            elif isinstance(item.get('data'), list):
+                print(f"      list of {len(item['data'])} items")
+    elif 'captured_json' in locals():
+        print("[DEBUG] No housing-related JSON responses intercepted on source page")
+
     return records
