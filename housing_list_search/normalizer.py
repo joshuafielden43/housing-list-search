@@ -33,7 +33,12 @@ def normalize_listing(raw_data: dict) -> dict:
         "eligibility_flags": raw_data.get("eligibility_flags", []),
         "notes": notes,
         "scrape_date": datetime.now().isoformat(),
-        "confidence": raw_data.get("confidence", 1.0)
+        "confidence": raw_data.get("confidence", 1.0),
+        # Support for delegated administrators (e.g. Rise Housing for Cupertino BMR)
+        "administrator": raw_data.get("administrator", ""),
+        "administrator_url": raw_data.get("administrator_url", ""),
+        "administrator_phone": raw_data.get("administrator_phone", ""),
+        "administrator_contact": raw_data.get("administrator_contact", ""),
     }
 
 def save_current_full(listings: list):
@@ -45,7 +50,8 @@ def save_current_full(listings: list):
         "source_authority", "property_name", "address", "phone", "email",
         "bedrooms", "url", "status", "deadline",
         "income_limits", "unit_types", "eligibility_flags", "notes",
-        "scrape_date", "confidence"
+        "scrape_date", "confidence",
+        "administrator", "administrator_url", "administrator_phone", "administrator_contact"
     ]
     
     with open("current_full.csv", "w", newline="", encoding="utf-8") as f:

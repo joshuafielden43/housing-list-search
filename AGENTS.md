@@ -69,4 +69,18 @@ The objective is to produce consistent, maintainable adapters that can be extend
 - When a meaningfully different pattern is discovered, create a new adapter and document the pattern here.
 - The intent is for the collection of adapters to become more capable and consistent over time through incremental, well-documented additions.
 
+### Target Ingestion Safety ("Nanny Layer")
+`registry.py` contains a `sanitize_target()` function that is run on every row during `load_targets_to_db()` (first acquisition from TARGETS.md).
+
+It performs:
+- Scheme validation on URLs (only `http://` and `https://` allowed)
+- Control character stripping
+- Length limits on all text fields
+- Normalization of the `scraping_measures` column
+- Basic detection of prompt-injection-style language in notes (for future LLM/agent contexts)
+
+Bad rows are logged as warnings and skipped. The DB always contains sanitized data.
+
+This is our lightweight defense against malformed, accidentally broken, or malicious entries in TARGETS.md without turning the file into a fortress. The human still owns the list; the code just refuses to blindly trust it.
+
 These standards support reliable, maintainable work as the project encounters a wider variety of municipal data sources.

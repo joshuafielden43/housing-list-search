@@ -130,7 +130,14 @@ from housing_list_search.scraper import polite_get
 # PUBLIC API
 # =============================================================================
 
-def extract_gis_portfolio(source: str, authority: str = "") -> List[Dict[str, Any]]:
+def extract_gis_portfolio(
+    source: str,
+    authority: str = "",
+    administrator: str = "",
+    administrator_url: str = "",
+    administrator_phone: str = "",
+    administrator_contact: str = "",
+) -> List[Dict[str, Any]]:
     """
     Main entry point for municipal/GIS-based portfolio extraction.
 
@@ -142,13 +149,26 @@ def extract_gis_portfolio(source: str, authority: str = "") -> List[Dict[str, An
     Returns a list of normalized property records suitable for the rest of
     the pipeline (name, address if available, unit count, source URL, etc.).
 
+    If administrator information is provided via the target configuration
+    (for cases where the city contracts a third party like Rise Housing to
+    manage the waitlist/portfolio), it will be attached to the records.
+    This allows generic contact info (URL, phone, email) to travel with the
+    extracted data. The information can come from scraping, LLM-assisted
+    discovery, or direct human entry in TARGETS.md.
+
     The caller is responsible for deciding whether to further enrich records
     by visiting individual property manager sites.
     """
     lower = source.lower()
 
     if lower.endswith(".js") or "units.js" in lower or "purchase.js" in lower:
-        return _parse_embedded_geojson_js(source, authority)
+        return _parse_embedded_geojson_js(
+            source, authority,
+            administrator=administrator,
+            administrator_url=administrator_url,
+            administrator_phone=administrator_phone,
+            administrator_contact=administrator_contact,
+        )
 
     if "geojson" in lower or lower.endswith(".json"):
         return _parse_direct_geojson(source, authority)
@@ -157,7 +177,13 @@ def extract_gis_portfolio(source: str, authority: str = "") -> List[Dict[str, An
         return _parse_arcgis_rest(source, authority)
 
     # Fallback: try to treat it as a page that might contain embedded data
-    return _parse_page_for_embedded_gis(source, authority)
+    return _parse_page_for_embedded_gis(
+        source, authority,
+        administrator=administrator,
+        administrator_url=administrator_url,
+        administrator_phone=administrator_phone,
+        administrator_contact=administrator_contact,
+    )
 
 
 # =============================================================================
@@ -170,13 +196,32 @@ def extract_cupertino_gis() -> List[Dict[str, Any]]:
     GIS publication method (embedded GeoJSON in /bmr_units/units.js and
     /bmr_units/purchase.js).
 
-    This is useful for development, testing, and as a living example
-    inside the template documentation.
+    Includes the known delegated administrator (Rise Housing) so the
+    pattern is demonstrated.
     """
     base = "https://gis.cupertino.org/bmr_units/"
 
-    rental = extract_gis_portfolio(base + "units.js", "City of Cupertino BMR (Rental)")
-    ownership = extract_gis_portfolio(base + "purchase.js", "City of Cupertino BMR (Ownership)")
+    administrator = "Rise Housing"
+    administrator_url = "https://www.risehousing.com/applicants-cupertino-bmr-rental"
+    administrator_phone = "(415) 301-5448"
+    administrator_contact = "cupertino@risehousing.com"
+
+    rental = extract_gis_portfolio(
+        base + "units.js",
+        "City of Cupertino BMR (Rental)",
+        administrator=administrator,
+        administrator_url=administrator_url,
+        administrator_phone=administrator_phone,
+        administrator_contact=administrator_contact,
+    )
+    ownership = extract_gis_portfolio(
+        base + "purchase.js",
+        "City of Cupertino BMR (Ownership)",
+        administrator=administrator,
+        administrator_url=administrator_url,
+        administrator_phone=administrator_phone,
+        administrator_contact=administrator_contact,
+    )
 
     return rental + ownership
 
@@ -185,7 +230,14 @@ def extract_cupertino_gis() -> List[Dict[str, Any]]:
 # PARSERS
 # =============================================================================
 
-def _parse_embedded_geojson_js(url: str, authority: str) -> List[Dict[str, Any]]:
+def _parse_embedded_geojson_js(
+    url: str,
+    authority: str,
+    administrator: str = "",
+    administrator_url: str = "",
+    administrator_phone: str = "",
+    administrator_contact: str = "",
+) -> List[Dict[str, Any]]:
     """
     Handles cases like Cupertino where the city serves GeoJSON inside a .js file
     as a JavaScript variable (e.g. var rentals = { "type": "FeatureCollection", ... }).
@@ -215,7 +267,13 @@ def _parse_embedded_geojson_js(url: str, authority: str) -> List[Dict[str, Any]]
         print(f"   Failed to parse JSON from {url}: {e}")
         return []
 
-    return _features_to_records(data, url, authority)
+    return _features_to_records(
+        data, url, authority,
+        administrator=administrator,
+        administrator_url=administrator_url,
+        administrator_phone=administrator_phone,
+        administrator_contact=administrator_contact,
+    )
 
 
 def _parse_direct_geojson(url: str, authority: str) -> List[Dict[str, Any]]:
@@ -245,32 +303,108 @@ def _parse_arcgis_rest(url: str, authority: str) -> List[Dict[str, Any]]:
     return []
 
 
-def _parse_page_for_embedded_gis(url: str, authority: str) -> List[Dict[str, Any]]:
+def _parse_page_for_embedded_gis(
+    url: str,
+    authority: str,
+    administrator: str = "",
+    administrator_url: str = "",
+    administrator_phone: str = "",
+    administrator_contact: str = "",
+) -> List[Dict[str, Any]]:
     """
-    Last-resort parser that fetches an HTML page and looks for embedded
-    GeoJSON or JavaScript variables containing feature data.
+    Enhanced page scanner for municipal BMR/GIS pages.
+
+    Strategy:
+    - Look for inline <script> tags containing GeoJSON FeatureCollection.
+    - Look for linked .js files that are likely to contain GIS data
+      (filenames/paths containing units, bmr, rentals, portfolio, gis, etc.).
+    - Attempt to fetch and parse promising candidates.
+
+    This allows users to put the human-friendly BMR overview URL in TARGETS.md
+    while the adapter still finds the actual data.
     """
-    print(f"🧩 Running GIS Extraction adapter (page scan) on {url}")
+    print(f"🧩 Running GIS Extraction adapter (page scan + discovery) on {url}")
 
     resp = polite_get(url)
     if not resp:
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
+    base_url = url
 
-    # Look for script tags that might contain GeoJSON
+    candidates = []
+
+    # 1. Inline scripts with FeatureCollection
     for script in soup.find_all("script"):
         if script.string and "FeatureCollection" in script.string:
             try:
-                # Very naive extraction — real implementation would be smarter
                 start = script.string.find("{")
                 end = script.string.rfind("}") + 1
                 data = json.loads(script.string[start:end])
-                return _features_to_records(data, url, authority)
+                recs = _features_to_records(
+                    data, url, authority,
+                    administrator=administrator,
+                    administrator_url=administrator_url,
+                    administrator_phone=administrator_phone,
+                    administrator_contact=administrator_contact,
+                )
+                if recs:
+                    return recs
             except Exception:
                 continue
 
-    print("   No embedded GeoJSON found via page scan")
+    # 2. External script / link candidates that look like GIS data
+    for tag in soup.find_all(["script", "a", "link"]):
+        src = tag.get("src") or tag.get("href")
+        if not src:
+            continue
+        src_lower = src.lower()
+        if any(kw in src_lower for kw in ["units", "bmr", "rentals", "portfolio", "gis", "features", "geojson"]):
+            full_url = urljoin(base_url, src)
+            candidates.append(full_url)
+
+    # Deduplicate while preserving order
+    seen = set()
+    candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+
+    for candidate in candidates:
+        try:
+            recs = _parse_embedded_geojson_js(
+                candidate, authority,
+                administrator=administrator,
+                administrator_url=administrator_url,
+                administrator_phone=administrator_phone,
+                administrator_contact=administrator_contact,
+            )
+            if recs:
+                print(f"   Discovered GIS data at: {candidate}")
+                return recs
+        except Exception:
+            continue
+
+    # 3. Known municipal GIS discovery patterns
+    # Cupertino (gis.cupertino.org is a separate subdomain)
+    if "cupertino" in url.lower() and "bmr" in url.lower():
+        candidates = [
+            "https://gis.cupertino.org/bmr_units/units.js",
+            "https://gis.cupertino.org/bmr_units",
+        ]
+        for cand in candidates:
+            try:
+                recs = _parse_embedded_geojson_js(
+                    cand, authority,
+                    administrator=administrator,
+                    administrator_url=administrator_url,
+                    administrator_phone=administrator_phone,
+                    administrator_contact=administrator_contact,
+                )
+                if recs:
+                    print(f"   Discovered Cupertino GIS data at: {cand}")
+                    return recs
+            except Exception:
+                continue
+
+    print("   No usable GIS data discovered from page")
     return []
 
 
@@ -282,6 +416,10 @@ def _features_to_records(
     geojson: Dict[str, Any],
     source_url: str,
     authority: str,
+    administrator: str = "",
+    administrator_url: str = "",
+    administrator_phone: str = "",
+    administrator_contact: str = "",
 ) -> List[Dict[str, Any]]:
     """Convert a GeoJSON FeatureCollection into normalized property records."""
     if not isinstance(geojson, dict):
@@ -321,6 +459,17 @@ def _features_to_records(
             "notes": f"Source: municipal GIS layer ({source_url})",
             "confidence": "medium",
         }
+
+        # Attach delegated administrator info when known (e.g. Rise Housing for Cupertino)
+        if administrator:
+            rec["administrator"] = administrator
+            if administrator_url:
+                rec["administrator_url"] = administrator_url
+            if administrator_phone:
+                rec["administrator_phone"] = administrator_phone
+            if administrator_contact:
+                rec["administrator_contact"] = administrator_contact
+            rec["notes"] += f" | Administrator: {administrator}"
 
         # If we have geometry, we can store a rough location note
         geometry = feat.get("geometry", {}) if isinstance(feat, dict) else {}

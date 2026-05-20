@@ -5,7 +5,7 @@
 **Project Name:** Housing List Aggregator (Santa Clara County + Portable Skill)  
 **Status:** Alpha (First-class Adapters + Guardrails Established)  
 **Date:** 2026-05-18  
-**Last Updated:** 2026-05-21 (v0.8.1 release: first-class adapters, Scope & Guardrails, GIS pattern)  
+**Last Updated:** 2026-05-21 (v0.8.1 + post-release QA: operational no_public_list skipping + WARN logging, HouseKeys first-class adapter, registry helpers, 403/404 handling, doctor coverage)  
 **Owner:** Joshua Fielden (for local Santa Clara County nonprofits)  
 **Goal:** Create a modular, reusable "skill" that helps nonprofits deal with fragmented city-by-city housing waitlists.
 
@@ -38,7 +38,8 @@ As of v0.8.1 we have:
 - Dedicated high-quality adapters:
   - `john_stewart.py` (first-class, consolidated for direct + custom front-ends)
   - `gis_extraction.py` (first-class reference for municipal GIS + federated manager patterns)
-  - `housekeys.py`
+  - `housekeys.py` (first-class reference for delegated registration/notification portals)
+- Operational `no_public_list` enforcement in registry + CLI (with WARN logging to human outputs only)
 - Extraction layer (`extraction/`) with PDF table extraction and San José portal support
 - `current_full.csv` + `daily_summary.md` outputs
 - Deduplication across sources

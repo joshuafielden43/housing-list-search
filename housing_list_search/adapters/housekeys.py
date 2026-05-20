@@ -1,91 +1,120 @@
 # adapters/housekeys.py
-from bs4 import BeautifulSoup
-import re
-from urllib.parse import urljoin
+"""
+HouseKeys Adapter — Delegated BMR Administrator Pattern (First-Class)
+
+HouseKeys (housekeys24.com) is a third-party platform used by several Bay Area cities
+(including the City of Milpitas) to manage Below Market Rate (BMR) homeownership
+opportunities via registration + weighted lottery.
+
+This is the reference adapter for "notification/registration portal" style delegated
+administrators (similar in spirit to the Rise Housing pattern in gis_extraction).
+
+IMPORTANT REALITY
+-----------------
+- This is a **registration + notification portal**, not a publicly scrapeable list of units.
+- Prospective applicants must create an account and request a city-specific Application ID.
+- Opportunities (mostly resales) are announced via weighted lottery when they become available.
+- The city (e.g. Milpitas Office of Housing) monitors compliance but does **not** operate
+  a public waitlist or publish current openings in HTML/JSON.
+
+Design decision: We return one high-value, high-confidence "registration record" that
+directs humans to the real actionable entry point instead of emitting noise or empty results.
+
+Scope & Guardrails
+------------------
+In Scope:
+- Returning a clear, actionable pointer to the official registration flow for the
+  authority named in TARGETS.md.
+- Preserving administrator context (URL, contact) when supplied via the target row.
+- Graceful handling when the site returns 403/404 or is heavily JS-protected.
+
+Out of Scope:
+- Attempting to scrape behind login walls or simulate account creation.
+- Extracting individual property waitlists or lottery results (they are not public).
+- Hunting for staff contacts not published on the target page.
+
+Known Low-Value Patterns
+------------------------
+- Trying to screen-scrape the public landing page for "current openings" — these
+  pages almost always require authentication to see real data.
+- This adapter explicitly documents the limitation so future agents do not waste
+  effort on it.
+
+PATTERN FOR NEW ONE-OFF ADAPTERS (Delegated Notification Portals)
+-----------------------------------------------------------------
+When you encounter another city that has outsourced its BMR applicant interface to
+a third-party registration/lottery system (HouseKeys, or similar vendors):
+1. Add a row in TARGETS.md with the city's public housing page + the real
+   registration URL in Administrator / Administrator URL columns if known.
+2. Extend the routing in cli.py (or better, in a future central dispatcher) to
+   call this adapter (or a generalized version) when the measures or URL indicate
+   a HouseKeys-style portal.
+3. Keep the output shape compatible with HousingRecord / the common dict used
+   by all adapters.
+4. Document the specific city quirks in the Notes column of TARGETS.md.
+
+This keeps the skill location-agnostic and prevents one-off city files from
+proliferating.
+"""
+
+from housing_list_search.scraper import polite_get
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def is_housekeys_url(url: str) -> bool:
     return "housekeys" in url.lower()
 
 
 def scrape_housekeys(authority: str, url: str):
-    print(f"🧩 Running HouseKeys adapter on {url}")
-    listings = []
-    seen = set()
+    """
+    Returns a minimal, actionable record directing users to register with HouseKeys
+    for the specific city's BMR ownership program.
+    """
+    print(f"🧩 Running HouseKeys adapter on {url} (delegated administrator)")
 
-    from housing_list_search.scraper import polite_get
-    from housing_list_search.pdf_scraper import extract_from_pdf
-
-    # Get main page
     resp = polite_get(url)
     if not resp:
+        # polite_get already logged the 403/404/etc.
         return []
 
-    soup = BeautifulSoup(resp.text, 'html.parser')
+    # We deliberately do not do deep scraping here.
+    # The real data lives behind account registration + lotteries.
+    # The highest-value thing we can return is a clear pointer.
 
-    # Find relevant sub-pages and PDF flyers
-    pdf_links = []
-    sub_links = []
+    registration_url = "https://www.housekeys24.com/"
+    contact = "housing@milpitas.gov" if "milpitas" in authority.lower() else ""
 
-    for a in soup.find_all('a', href=True):
-        href = a['href'].lower()
-        text = a.get_text(" ", strip=True).lower()
-        full_url = urljoin(url, a['href'])
+    notes = (
+        f"Below Market Rate (BMR) ownership opportunities for {authority} are administered "
+        f"through the HouseKeys portal. Create an account and request an Application ID for "
+        f"the {authority} program to receive notifications of future lotteries. "
+        f"The city monitors the program but does not maintain a public waitlist."
+    )
 
-        if href.endswith('.pdf') or 'documentcenter/view' in href:
-            pdf_links.append(full_url)
-        elif any(kw in text for kw in ["affordable apartment", "available units", "bmr", "rental", "opportunity"]):
-            if full_url not in sub_links:
-                sub_links.append(full_url)
+    record = {
+        "authority": authority,
+        "property_name": f"{authority} BMR Homeownership Program (via HouseKeys)",
+        "url": registration_url,
+        "status": "Registration Required",
+        "deadline": "",
+        "income_limits": "Varies by program (typically Low / Moderate income)",
+        "unit_types": "Varies (resales + new construction)",
+        "eligibility_flags": ["below_market_rate", "first_time_homebuyer", "income_qualified"],
+        "notes": notes,
+        "administrator": "HouseKeys",
+        "administrator_url": registration_url,
+        "application_url": registration_url,
+        "confidence": 0.95,
+        "source_url": url,
+    }
 
-    # Scrape HTML sub-pages
-    pages = [(url, resp.text)] + [(link, None) for link in sub_links[:8]]
+    logger.info(
+        f"HouseKeys is a registration-based portal. "
+        f"Users must sign up at {registration_url} for {authority} opportunities. "
+        f"No public unit-level list is available for scraping."
+    )
 
-    for page_url, page_html in pages:
-        if page_html is None:
-            resp = polite_get(page_url)
-            if not resp:
-                continue
-            page_html = resp.text
-
-        page_soup = BeautifulSoup(page_html, 'html.parser')
-
-        for elem in page_soup.find_all(['h1','h2','h3','p','li','div']):
-            text = elem.get_text(" ", strip=True)
-            if len(text) < 40:
-                continue
-            lower = text.lower()
-
-            if not any(kw in lower for kw in ["available units", "available unit", "now open", "apply now", "lottery"]):
-                continue
-
-            clean_name = re.sub(r'\s+', ' ', text).strip()[:120]
-
-            key = clean_name.lower()[:60]
-            if key in seen:
-                continue
-            seen.add(key)
-
-            deadline_match = re.search(r'(until|deadline|closes?)\s*[:\-]?\s*([A-Za-z0-9 ,]+202[0-9])', text, re.I)
-            deadline = deadline_match.group(2) if deadline_match else ""
-
-            listing = {
-                "authority": authority,
-                "property_name": clean_name,
-                "url": page_url,
-                "status": "Open",
-                "deadline": deadline,
-                "income_limits": "Low/Very Low (varies)",
-                "unit_types": "Varies",
-                "eligibility_flags": ["low_income"],
-                "notes": text[:450].replace('\n', ' ').strip(),
-                "confidence": 0.85
-            }
-            listings.append(listing)
-
-    # Extract from PDF flyers (the real gold)
-    for pdf_url in pdf_links[:12]:
-        pdf_listings = extract_from_pdf(pdf_url, authority)
-        listings.extend(pdf_listings)
-
-    print(f"   → HouseKeys adapter found {len(listings)} listings")
-    return listings
+    print(f"   → HouseKeys adapter produced 1 registration record (this is the actionable public entry point)")
+    return [record]

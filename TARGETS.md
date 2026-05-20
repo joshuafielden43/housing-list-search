@@ -1,16 +1,18 @@
 # TARGETS.md – Housing Waitlist Targets
 County: Santa Clara County, California
-Last Discovery Run: 2026-05-18
+Last Discovery Run: 2026-05-21
 Scope: full (human review required)
 
-City/Authority | URL | Notes | Scraping Measures | Priority | Last Seen
----|---|---|---|---|---
+**No Public List Entries**: Rows with `no_public_list` in the Scraping Measures column are intentionally documented to prevent the daily run / discovery process from repeatedly researching the same cities that lack structured public BMR lists, waitlists, or extractable portals. This saves tokens and effort. When policy or publication changes and a usable public source appears, a human simply edits or removes the `no_public_list` marker (or the row) and normal automated discovery/extraction can proceed for that target.
+
+City/Authority | URL | Notes | Scraping Measures | Priority | Last Seen | Administrator | Administrator URL | Administrator Phone | Administrator Contact
+---|---|---|---|---|---|---|---|---|---
 Santa Clara County Housing Authority (SCCHA) | https://www.scchousingauthority.org/ | Main Section 8 / Interest Lists | playwright_needed, robots_respect | High | 2026-05-18
 John Stewart Company (SCCHA properties) | https://jscosccha.com/ | Property waitlists & lotteries | native_requests, table_based | High | 2026-05-18
 City of San José Affordable Housing Portal | https://housing.sanjoseca.gov/ | Applications + map | playwright_needed, js_heavy | High | 2026-05-18
 Santa Clara County Housing Authority (SCCHA) Properties Directory | https://www.scchousingauthority.org/section-8/for-participants/for-new-applicants/properties-list/ | SCCHA custom front-end (mostly John Stewart properties) - handled by john_stewart adapter | native_requests, html_cards | High | 2026-05-20
 City of Campbell | https://www.campbellca.gov/635/Below-Market-Rate-Program | BMR Program | native_requests, check_for_pdfs | Medium | 2026-05-18
-City of Cupertino | https://www.cupertino.gov/Your-City/Departments/Community-Development/Housing/BMR-Program-Overview | BMR Program | native_requests, check_for_pdfs | Medium | 2026-05-18
+City of Cupertino | https://www.cupertino.gov/Your-City/Departments/Community-Development/Housing/BMR-Program-Overview | BMR Program (GIS + federated managers via Rise Housing) - uses gis_extraction adapter | gis, native_requests | Medium | 2026-05-21 | Rise Housing | https://www.risehousing.com/applicants-cupertino-bmr-rental | (415) 301-5448 | cupertino@risehousing.com
 City of Gilroy | https://www.cityofgilroy.org/279/Housing-and-Community-Services | Housing Services | native_requests | Medium | 2026-05-18
 City of Los Altos | https://www.losaltosca.gov/212/Affordable-Housing | Affordable Housing | native_requests | Medium | 2026-05-18
 City of Los Gatos | https://www.losgatosca.gov/345/Housing-Programs | Housing Programs | native_requests | Medium | 2026-05-18
@@ -18,4 +20,8 @@ City of Morgan Hill | https://www.morganhill.ca.gov/629/Housing | Housing Progra
 City of Mountain View | https://www.mountainview.gov/our-city/departments/housing/affordable-housing-536 | Affordable Housing | native_requests | Medium | 2026-05-18
 City of Palo Alto | https://www.cityofpaloalto.org/Departments/Community-Services/Housing | Housing Programs | native_requests | Medium | 2026-05-18
 City of Santa Clara | https://www.santaclaraca.gov/services/housing-community-services | Housing Services | native_requests | Medium | 2026-05-18
-City of Sunnyvale | https://www.sunnyvale.ca.gov/homes-streets-and-property/housing | Rental Programs | native_requests | Medium | 2026-05-18
+City of Sunnyvale | https://www.sunnyvale.ca.gov/homes-streets-and-property/housing/rental-programs | Subsidized & Special Needs Housing (via published document /showdocument/370) - handled by cdn adapter | cdn | Low | 2026-05-21
+City of Los Altos Hills | https://www.losaltoshills.ca.gov/178/Planning-Department | **NO PUBLIC STRUCTURED LIST** - No BMR waitlist, lottery, or centralized application portal. Affordable contribution has historically been via ADUs (many below-market but not deed-restricted). Inclusionary Housing Ordinance under active development/review as of 2026 (6th Cycle Housing Element). Monitor Housing Element and Planning Commission updates for future public lists. | no_public_list,monitor_housing_element | Low | 2026-05-21 |  |  |  | 
+Town of Monte Sereno | https://www.montesereno.org/ | **NO PUBLIC STRUCTURED LIST** - No city-run BMR list, waitlist, lottery, or application portal. Primary below-market supply is via ADUs (private listings only; no central registry). Limited rezoning/SB 10 activity but no active inclusionary producing public lotteries. Monitor Housing Element and Planning updates. | no_public_list,monitor_housing_element | Low | 2026-05-21 |  |  |  | 
+City of Saratoga | https://www.saratoga.ca.us/681/Housing | **NO PUBLIC STRUCTURED LIST** - Maintains Inclusionary Housing Ordinance that produces BMR units from qualifying projects. BMR program administration is delegated to a contractor. City directs residents to Housing Trust Silicon Valley (homeownership assistance) and Santa Clara County Housing Authority (vouchers/interest lists). Individual project opportunities are handled by developers or property managers. No city-operated central portal or standing waitlist. | no_public_list,delegated_administrator,monitor_housing_element | Low | 2026-05-21 | (contractor via Housing Trust Silicon Valley) | https://housingtrustsv.org/ |  | 
+City of Milpitas | https://www.milpitas.gov/1303/Below-Market-Rate-BMR-Homeownership-Prog | **OWNERSHIP BMR: Delegated administrator (HouseKeys)**. City Office of Housing monitors the Below Market Rate program but the applicant-facing registration, notifications, and weighted lotteries for ownership BMR opportunities are handled by HouseKeys. Register at https://www.housekeys24.com/ (request Milpitas Application ID). Large BART/Great Mall TOD pipeline (~7,000 unit capacity, 15%+ inclusionary requirement, specific projects such as EBALDC 400-unit affordable) feeds units into this system. **Rentals**: City explicitly states it does not administer affordable rental properties or maintain a vacancy list — use regional portal https://housingbayarea.mtc.ca.gov/ and direct property contact. | delegated_administrator,housekeys,notification_based | Medium | 2026-05-21 | HouseKeys | https://www.housekeys24.com/ |  | housing@milpitas.gov
