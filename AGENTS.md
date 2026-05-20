@@ -34,7 +34,7 @@ This was documented after repeated frustration during the housing-list-search de
 - Operational `no_public_list` handling with human-visible documentation.
 - Strong emphasis on clean, quiet logging and "PATTERN FOR NEW USE CASES" documentation in every adapter.
 
-Last updated: 2026-05-20 (post v0.8.2 release + contract alignment)
+Last updated: 2026-05-22 (post Gilroy cdn DocumentCenter availability list improvements — v0.8.4)
 
 ## Adapter Development Standards
 

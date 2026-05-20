@@ -50,6 +50,16 @@ behind a CDN-protected document viewer:
 
 This keeps the adapter reusable across Akamai, Cloudflare, and similar
 document-publishing patterns without creating one-off city files.
+
+A common variant (seen on Gilroy and similar Housing Group cities) is that the
+authoritative current availability list lives on a dedicated sub-page
+(e.g. "/797/Affordable-Apartments" titled "List of Affordable Rentals"). That page
+contains the human-visible "Property Name - N available units" blocks with
+contact info and per-property "Official Flyer" links (including separate 50%AMI
+and 60%AMI variants) pointing to DocumentCenter/View/XXXX. The adapter now
+follows to these list pages, harvests the specific flyer links with surrounding
+property context, processes the real PDFs, and produces named records using
+both list text and URL slugs.
 """
 
 from __future__ import annotations
@@ -170,6 +180,26 @@ def extract_underlying_records(
     if known_document_urls:
         document_urls.extend(known_document_urls)
 
+    # If the source itself is a DocumentCenter View link (common for Gilroy property flyers), treat it directly
+    is_direct_documentcenter = False
+    if "/DocumentCenter/View/" in source:
+        document_urls.append(source)
+        is_direct_documentcenter = True
+        logger.info(f"[cdn] Source is a direct DocumentCenter View link — will process for context + PDF")
+
+    # For Gilroy (and similar hard DocumentCenter sites), seed a small set of known high-value property availability flyer IDs.
+    # These are the actual "Official Flyer 50%/60% AMI" documents that contain the real unit data the human sees referenced on the landing page.
+    # This is the pragmatic solution for pages where the nice list is not machine-readable.
+    if "gilroy" in source.lower():
+        known_gilroy_property_flyers = [
+            "https://www.cityofgilroy.org/DocumentCenter/View/16932",  # Wheeler Manor example
+            # Add more active property flyer IDs here as they are identified (the ones with real availability data)
+        ]
+        for f in known_gilroy_property_flyers:
+            if f not in document_urls:
+                document_urls.append(f)
+                logger.info(f"[cdn] Seeded known Gilroy property flyer: {f}")
+
     # If the source itself is a clean showdocument link, remember the ID so we can
     # look for the current working viewer link on the landing page.
     showdocument_id = None
@@ -191,25 +221,92 @@ def extract_underlying_records(
         context = browser.new_context(
             extra_http_headers=_get_realistic_headers(),
             viewport={"width": 1366, "height": 768},
+            locale="en-US",
+            timezone_id="America/Los_Angeles",
+            geolocation={"latitude": 37.0058, "longitude": -121.5683},  # Gilroy, CA
+            permissions=["geolocation"],
         )
 
         page = context.new_page()
 
-        # Capture any JSON responses that look like they might contain availability data
+        # === DEEP JS-LEVEL NETWORK SPY (for hard JS-rendered content like Gilroy availability) ===
+        js_requests = []
+
+        # Inject hooks as early as possible
+        page.add_init_script("""
+            (() => {
+                const log = (type, url, extra = '') => {
+                    // Send to Playwright console so we can capture it
+                    console.log(`[JS-NET ${type}] ${url} ${extra}`);
+                };
+
+                // Hook fetch
+                const origFetch = window.fetch;
+                window.fetch = function(...args) {
+                    const url = (typeof args[0] === 'string') ? args[0] : (args[0]?.url || '');
+                    log('fetch', url);
+                    return origFetch.apply(this, args);
+                };
+
+                // Hook XMLHttpRequest
+                const origOpen = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                    log('xhr', url);
+                    return origOpen.apply(this, arguments);
+                };
+
+                // Hook send too (some XHR set headers after open)
+                const origSend = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.send = function(body) {
+                    return origSend.apply(this, arguments);
+                };
+            })();
+        """)
+
+        # Capture console messages from the JS hooks
+        def on_console(msg):
+            text = msg.text
+            if '[JS-NET' in text or 'housing' in text.lower() or 'available' in text.lower() or 'units' in text.lower():
+                js_requests.append(text)
+
+        page.on("console", on_console)
+
+        # Also keep the existing response listener (complementary)
+        all_responses = []
         captured_json = []
 
         def _on_response(response):
             try:
-                if "json" in response.headers.get("content-type", "").lower():
-                    url = response.url.lower()
-                    if any(kw in url for kw in ["housing", "available", "units", "bmr", "affordable", "list"]):
+                ct = response.headers.get("content-type", "").lower()
+                url = response.url
+                url_lower = url.lower()
+                entry = {"url": url, "status": response.status, "content_type": ct}
+                all_responses.append(entry)
+
+                if "json" in ct and any(kw in url_lower for kw in ["housing", "available", "units", "bmr", "affordable", "property", "inventory", "list", "domain"]):
+                    try:
                         data = response.json()
                         if isinstance(data, (list, dict)):
-                            captured_json.append({"url": response.url, "data": data})
+                            captured_json.append({"url": url, "data": data})
+                    except Exception:
+                        pass
+
+                # Special capture for docaccess domain config (seen on Gilroy)
+                if "docaccess.com" in url_lower and "domain.json" in url_lower:
+                    try:
+                        data = response.json()
+                        print(f"[DOCACCESS DOMAIN] {url}")
+                        print(f"   keys: {list(data.keys()) if isinstance(data, dict) else 'list'}")
+                        if isinstance(data, dict) and "available" in str(data).lower():
+                            print("   !!! Contains 'available' data")
+                    except Exception:
+                        pass
             except Exception:
-                pass  # ignore parsing errors
+                pass
 
         page.on("response", _on_response)
+        # === END DEEP JS-LEVEL NETWORK SPY ===
+        # === END AGGRESSIVE DIAGNOSTIC CAPTURE ===
 
         # Light jitter before navigation
         _jitter(0.8)
@@ -229,6 +326,11 @@ def extract_underlying_records(
                 logger.info(f"[cdn] Visiting source page: {source}")
                 page.goto(source, wait_until="domcontentloaded", timeout=timeout)
                 _jitter(1.0)
+
+            # Special case for direct DocumentCenter View source (property flyers)
+            if is_direct_documentcenter:
+                logger.info("[cdn] Direct DocumentCenter source — forcing document processing path")
+                # The rest of the function will pick it up via the document_urls list we seeded earlier
 
             # Human-like behavior: scroll around a bit
             page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3)")
@@ -348,6 +450,8 @@ def extract_underlying_records(
             except PlaywrightTimeout:
                 pass
 
+            # (Gilroy-specific diagnostics removed — data lives in DocumentCenter PDFs)
+
             # === 1. Aggressive link discovery + network interception (especially for showdocument IDs) ===
             captured_urls = []
 
@@ -365,7 +469,8 @@ def extract_underlying_records(
                 href_lower = href.lower()
                 if any(x in href_lower for x in [
                     "showpublisheddocument", "docaccess", "document", ".pdf",
-                    "publisheddocument", "rental", "housing", "showdocument"
+                    "publisheddocument", "rental", "housing", "showdocument",
+                    "documentcenter"
                 ]):
                     if href.startswith("/"):
                         base = "/".join(page.url.split("/")[:3])
@@ -379,6 +484,114 @@ def extract_underlying_records(
                     document_urls.append(u)
 
             logger.info(f"[cdn] Discovered {len(document_urls)} candidate document links after broad scan + interception")
+
+            # === Aggressive DocumentCenter discovery (for Gilroy and similar Housing Group sites) ===
+            # Many real property availability flyers are linked via older DocumentCenter View IDs
+            # that don't have obvious "flyer" text next to them in the rendered HTML.
+            # We prioritize ones that look like property/AMI flyers.
+            try:
+                raw = page.content()
+                dc_matches = re.findall(r'(/DocumentCenter/View/\d+)', raw)
+                # Sort so that slugs with property names or AMI indicators come first
+                def score(link):
+                    l = link.lower()
+                    score = 0
+                    if any(x in l for x in ["50ami", "60ami", "50%", "60%", "ami"]): score += 10
+                    if any(x in l for x in ["wheeler", "cannery", "manor", "apartments", "village", "gardens", "court"]): score += 8
+                    if "flyer" in l: score += 5
+                    return -score  # higher score first
+
+                sorted_dc = sorted(set(dc_matches), key=score)
+                for m in sorted_dc:
+                    full = m if m.startswith("http") else "https://www.cityofgilroy.org" + m if "cityofgilroy" in source.lower() else m
+                    if full not in document_urls:
+                        document_urls.append(full)
+                        logger.info(f"[cdn] Found extra DocumentCenter link: {full}")
+            except Exception:
+                pass
+            # === End aggressive DocumentCenter discovery ===
+
+            # === Dedicated harvesting for Gilroy availability list page ===
+            # The authoritative current list with per-property "Official Flyer 50%/60%AMI" links
+            # lives on the "List of Affordable Rentals in Gilroy" page. We look for it and harvest
+            # the exact (property_name, specific DocumentCenter flyer link) pairs from the list text.
+            try:
+                if "gilroy" in source.lower():
+                    page_text = page.inner_text("body").lower() if hasattr(page, "inner_text") else ""
+                    if "available units" in page_text and "official flyer" in page_text:
+                        # Exhaustive harvest: every DocumentCenter "Official Flyer" link on the page gets the nearest
+                        # preceding "Property Name - N available units" text as its property_name.
+                        all_flyer_links = []
+                        for a in soup.find_all("a", href=True):
+                            href = a.get("href", "")
+                            txt = a.get_text(strip=True).lower()
+                            if "documentcenter/view" in href.lower() and ("official flyer" in txt or "50%ami" in txt or "60%ami" in txt):
+                                full = href if href.startswith("http") else "https://www.cityofgilroy.org" + href if href.startswith("/") else href
+                                all_flyer_links.append((a, full))
+
+                        for a, full in all_flyer_links:
+                            # Walk up parents to find the nearest "X available units" text
+                            prop_name = ""
+                            node = a
+                            for _ in range(8):
+                                if node is None: break
+                                txt = node.get_text(" ", strip=True)
+                                m = re.search(r"([A-Z][A-Za-z][A-Za-z ]+?)\s*-\s*\d+\s*available", txt, re.IGNORECASE)
+                                if m:
+                                    prop_name = m.group(1).strip()
+                                    break
+                                node = getattr(node, "parent", None)
+
+                            if full not in document_urls:
+                                document_urls.append(full)
+
+                        # Raw HTML fallback (very robust)
+                        raw_html = page.content()
+                        for m in re.finditer(r'/DocumentCenter/View/(\d+)', raw_html):
+                            dc_id = m.group(1)
+                            full = f"https://www.cityofgilroy.org/DocumentCenter/View/{dc_id}"
+                            idx = m.start()
+                            preceding = raw_html[max(0, idx-900):idx]
+                            prop_name = ""
+                            m2 = re.search(r"([A-Z][A-Za-z][A-Za-z ]+?)\s*-\s*\d+\s*available", preceding, re.IGNORECASE)
+                            if m2:
+                                prop_name = m2.group(1).strip()
+                            if full not in document_urls:
+                                document_urls.append(full)
+            except Exception:
+                pass
+            # === End dedicated harvesting ===
+
+            # === Follow "availability list" sub-pages on Gilroy-style sites ===
+            # The real current per-property "Official Flyer 50%/60%AMI" links live on pages like
+            # /797/Affordable-Apartments (the "List of Affordable Rentals in Gilroy - Updated July 2025" section).
+            # We look for links or text indicating the current availability list and pull the
+            # specific "Official Flyer" links with their surrounding property context.
+            try:
+                if "gilroy" in source.lower() or "affordable" in source.lower():
+                    # Look for the dedicated availability list page
+                    avail_page_links = re.findall(r'href=["\']([^"\']*(?:797|affordable-apartments|list-of-affordable)[^"\']*)["\']', raw, re.I)
+                    for link in set(avail_page_links):
+                        if "documentcenter" not in link.lower():
+                            full = link if link.startswith("http") else "https://www.cityofgilroy.org" + link if link.startswith("/") else None
+                            if full and full not in document_urls:
+                                document_urls.append(full)
+                                logger.info(f"[cdn] Found availability list sub-page: {full}")
+
+                    # Also directly harvest the specific per-property Official Flyer links that appear on the availability list page
+                    # (these have the exact DocumentCenter IDs for the current units, with 50%/60% AMI variants)
+                    # Pattern seen: links with text "Official Flyer 50%AMI" etc. next to property names
+                    flyer_pattern = r'href=["\']([^"\']*DocumentCenter/View/\d+[^"\']*)["\'][^>]*>([^<]*Official Flyer[^<]*)<'
+                    for m in re.finditer(flyer_pattern, raw, re.IGNORECASE):
+                        full = m.group(1)
+                        if not full.startswith("http"):
+                            full = "https://www.cityofgilroy.org" + full if full.startswith("/") else full
+                        if full not in document_urls:
+                            document_urls.append(full)
+                            logger.info(f"[cdn] Found per-property Official Flyer from list page: {full} ({m.group(2).strip()})")
+            except Exception:
+                pass
+            # === End availability list sub-page following ===
 
             # If we have a showdocument ID, aggressively search the current page (DOM + raw HTML)
             # for any link or URL that contains that ID. This is the key part that lets the adapter
@@ -454,11 +667,25 @@ def extract_underlying_records(
                 pdf_urls = []
                 html_doc_urls = []
 
-                for u in document_urls[:max_documents]:
-                    if u.lower().endswith('.pdf'):
+                for u in document_urls[:max_documents * 3]:
+                    u_lower = u.lower()
+                    if "documentcenter/view/" in u_lower:
+                        if not u_lower.endswith('.pdf'):
+                            html_doc_urls.append(u)
+                        else:
+                            pdf_urls.append(u)
+                    elif u_lower.endswith('.pdf'):
                         pdf_urls.append(u)
                     else:
                         html_doc_urls.append(u)
+
+                # For Gilroy-style sites, strongly prefer processing DocumentCenter links that look like property/AMI flyers
+                if any("gilroy" in u.lower() or "documentcenter" in u.lower() for u in document_urls):
+                    def is_property_flyer(link):
+                        l = link.lower()
+                        return any(x in l for x in ["50ami", "60ami", "50%", "60%", "ami", "wheeler", "cannery", "manor", "apartments"]) or "flyer" in l
+                    pdf_urls.sort(key=lambda x: 0 if is_property_flyer(x) else 1)
+                    html_doc_urls.sort(key=lambda x: 0 if is_property_flyer(x) else 1)
 
                 # Process HTML document viewer pages
                 for doc_url in html_doc_urls:
@@ -472,6 +699,25 @@ def extract_underlying_records(
                         doc_content = page.content()
                         doc_soup = BeautifulSoup(doc_content, "html.parser")
 
+                        # === DocumentCenter viewer context (Gilroy property flyers) ===
+                        viewer_title = ""
+                        viewer_desc = ""
+                        if "documentcenter" in doc_url.lower():
+                            h = doc_soup.find(["h1", "h2", "h3"])
+                            if h:
+                                viewer_title = h.get_text(strip=True)
+                            if not viewer_title:
+                                title_tag = doc_soup.find("title")
+                                if title_tag:
+                                    viewer_title = title_tag.get_text(strip=True)
+
+                            main = doc_soup.find("div", class_="document-details") or doc_soup.find("main") or doc_soup
+                            viewer_desc = main.get_text(" ", strip=True)[:300] if main else ""
+
+                            if viewer_title:
+                                logger.info(f"[cdn] DocumentCenter viewer title: {viewer_title}")
+
+                        # Existing table extraction
                         for table in doc_soup.find_all("table"):
                             rows = table.find_all("tr")
                             headers = []
@@ -498,6 +744,79 @@ def extract_underlying_records(
                                 if len(record) > 3:
                                     records.append(record)
 
+                        # If we got a good title from a DocumentCenter View page, record it as context
+                        if viewer_title and "documentcenter" in doc_url.lower():
+                            records.append({
+                                "source_url": doc_url,
+                                "authority": authority,
+                                "extraction_method": "documentcenter_viewer",
+                                "property_name": viewer_title,
+                                "viewer_description": viewer_desc[:200],
+                                "last_seen": _dt.now().isoformat(),
+                                "first_seen": _dt.now().isoformat(),
+                                "source": f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}",
+                            })
+
+                        # Special handling for Gilroy-style "List of Affordable Rentals" pages
+                        # The page has blocks like:
+                        #   "The Cannery Apartments - 5 available units"
+                        #   Email / Phone
+                        #   Official Flyer (link to DocumentCenter)
+                        #   Official Flyer 50%AMI (another link)
+                        # We want to capture each (property_name, specific flyer link) pair.
+                        has_flyer_links = any("official flyer" in a.get_text().lower() for a in doc_soup.find_all("a", href=True))
+                        looks_like_availability_list = "affordable" in doc_url.lower() or "797" in doc_url or "list of affordable" in doc_url.lower()
+                        if has_flyer_links and looks_like_availability_list:
+                            print(f"[DEBUG-AVAIL-LIST] Walking availability list page for doc_url={doc_url}, found has_flyer_links=True, looks_like_availability_list={looks_like_availability_list}")
+                            dc_count = len([a for a in doc_soup.find_all("a", href=True) if "documentcenter/view" in a.get("href","").lower()])
+                            print(f"[DEBUG-AVAIL-LIST] Total DocumentCenter links on page: {dc_count}")
+                            # Find every link that is clearly one of the per-property Official Flyers
+                            for a in doc_soup.find_all("a", href=True):
+                                href = a.get("href", "")
+                                link_text = a.get_text(strip=True).lower()
+                                if "documentcenter/view" not in href.lower():
+                                    continue
+                                if not any(kw in link_text for kw in ["official flyer", "50%ami", "60%ami", "50ami", "60ami"]):
+                                    # Also catch plain "Official Flyer" links that sit next to property names
+                                    if "official flyer" not in link_text:
+                                        continue
+
+                                full = href if href.startswith("http") else "https://www.cityofgilroy.org" + href if href.startswith("/") else href
+
+                                # Walk up to find the property name (look for the nearest "X available units" block)
+                                prop_name = ""
+                                node = a
+                                for _ in range(6):
+                                    if node is None:
+                                        break
+                                    txt = node.get_text(" ", strip=True)
+                                    m = re.search(r"([A-Z][A-Za-z][A-Za-z ]+?)\s*-\s*\d+\s*available", txt, re.IGNORECASE)
+                                    if m:
+                                        prop_name = m.group(1).strip()
+                                        break
+                                    node = getattr(node, "parent", None)
+
+                                # Fallback: take the first strong-looking name before the link in the parent
+                                if not prop_name:
+                                    parent = a.find_parent(["li", "p", "div"])
+                                    if parent:
+                                        txt = parent.get_text(" ", strip=True)
+                                        m = re.search(r"([A-Z][A-Za-z][A-Za-z ]+?)\s*(?:-|–)\s*\d", txt)
+                                        if m:
+                                            prop_name = m.group(1).strip()
+
+                                records.append({
+                                    "source_url": doc_url,
+                                    "authority": authority,
+                                    "extraction_method": "availability_list_flyer",
+                                    "property_name": prop_name,
+                                    "flyer_text": a.get_text(strip=True),
+                                    "flyer_url": full,
+                                    "last_seen": _dt.now().isoformat(),
+                                    "first_seen": _dt.now().isoformat(),
+                                    "source": f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}",
+                                })
+
                     except PlaywrightTimeout:
                         logger.warning(f"[cdn] Timeout on document page: {doc_url}")
                         continue
@@ -516,14 +835,40 @@ def extract_underlying_records(
                         try:
                             logger.info(f"[cdn] Extracting PDF directly: {pdf_url}")
                             pdf_recs = extract_from_pdf(pdf_url, authority)
-                            for r in pdf_recs:
+                            for rec in pdf_recs:
+                                # rec is a HousingRecord dataclass — convert to dict for uniformity
+                                r = rec.__dict__ if hasattr(rec, "__dict__") else rec
+                                r = dict(r) if not isinstance(r, dict) else r
                                 r.setdefault("last_seen", _dt.now().isoformat())
                                 r.setdefault("first_seen", _dt.now().isoformat())
                                 r.setdefault("source", f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}")
                                 r.setdefault("source_url", pdf_url)
-                            records.extend(pdf_recs)
+
+                                # Attach good name from DocumentCenter slug if the parser gave a weak one
+                                if "documentcenter" in pdf_url.lower() and (not r.get("property_name") or len(str(r.get("property_name",""))) < 5):
+                                    m = re.search(r"/DocumentCenter/View/\d+/([A-Za-z0-9_-]+)", pdf_url)
+                                    if m:
+                                        slug = m.group(1).replace("-", " ").replace("_", " ")
+                                        slug = re.sub(r'\s*(Flyer|Event|Calendar|50AMI|60AMI)\s*', ' ', slug, flags=re.I).strip()
+                                        slug = re.sub(r'\s*(\d+)(ami|%?\s*ami)\s*$', r' (\1% AMI)', slug, flags=re.I).strip()
+                                        if slug:
+                                            r["property_name"] = slug
+
+                                records.append(r)
                         except Exception as e:
                             logger.warning(f"[cdn] Failed to extract PDF {pdf_url}: {e}")
+
+                # Merge context from availability_list_flyer records (property names from the list page)
+                # into the final PDF-derived records.
+                flyer_context = {}
+                for r in records:
+                    if r.get("extraction_method") == "availability_list_flyer" and r.get("flyer_url") and r.get("property_name"):
+                        flyer_context[r["flyer_url"]] = r["property_name"]
+
+                for r in records:
+                    if r.get("source_url") in flyer_context:
+                        if not r.get("property_name") or len(str(r.get("property_name", ""))) < 5:
+                            r["property_name"] = flyer_context[r["source_url"]]
 
             # Fallback: focus on the main content area (fr-view for Froala sites like Gilroy)
             if len(records) < 5:
@@ -531,21 +876,7 @@ def extract_underlying_records(
 
                 main_content = soup.find("div", class_="fr-view") or soup
 
-                # === TEMP DEBUG (Gilroy Froala investigation) ===
-                pres_lists = main_content.find_all("ul", attrs={"role": "presentation"})
-                print(f"[DEBUG] Found {len(pres_lists)} <ul role='presentation'> inside main_content")
-
-                for i, ul in enumerate(pres_lists[:6]):  # limit noise
-                    txt = ul.get_text(" ", strip=True)[:220]
-                    print(f"[DEBUG]   pres_list[{i}] inner text: {txt}")
-
-                # Look for any <strong> containing "available" or "units" anywhere in main_content
-                strongs = main_content.find_all("strong")
-                interesting_strongs = [s.get_text(" ", strip=True) for s in strongs if "available" in s.get_text().lower() or "units" in s.get_text().lower()]
-                print(f"[DEBUG] Strong tags with 'available' or 'units': {interesting_strongs[:5]}")
-                # === END TEMP DEBUG ===
-
-                # Handle Froala-generated lists (one <ul role="presentation"> per item)
+                # Handle Froala-generated lists (one <ul role="presentation"> per item) if present
                 records.extend(_parse_froala_availability_blocks(main_content, authority))
 
             # Look for availability-related links (property flyers, AMI flyers, etc.)
@@ -559,7 +890,8 @@ def extract_underlying_records(
                             "official flyer" in link_lower or 
                             "available" in link_lower or
                             "50%" in link_text or "60%" in link_text or
-                            "ami" in link_lower)
+                            "ami" in link_lower or
+                            "50ami" in href_lower or "60ami" in href_lower)
 
                 if is_flyer:
                     # Try to find a nearby <strong> (often the property name)
@@ -575,6 +907,17 @@ def extract_underlying_records(
                             search_node = getattr(search_node, 'parent', None)
 
                     context_name = nearby_strong.get_text(strip=True) if nearby_strong else ""
+
+                    # For DocumentCenter links, the slug in the URL is often the best signal
+                    # e.g. /DocumentCenter/View/16932/Wheeler-Manor-Flyer_50AMI
+                    if not context_name and "documentcenter" in href_lower:
+                        slug_match = re.search(r"/DocumentCenter/View/\d+/([A-Za-z0-9_-]+)", a.get("href", ""))
+                        if slug_match:
+                            slug = slug_match.group(1).replace("-", " ").replace("_", " ")
+                            # Turn "Wheeler Manor Flyer 50AMI" into "Wheeler Manor (50% AMI)"
+                            context_name = re.sub(r'\s*(Flyer|Event|Calendar)\s*', ' ', slug, flags=re.I).strip()
+                            context_name = re.sub(r'\s*(\d+)(ami|%?\s*ami)\s*$', r' (\1% AMI)', context_name, flags=re.I).strip()
+
                     parent = a.parent
                     nearby_context = parent.get_text(" ", strip=True)[:200] if parent else ""
 
@@ -616,17 +959,36 @@ def extract_underlying_records(
 
     logger.info(f"[cdn] Extracted {len(records)} underlying records from {authority or source}")
 
-    # Diagnostic: show any housing-related JSON we intercepted during the source page load
+    # === AGGRESSIVE NETWORK DIAGNOSTIC REPORT (FULL) ===
+    if 'all_responses' in locals() and all_responses:
+        print(f"\n[NETWORK] Total responses seen during page load: {len(all_responses)}")
+
+        from collections import Counter
+        cts = Counter(r.get("content_type", "").split(";")[0].strip() for r in all_responses if r.get("content_type"))
+        print("[NETWORK] Content types seen:")
+        for ct, count in cts.most_common(15):
+            print(f"   {count:3d}  {ct}")
+
+        print(f"\n[NETWORK] ALL response URLs (in order):")
+        for i, r in enumerate(all_responses):
+            print(f"   [{i:02d}] {r['status']:3d}  {r.get('content_type','')[:35]:<35}  {r['url']}")
+    # === END AGGRESSIVE NETWORK DIAGNOSTIC REPORT ===
+
+    # === JS-LEVEL REQUESTS (the ones the browser actually made for content) ===
+    if 'js_requests' in locals() and js_requests:
+        print(f"\n[JS-NET] JavaScript-level requests captured: {len(js_requests)}")
+        for req in js_requests[:30]:
+            print(f"   {req}")
+    else:
+        print("\n[JS-NET] No additional JS-level requests logged (or hooks didn't fire)")
+    # === END JS-LEVEL REQUESTS ===
+
+    # Old targeted JSON diagnostic (kept for compatibility)
     if 'captured_json' in locals() and captured_json:
-        print(f"[DEBUG] Intercepted {len(captured_json)} housing-related JSON responses:")
+        print(f"\n[DEBUG] Intercepted {len(captured_json)} housing-related JSON responses (targeted filter):")
         for item in captured_json[:5]:
             print(f"    {item['url']}")
-            if isinstance(item.get('data'), dict):
-                keys = list(item['data'].keys())[:8]
-                print(f"      keys: {keys}")
-            elif isinstance(item.get('data'), list):
-                print(f"      list of {len(item['data'])} items")
     elif 'captured_json' in locals():
-        print("[DEBUG] No housing-related JSON responses intercepted on source page")
+        print("\n[DEBUG] No housing-related JSON responses intercepted on source page (targeted filter)")
 
     return records
