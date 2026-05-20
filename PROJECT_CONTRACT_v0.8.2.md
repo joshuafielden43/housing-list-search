@@ -185,8 +185,139 @@ This document now accurately describes the delivered v0.8.2 product.
 - [x] PROJECT_CONTRACT, AGENTS.md, and code in sync
 - [x] Successful zero + clean re-run producing usable 74-record output
 
-**Next phase:** Build on this solid spine (trash compactor, higher-frequency deltas, broader Housing Group coverage, replication guide).
+**Current Working Contract:** Section 7 (“Database Management Layer”) is now the active specification. The DB management tooling was implemented in v0.8.3 and all future changes must stay aligned with it.
+
+**v0.8.3 Release:** Database Management Layer (Section 7) fully implemented + unit tested. Foundation for real validation work is now in place.
+
+**Next phase:** City-by-city human verification using the new `db_manage.py` tooling, followed by trash compactor implementation.
 
 ---
+
+## 7. Database Management Layer (Foundation for Validation & Trash Compactor)
+
+### Purpose
+As the project moves into disciplined city-by-city human validation, repeated pull/compare/reset cycles, and eventual delta/trash-compactor work, a lightweight, purpose-built database management capability is required.
+
+This is **not** a general-purpose DBA tool. It is a bespoke “DBA in a box” that makes the most common operational and validation pain points safe and scriptable.
+
+### Core Principles
+- Clear separation between **safe diagnostics** and **intentional management**.
+- Human remains in control; destructive actions require explicit confirmation.
+- Conservative defaults with easy-to-reach knobs.
+- All operations are idempotent where possible.
+- Documentation and tooling must be usable by both the primary developer and future data analysts/nonprofit staff.
+
+### Responsibility Split
+
+**`scripts/db_manage.py`** (Management Tool)
+- All structural and data-changing operations: schema initialization, database drop/reset, pruning, snapshots, restores, and run history inspection.
+- This is the “sharp tools” script. Humans and scripts call it when they *intend* to change state.
+
+**`scripts/doctor.py`** (Diagnostic & Safe Recovery Tool)
+- First-line tool for health checks and basic recovery.
+- May automatically perform **super-safe, non-destructive** actions (e.g., SQLite checkpoint replay after a hard stop, hot backup of the live `.db` file, basic integrity verification).
+- Must **never** perform schema repairs, migrations, or data pruning.
+- When structural or management action is required, Doctor must clearly state the problem and direct the user to `db_manage.py` plus the relevant README section.
+
+### Configuration
+Human-tunable policy lives in:
+```
+~/.housing-list-search/settings.yaml
+```
+
+Example (initial):
+
+```yaml
+database:
+  prune:
+    default_not_seen_days: 45
+```
+
+The default is intentionally conservative. It can be lowered over time as validation confidence increases. CLI flags always override the configured default.
+
+### Prune Policy (Priority Order)
+Pruning follows this strict order and is always driven by the existing freshness fields (`last_seen`, `first_seen`, `expires_at`):
+
+1. Any record whose `expires_at` date is in the past.
+2. Any record whose `last_seen` timestamp is older than the configured “not seen” threshold (default 45 days).
+3. `--all-stale` executes the above rules in a single, idempotent pass.
+
+Preferred CLI style for the threshold is `--not-seen-since` (days). There is no automatic age-based pruning outside of the configured window.
+
+### Safety Model
+Destructive commands require an explicit confirmation flag using the pattern:
+
+- `--confirm DROP`
+- `--confirm RESET`
+
+Once the exact confirmation string is supplied on the command line, the action proceeds without further interactive prompts. This supports both interactive safety and scripted workflows.
+
+### Snapshot & Restore Format
+Snapshots are designed for validation workflows and reproducibility:
+
+- `python scripts/db_manage.py snapshot --name <label>`
+- Produces a timestamped `.tgz` containing:
+  - `current_full.csv`
+  - `manifest.json` (timestamp, git commit, filters applied, per-authority counts, active prune policy, etc.)
+- Restore replays the captured `current_full.csv` into the live database (with appropriate safeguards).
+
+### Run History
+A lightweight `run_history` table records every significant `db_manage.py` operation for auditability during heavy validation periods.
+
+### Database Schema (Core Tables for Management Layer)
+
+```
+┌──────────────────────────┐
+│        housing_records   │
+├──────────────────────────┤
+│ id (PK)                  │
+│ authority                │
+│ property_name            │
+│ ... (existing fields)    │
+│ last_seen                │
+│ first_seen               │
+│ source                   │
+│ source_url               │
+│ expires_at               │
+└──────────────────────────┘
+
+┌──────────────────────────┐     ┌──────────────────────────┐
+│       run_history        │     │        snapshots         │
+├──────────────────────────┤     ├──────────────────────────┤
+│ id (PK)                  │     │ id (PK)                  │
+│ timestamp                │     │ name                     │
+│ command                  │     │ created_at               │
+│ authority_filter         │     │ manifest (json)          │
+│ rows_before              │     │ file_path (.tgz)         │
+│ rows_after               │     └──────────────────────────┘
+│ notes                    │
+└──────────────────────────┘
+```
+
+(The full `housing_records` and `targets` tables already exist; the management layer adds `run_history` and uses the existing freshness columns.)
+
+### Doctor Behavior (Explicit Boundaries)
+Doctor is allowed to:
+- Run SQLite `PRAGMA integrity_check` / `quick_check`
+- Trigger safe WAL checkpoint replay
+- Create a hot backup copy of the live database file
+- Report freshness health and obvious data issues
+
+Doctor must **never**:
+- Run schema-altering SQL (`ALTER`, `DROP TABLE`, migrations, etc.)
+- Execute any prune logic
+- Silently repair or compact data without explicit user intent via `db_manage.py`
+
+When Doctor detects a condition that requires `db_manage.py`, it prints a clear message directing the user to the management script and the Database Management section of the README.
+
+### Non-Goals (for this increment)
+- Full general-purpose database administration UI or web interface
+- Automatic background pruning without human initiation
+- Cross-database (Postgres, etc.) support
+- Complex point-in-time recovery beyond simple named snapshots
+
+---
+
+## 6. Agreement (Updated for v0.8.2 — 2026-05-20)
 
 *This contract is a living record of shared understanding. It will be updated when the product evolves.*
