@@ -18,6 +18,8 @@ def normalize_listing(raw_data: dict) -> dict:
     if extra:
         notes = (notes + " | " + " | ".join(extra)).strip(" |")
 
+    now = datetime.now().isoformat()
+
     return {
         "source_authority": raw_data.get("authority", ""),
         "property_name": raw_data.get("property_name", ""),
@@ -32,13 +34,19 @@ def normalize_listing(raw_data: dict) -> dict:
         "unit_types": raw_data.get("bedrooms") or raw_data.get("unit_types", ""),
         "eligibility_flags": raw_data.get("eligibility_flags", []),
         "notes": notes,
-        "scrape_date": datetime.now().isoformat(),
+        "scrape_date": now,
         "confidence": raw_data.get("confidence", 1.0),
         # Support for delegated administrators (e.g. Rise Housing for Cupertino BMR)
         "administrator": raw_data.get("administrator", ""),
         "administrator_url": raw_data.get("administrator_url", ""),
         "administrator_phone": raw_data.get("administrator_phone", ""),
         "administrator_contact": raw_data.get("administrator_contact", ""),
+        # Freshness / delta metadata (0.8.2+)
+        "last_seen": raw_data.get("last_seen") or now,
+        "first_seen": raw_data.get("first_seen") or now,
+        "source": raw_data.get("source", ""),
+        "source_url": raw_data.get("source_url") or raw_data.get("document_url", ""),
+        "expires_at": raw_data.get("expires_at", ""),
     }
 
 def save_current_full(listings: list):
@@ -51,7 +59,9 @@ def save_current_full(listings: list):
         "bedrooms", "url", "status", "deadline",
         "income_limits", "unit_types", "eligibility_flags", "notes",
         "scrape_date", "confidence",
-        "administrator", "administrator_url", "administrator_phone", "administrator_contact"
+        "administrator", "administrator_url", "administrator_phone", "administrator_contact",
+        # Freshness fields (0.8.2+)
+        "last_seen", "first_seen", "source", "source_url", "expires_at"
     ]
     
     with open("current_full.csv", "w", newline="", encoding="utf-8") as f:

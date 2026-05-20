@@ -242,7 +242,7 @@ def _parse_embedded_geojson_js(
     Handles cases like Cupertino where the city serves GeoJSON inside a .js file
     as a JavaScript variable (e.g. var rentals = { "type": "FeatureCollection", ... }).
     """
-    print(f"🧩 Running GIS Extraction adapter (embedded GeoJSON in JS) on {url}")
+    logger.debug(f"GIS (embedded JS) on {url}")
 
     resp = polite_get(url)
     if not resp:
@@ -253,7 +253,7 @@ def _parse_embedded_geojson_js(
     # Find the first '{' that starts the FeatureCollection
     start = text.find("{")
     if start == -1:
-        print("   No JSON object found in JS file")
+        logger.debug("No JSON object found in JS file")
         return []
 
     # Find the matching closing brace for the top-level object
@@ -264,7 +264,7 @@ def _parse_embedded_geojson_js(
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
-        print(f"   Failed to parse JSON from {url}: {e}")
+        logger.debug(f"Failed to parse JSON from {url}: {e}")
         return []
 
     return _features_to_records(
@@ -278,7 +278,7 @@ def _parse_embedded_geojson_js(
 
 def _parse_direct_geojson(url: str, authority: str) -> List[Dict[str, Any]]:
     """Handles direct .geojson or JSON FeatureCollection endpoints."""
-    print(f"🧩 Running GIS Extraction adapter (direct GeoJSON) on {url}")
+    logger.debug(f"GIS (direct GeoJSON) on {url}")
 
     resp = polite_get(url)
     if not resp:
@@ -287,7 +287,7 @@ def _parse_direct_geojson(url: str, authority: str) -> List[Dict[str, Any]]:
     try:
         data = resp.json()
     except Exception as e:
-        print(f"   Failed to parse JSON: {e}")
+        logger.debug(f"Failed to parse JSON: {e}")
         return []
 
     return _features_to_records(data, url, authority)
@@ -298,7 +298,7 @@ def _parse_arcgis_rest(url: str, authority: str) -> List[Dict[str, Any]]:
     Placeholder for real ArcGIS FeatureServer / MapServer queries.
     Will be implemented when we encounter a live example.
     """
-    print(f"🧩 Running GIS Extraction adapter (ArcGIS REST) on {url}")
+    logger.debug(f"GIS (ArcGIS) on {url}")
     print("   ArcGIS REST parser not yet implemented — returning empty list")
     return []
 
@@ -323,7 +323,7 @@ def _parse_page_for_embedded_gis(
     This allows users to put the human-friendly BMR overview URL in TARGETS.md
     while the adapter still finds the actual data.
     """
-    print(f"🧩 Running GIS Extraction adapter (page scan + discovery) on {url}")
+    logger.debug(f"GIS (page scan) on {url}")
 
     resp = polite_get(url)
     if not resp:
@@ -404,7 +404,7 @@ def _parse_page_for_embedded_gis(
             except Exception:
                 continue
 
-    print("   No usable GIS data discovered from page")
+    logger.debug("No usable GIS data discovered")
     return []
 
 
@@ -477,6 +477,13 @@ def _features_to_records(
             coords = geometry.get("coordinates", [])
             if len(coords) >= 2:
                 rec["notes"] += f" | approx lat/lon: {coords[1]:.5f}, {coords[0]:.5f}"
+
+        now_iso = _dt.now().isoformat()
+        rec["last_seen"] = now_iso
+        rec["first_seen"] = now_iso
+        rec["source"] = f"gis:{authority.lower().replace(' ', '_')}"
+        rec["source_url"] = source
+        rec["expires_at"] = ""
 
         records.append(rec)
 

@@ -102,6 +102,7 @@ from typing import List, Dict, Any
 import re
 
 from housing_list_search.scraper import polite_get
+from datetime import datetime as _dt
 
 
 def _normalize(text: str) -> str:
@@ -187,6 +188,7 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
             continue
         seen.add(key)
 
+        now_iso = _dt.now().isoformat()
         listing = {
             "authority": "Santa Clara County Housing Authority (SCCHA directory - John Stewart properties)",
             "property_name": name or address.split(",")[0].strip(),
@@ -199,6 +201,12 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
             "eligibility_flags": ["section_8"] + (["senior"] if "senior" in " ".join(tags).lower() else []),
             "notes": " | ".join(tags) + (f" | flyer: {detail_url}" if detail_url and detail_url.endswith(".pdf") else ""),
             "confidence": 0.80,
+            # Freshness metadata (0.8.2+)
+            "last_seen": now_iso,
+            "first_seen": now_iso,
+            "source": "john_stewart:sccha_directory",
+            "source_url": detail_url or url,
+            "expires_at": "",
         }
         listings.append(listing)
 
@@ -336,6 +344,12 @@ def _scrape_direct_john_stewart(url: str) -> List[Dict[str, Any]]:
             "eligibility_flags": ["section_8", "tax_credit"] + ([htype.lower()] if htype else []),
             "notes": notes,
             "confidence": "high" if (address and (phone or email)) else "medium",
+            # Freshness metadata (0.8.2+)
+            "last_seen": _dt.now().isoformat(),
+            "first_seen": _dt.now().isoformat(),
+            "source": "john_stewart:direct",
+            "source_url": url,
+            "expires_at": "",
         }
         listings.append(rec)
 

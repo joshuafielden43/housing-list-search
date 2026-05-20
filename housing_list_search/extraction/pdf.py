@@ -53,6 +53,13 @@ class HousingRecord:
     raw_line: str = ""
     confidence: str = "low"   # "high", "medium", or "low"
 
+    # Freshness / delta metadata (added 2026-05 for 0.8.2+)
+    last_seen: str = ""       # ISO timestamp when last observed in a source
+    first_seen: str = ""      # ISO timestamp when first seen
+    source: str = ""          # e.g. "cdn:sunnyvale:370" or "housekeys:los-gatos"
+    source_url: str = ""      # canonical URL of the document/listing this came from
+    expires_at: str = ""      # optional explicit expiry if the source provides one
+
     def to_dict(self) -> dict:
         """Convert to plain dict for downstream normalizer/CSV/outputs."""
         return {
@@ -71,6 +78,12 @@ class HousingRecord:
             "url": self.document_url,   # alias expected by some older code
             "confidence": self.confidence,
             "page_number": self.page_number,
+            # Freshness fields
+            "last_seen": self.last_seen,
+            "first_seen": self.first_seen,
+            "source": self.source,
+            "source_url": self.source_url,
+            "expires_at": self.expires_at,
         }
 
 

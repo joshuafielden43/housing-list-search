@@ -88,6 +88,7 @@ def check_package_imports() -> bool:
         from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
         from housing_list_search.adapters.housekeys import scrape_housekeys
         from housing_list_search.adapters.cdn import extract_underlying_records
+        from housing_list_search.adapters.alta import scrape_alta
         from housing_list_search.registry import get_active_targets, get_skipped_targets
         print("✅ housing_list_search package imports cleanly")
         return True
@@ -109,6 +110,7 @@ def check_package_imports() -> bool:
         from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
         from housing_list_search.adapters.housekeys import scrape_housekeys
         from housing_list_search.adapters.cdn import extract_underlying_records
+        from housing_list_search.adapters.alta import scrape_alta
         from housing_list_search.registry import get_active_targets, get_skipped_targets
         print("✅ housing_list_search imports successfully (development mode)")
         return True
@@ -227,6 +229,10 @@ def main():
             timeout=30000
         )
         print("✅ cdn adapter smoke test ran (returned list, no crash)")
+
+        from housing_list_search.adapters.alta import scrape_alta
+        recs = scrape_alta("City of Palo Alto (doctor smoke)", "https://www.paloalto.gov/Departments/Planning-Development-Services/Housing-Policies-Projects/Below-Market-Rate-Housing")
+        print("✅ alta adapter smoke test ran (returned list, no crash)")
     except Exception as e:
         print(f"⚠️  Adapter smoke had issues (may be expected in restricted env): {e}")
 

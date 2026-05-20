@@ -58,6 +58,7 @@ import logging
 import random
 import re
 import time
+from datetime import datetime as _dt
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -225,7 +226,6 @@ def extract_underlying_records(
 
                 # Also search the raw HTML for any URL containing the ID (catches JS-rendered or data attrs)
                 raw_html = page.content()
-                import re
                 pattern = rf'https?://[^"\'\s<>]*{re.escape(showdocument_id)}[^"\'\s<>]*'
                 matches = re.findall(pattern, raw_html)
                 for m in matches:
@@ -259,7 +259,17 @@ def extract_underlying_records(
                             parts = re.split(r'[,/|&]|\s{2,}', h)
                             headers.extend([p.strip() for p in parts if p.strip()])
                         continue
-                    record = {"source_url": source, "authority": authority, "extraction_method": "direct_page_table"}
+                    now_iso = _dt.now().isoformat()
+
+                    record = {
+                        "source_url": source,
+                        "authority": authority,
+                        "extraction_method": "direct_page_table",
+                        "last_seen": now_iso,
+                        "first_seen": now_iso,
+                        "source": f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}",
+                        "source_url": source,
+                    }
                     for j, text in enumerate(cells):
                         key = headers[j] if j < len(headers) else f"col_{j}"
                         clean_key = key.lower().replace(" ", "_").replace("/", "_").replace(".", "").replace(",", "")
@@ -267,10 +277,20 @@ def extract_underlying_records(
                     if len(record) > 3:
                         records.append(record)
 
-            # === 3. If we still have very few records, try navigating discovered document links ===
+            # === 3. Process discovered document links (handle PDFs safely, avoid "Download is starting") ===
             if len(records) < 5 and document_urls:
-                for doc_url in document_urls[:max_documents]:
-                    logger.info(f"[cdn] Attempting to load discovered document: {doc_url}")
+                pdf_urls = []
+                html_doc_urls = []
+
+                for u in document_urls[:max_documents]:
+                    if u.lower().endswith('.pdf'):
+                        pdf_urls.append(u)
+                    else:
+                        html_doc_urls.append(u)
+
+                # Process HTML document viewer pages
+                for doc_url in html_doc_urls:
+                    logger.info(f"[cdn] Attempting to load discovered document page: {doc_url}")
                     _jitter(0.9)
                     try:
                         page.goto(doc_url, wait_until="domcontentloaded", timeout=timeout)
@@ -290,16 +310,48 @@ def extract_underlying_records(
                                 if i == 0 and not headers:
                                     headers = cells
                                     continue
-                                record = {"source_url": doc_url, "authority": authority, "extraction_method": "document_table"}
+                                now_iso = _dt.now().isoformat()
+                                record = {
+                                    "authority": authority,
+                                    "extraction_method": "document_table",
+                                    "last_seen": now_iso,
+                                    "first_seen": now_iso,
+                                    "source": f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}",
+                                    "source_url": doc_url,
+                                }
                                 for j, text in enumerate(cells):
                                     key = headers[j] if j < len(headers) else f"col_{j}"
-                                    record[key.lower().replace(" ", "_").replace("/", "_").replace(".", "")] = text
+                                    clean_key = key.lower().replace(" ", "_").replace("/", "_").replace(".", "").replace(",", "")
+                                    record[clean_key] = text
                                 if len(record) > 3:
                                     records.append(record)
 
                     except PlaywrightTimeout:
-                        logger.warning(f"[cdn] Timeout on document: {doc_url}")
+                        logger.warning(f"[cdn] Timeout on document page: {doc_url}")
                         continue
+                    except Exception as e:
+                        if "Download is starting" in str(e):
+                            logger.info(f"[cdn] Skipping direct PDF navigation: {doc_url}")
+                            pdf_urls.append(doc_url)  # treat as PDF to extract later
+                        else:
+                            logger.warning(f"[cdn] Error on document page {doc_url}: {e}")
+                            continue
+
+                # Process PDFs using existing PDF extraction (no page navigation)
+                if pdf_urls:
+                    from housing_list_search.pdf_scraper import extract_from_pdf
+                    for pdf_url in pdf_urls:
+                        try:
+                            logger.info(f"[cdn] Extracting PDF directly: {pdf_url}")
+                            pdf_recs = extract_from_pdf(pdf_url, authority)
+                            for r in pdf_recs:
+                                r.setdefault("last_seen", _dt.now().isoformat())
+                                r.setdefault("first_seen", _dt.now().isoformat())
+                                r.setdefault("source", f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}")
+                                r.setdefault("source_url", pdf_url)
+                            records.extend(pdf_recs)
+                        except Exception as e:
+                            logger.warning(f"[cdn] Failed to extract PDF {pdf_url}: {e}")
 
             # Fallback: grab any large text blocks that look like property entries
             if len(records) < 3:

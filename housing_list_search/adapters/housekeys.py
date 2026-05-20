@@ -93,6 +93,9 @@ def scrape_housekeys(authority: str, url: str):
         f"The city monitors the program but does not maintain a public waitlist."
     )
 
+    from datetime import datetime as _dt
+    now_iso = _dt.now().isoformat()
+
     record = {
         "authority": authority,
         "property_name": f"{authority} BMR Homeownership Program (via HouseKeys)",
@@ -108,6 +111,12 @@ def scrape_housekeys(authority: str, url: str):
         "application_url": registration_url,
         "confidence": 0.95,
         "source_url": url,
+        # Freshness metadata (0.8.2+)
+        "last_seen": now_iso,
+        "first_seen": now_iso,
+        "source": f"housekeys:{authority.lower().replace(' ', '_')}",
+        "source_url": url,
+        "expires_at": "",
     }
 
     logger.info(

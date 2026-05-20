@@ -94,7 +94,8 @@ def main():
                     continue
 
                 # First-class adapters
-                if admin:  # City uses a delegated administrator (e.g. Rise Housing for Cupertino)
+                # Only attempt GIS extraction for targets that explicitly declare "gis" in measures (prevents spam on delegated-admin targets like HouseKeys, Housing Group, Alta)
+                if admin and ("gis" in (measures or "")):
                     from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
                     recs = extract_gis_portfolio(
                         url,
@@ -122,6 +123,9 @@ def main():
                     from housing_list_search.adapters.cdn import extract_underlying_records
                     recs = extract_underlying_records(url, authority)
                     all_listings.extend(recs)
+                elif "alta" in measures:
+                    from housing_list_search.adapters.alta import scrape_alta
+                    all_listings.extend(scrape_alta(authority, url))
                 elif "playwright_needed" in measures or "js_heavy" in measures:
                     from housing_list_search.playwright_scraper import playwright_scrape
                     all_listings.extend(playwright_scrape(authority, url))
