@@ -692,6 +692,32 @@ class TestDatabaseManager:
         assert counts["STALE"] == 1
         assert counts["NEW"] == 0
 
+    def test_partial_run_diff_scope_excludes_unselected_authorities(self, tmp_path):
+        """A --target-style diff must not mark unrelated authorities as STALE."""
+        import csv
+        from pathlib import Path
+        db = self._make_db(tmp_path)
+        db.upsert_listings([
+            self._listing("A Prop", authority="City A"),
+            self._listing("B Prop", authority="City B"),
+        ], run_id="full")
+        db.upsert_listings([
+            self._listing("A Prop", authority="City A"),
+        ], run_id="partial")
+
+        diff_path = str(Path(tmp_path) / "diff.csv")
+        db.export_diff_csv(diff_path, run_id="partial", authorities=["City A"])
+        with open(diff_path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+
+        assert {r["source_authority"] for r in rows} == {"City A"}
+        assert {r["property_name"]: r["change_type"] for r in rows} == {"A Prop": "UPDATED"}
+        assert db.diff_counts("partial", authorities=["City A"]) == {
+            "NEW": 0,
+            "UPDATED": 1,
+            "STALE": 0,
+        }
+
 
 # ---------------------------------------------------------------------------
 # changelog.py — generate_changelog / run_prev.csv round-trip
@@ -814,3 +840,59 @@ class TestChangelogRoundTrip:
 
         rows = self._read_csv(tmp_path, "changelog_diffs.csv")
         assert any(r["change_type"] == "NO_CHANGE" for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# cli.py — --target partial runs must not corrupt global run baselines
+# ---------------------------------------------------------------------------
+
+class TestCliTargetRun:
+    def test_target_run_scopes_diff_and_preserves_run_prev(self, tmp_path):
+        import csv
+        import os
+        import sys
+        from pathlib import Path
+
+        from housing_list_search.db import DatabaseManager
+        from housing_list_search.cli import main
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+            db.upsert_listings([
+                {"authority": "City A", "property_name": "A Prop", "url": "https://a", "listing_status": "open"},
+                {"authority": "City B", "property_name": "B Prop", "url": "https://b", "listing_status": "open"},
+            ], run_id="full")
+
+            run_prev = "source_authority,property_name,status,listing_status\nCity A,A Prop,Open,open\nCity B,B Prop,Open,open\n"
+            Path("run_prev.csv").write_text(run_prev, encoding="utf-8")
+
+            targets = [
+                {"authority": "City A", "url": "https://a", "scraping_measures": "", "notes": ""},
+                {"authority": "City B", "url": "https://b", "scraping_measures": "", "notes": ""},
+            ]
+
+            with (
+                patch.object(sys, "argv", ["main.py", "--run", "--target", "City A"]),
+                patch("housing_list_search.registry.load_targets_to_db", return_value=None),
+                patch("housing_list_search.registry.get_active_targets", return_value=targets),
+                patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
+                patch("housing_list_search.runner.run_target", return_value=[
+                    {"authority": "City A", "property_name": "A Prop", "url": "https://a", "listing_status": "open"}
+                ]),
+            ):
+                main()
+
+            with open("diff.csv", newline="", encoding="utf-8") as f:
+                diff_rows = list(csv.DictReader(f))
+            with open("changelog_diffs.csv", newline="", encoding="utf-8") as f:
+                changelog_rows = list(csv.DictReader(f))
+
+            assert {r["source_authority"] for r in diff_rows} == {"City A"}
+            assert not any(r["source_authority"] == "City B" for r in diff_rows)
+            assert Path("run_prev.csv").read_text(encoding="utf-8") == run_prev
+            assert changelog_rows[0]["change_type"] == "PARTIAL_RUN"
+        finally:
+            os.chdir(orig)

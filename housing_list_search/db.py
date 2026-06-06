@@ -462,7 +462,12 @@ class DatabaseManager:
 
         return len(rows)
 
-    def export_diff_csv(self, path: str = "diff.csv", run_id: str = "") -> int:
+    def export_diff_csv(
+        self,
+        path: str = "diff.csv",
+        run_id: str = "",
+        authorities: Optional[list[str]] = None,
+    ) -> int:
         """
         Export a diff CSV: every housing_record row tagged with its change type.
 
@@ -474,6 +479,10 @@ class DatabaseManager:
         run_id: the same run_id passed to upsert_listings(). When omitted,
             falls back to timestamp comparison (less reliable but still useful).
 
+        authorities: optional source-authority scope for partial diagnostic runs.
+            When provided, non-selected authorities are omitted instead of being
+            reported as STALE.
+
         The intent is that any competent DBA or AI can ingest this CSV and drive
         upserts into their own schema without knowing anything about this tool.
         """
@@ -481,6 +490,13 @@ class DatabaseManager:
         self.init_db()
         conn = self.connect()
         c = conn.cursor()
+        authorities = [a for a in (authorities or []) if a]
+        where = ""
+        authority_params: list[str] = []
+        if authorities:
+            placeholders = ",".join("?" for _ in authorities)
+            where = f" WHERE authority IN ({placeholders})"
+            authority_params = authorities
 
         if run_id:
             c.execute("""
@@ -511,8 +527,9 @@ class DatabaseManager:
                     source_url,
                     expires_at
                 FROM housing_records
+                {where}
                 ORDER BY change_type, authority, property_name
-            """, (run_id, run_id, run_id))
+            """.format(where=where), [run_id, run_id, run_id, *authority_params])
         else:
             # Fallback when no run_id: STALE = not seen in 7 days
             c.execute("""
@@ -543,8 +560,9 @@ class DatabaseManager:
                     source_url,
                     expires_at
                 FROM housing_records
+                {where}
                 ORDER BY change_type, authority, property_name
-            """)
+            """.format(where=where), authority_params)
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
 
@@ -556,15 +574,24 @@ class DatabaseManager:
 
         return len(rows)
 
-    def diff_counts(self, run_id: str) -> dict[str, int]:
+    def diff_counts(self, run_id: str, authorities: Optional[list[str]] = None) -> dict[str, int]:
         """
         Count NEW / UPDATED / STALE rows using the same rules as export_diff_csv().
 
         Returns e.g. {"NEW": 3, "UPDATED": 40, "STALE": 12}.
+        authorities scopes partial diagnostic runs so unrelated records are not
+        counted as STALE.
         """
         self.init_db()
         conn = self.connect()
         c = conn.cursor()
+        authorities = [a for a in (authorities or []) if a]
+        where = ""
+        params: list[str] = [run_id, run_id, run_id]
+        if authorities:
+            placeholders = ",".join("?" for _ in authorities)
+            where = f" WHERE authority IN ({placeholders})"
+            params.extend(authorities)
         c.execute("""
             SELECT
                 CASE
@@ -574,8 +601,9 @@ class DatabaseManager:
                 END AS change_type,
                 COUNT(*) AS n
             FROM housing_records
+            {where}
             GROUP BY change_type
-        """, (run_id, run_id, run_id))
+        """.format(where=where), params)
         counts = {row[0]: row[1] for row in c.fetchall()}
         for key in ("NEW", "UPDATED", "STALE"):
             counts.setdefault(key, 0)

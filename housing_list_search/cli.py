@@ -42,6 +42,7 @@ def main():
     elif args.run:
         print(f"=== Normal Run Started at {datetime.now()} ===")
 
+        import csv
         import logging
         logging.basicConfig(
             level=logging.INFO,
@@ -62,24 +63,29 @@ def main():
         db = get_manager()
         db.init_db()
 
-        # Log intentionally skipped targets (no_public_list)
+        partial_run = bool(args.target)
+
+        # Log intentionally skipped targets (no_public_list) only during full runs.
         skipped_targets = []
-        for t in get_skipped_targets():
-            authority = t["authority"]
-            notes = t.get("notes") or ""
-            logger.warning(
-                "SKIPPING %s — marked 'no_public_list' in TARGETS.md. "
-                "Remove the marker when a public structured source appears.",
-                authority,
-            )
-            skipped_targets.append((authority, notes[:200]))
+        if not partial_run:
+            for t in get_skipped_targets():
+                authority = t["authority"]
+                notes = t.get("notes") or ""
+                logger.warning(
+                    "SKIPPING %s — marked 'no_public_list' in TARGETS.md. "
+                    "Remove the marker when a public structured source appears.",
+                    authority,
+                )
+                skipped_targets.append((authority, notes[:200]))
 
         active = get_active_targets()
+        target_authorities = None
         if args.target:
             active = filter_targets_by_authority(active, args.target)
             if not active:
                 print(f"⚠️  No active targets match --target {args.target!r}")
                 sys.exit(1)
+            target_authorities = [t["authority"] for t in active]
             print(f"\n🔄 Scraping {len(active)} target(s) matching {args.target!r}...")
         else:
             print("\n🔄 Scraping all targets...")
@@ -104,12 +110,13 @@ def main():
         counts = db.upsert_listings(all_listings, run_id=run_id)
         logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
 
-        # Export CSV outputs from DB
+        # Export CSV outputs from DB. Partial --target runs scope diff.csv so
+        # unrelated authorities are not reported as stale.
         n_full = db.export_csv("current_full.csv")
-        n_diff = db.export_diff_csv("diff.csv", run_id=run_id)
+        n_diff = db.export_diff_csv("diff.csv", run_id=run_id, authorities=target_authorities)
         print(f"   Exported current_full.csv ({n_full} rows), diff.csv ({n_diff} rows)")
 
-        diff_counts = db.diff_counts(run_id)
+        diff_counts = db.diff_counts(run_id, authorities=target_authorities)
         stale_n = diff_counts.get("STALE", 0)
         if stale_n >= DEFAULT_STALE_WARN_THRESHOLD:
             logger.warning(
@@ -126,13 +133,33 @@ def main():
                 DEFAULT_STALE_WARN_THRESHOLD,
             )
 
-        generate_changelog(all_listings, skipped_targets=skipped_targets)
-        generate_daily_summary(all_listings, skipped_targets=skipped_targets)
+        if partial_run:
+            with open("changelog_diffs.md", "w", encoding="utf-8") as f:
+                f.write("# Housing List Changelog\n\n")
+                f.write(
+                    f"Partial --target run for {args.target!r}; "
+                    "global run_prev.csv baseline was not updated.\n"
+                )
+            with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["change_type", "authority", "property_name", "details", "timestamp"])
+                writer.writerow([
+                    "PARTIAL_RUN", "target", args.target,
+                    "global changelog baseline not updated",
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ])
+            logger.info("Partial --target run: left global run_prev.csv changelog baseline unchanged")
+            generate_daily_summary(all_listings, skipped_targets=[])
+        else:
+            generate_changelog(all_listings, skipped_targets=skipped_targets)
+            generate_daily_summary(all_listings, skipped_targets=skipped_targets)
 
         print(f"\n✅ Run complete! {len(all_listings)} listings this run "
               f"({counts['inserted']} new, {counts['updated']} updated).")
         if skipped_targets:
             print(f"   ⚠️  Skipped {len(skipped_targets)} targets marked no_public_list")
+        if partial_run:
+            print("   Partial --target run: global changelog baseline was not updated")
         print("   Files: current_full.csv  diff.csv  daily_summary.md  changelog_diffs.md")
 
     else:
