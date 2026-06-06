@@ -95,6 +95,7 @@ class DatabaseManager:
                 email TEXT,
                 url TEXT,
                 status TEXT,
+                listing_status TEXT,
                 deadline TEXT,
                 notes TEXT,
                 last_seen TEXT,
@@ -106,6 +107,11 @@ class DatabaseManager:
                 UNIQUE(authority, property_name, url)
             )
         """)
+
+        # Lightweight migration: add listing_status if this DB was created before v0.8.6
+        existing_cols = [row[1] for row in c.execute("PRAGMA table_info(housing_records)").fetchall()]
+        if "listing_status" not in existing_cols:
+            c.execute("ALTER TABLE housing_records ADD COLUMN listing_status TEXT")
 
         # run_history for audit
         c.execute("""
@@ -256,6 +262,197 @@ class DatabaseManager:
             return c.fetchone()[0]
         except Exception:
             return 0
+
+    def upsert_listings(self, listings: list) -> dict:
+        """
+        Insert or update housing_records from a list of plain dicts.
+
+        On conflict (same authority + property_name + url):
+          - last_seen is always updated to now
+          - status, listing_status, notes, source updated if non-empty
+          - first_seen is preserved (never overwritten)
+          - raw_data stores the full JSON of the most recent record
+
+        Returns {"inserted": n, "updated": n}.
+        """
+        self.init_db()
+        conn = self.connect()
+        c = conn.cursor()
+        now = datetime.now().isoformat()
+        inserted = updated = 0
+
+        for item in listings:
+            if not isinstance(item, dict):
+                item = item.to_dict() if hasattr(item, "to_dict") else vars(item)
+
+            authority = (item.get("authority") or item.get("source_authority") or "").strip()
+            property_name = (item.get("property_name") or "").strip()
+            url = (item.get("url") or item.get("document_url") or "").strip()
+
+            if not (authority and property_name):
+                continue
+
+            raw_json = json.dumps(item, default=str)
+            last_seen = item.get("last_seen") or now
+            first_seen_val = item.get("first_seen") or now
+            status = (item.get("status") or "").strip()
+            listing_status = (item.get("listing_status") or "").strip()
+            notes = (item.get("notes") or "").strip()
+            source = (item.get("source") or "").strip()
+            source_url = (item.get("source_url") or item.get("document_url") or "").strip()
+            expires_at = (item.get("expires_at") or "").strip()
+            address = (item.get("address") or "").strip()
+            phone = (item.get("phone") or "").strip()
+            email = (item.get("email") or "").strip()
+            deadline = (item.get("deadline") or "").strip()
+
+            # Check if record exists
+            c.execute(
+                "SELECT id, first_seen FROM housing_records WHERE authority=? AND property_name=? AND url=?",
+                (authority, property_name, url),
+            )
+            existing = c.fetchone()
+
+            if existing:
+                # Preserve original first_seen; update everything else
+                c.execute("""
+                    UPDATE housing_records SET
+                        last_seen=?, status=?, listing_status=?, notes=?,
+                        source=?, source_url=?, expires_at=?, address=?,
+                        phone=?, email=?, deadline=?, raw_data=?
+                    WHERE authority=? AND property_name=? AND url=?
+                """, (
+                    last_seen, status, listing_status, notes,
+                    source, source_url, expires_at, address,
+                    phone, email, deadline, raw_json,
+                    authority, property_name, url,
+                ))
+                updated += 1
+            else:
+                c.execute("""
+                    INSERT INTO housing_records
+                        (authority, property_name, address, phone, email, url,
+                         status, listing_status, deadline, notes,
+                         last_seen, first_seen, source, source_url, expires_at, raw_data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    authority, property_name, address, phone, email, url,
+                    status, listing_status, deadline, notes,
+                    last_seen, first_seen_val, source, source_url, expires_at, raw_json,
+                ))
+                inserted += 1
+
+        conn.commit()
+        self._log_run("upsert", "", inserted + updated, inserted + updated,
+                      f"inserted={inserted} updated={updated}")
+        return {"inserted": inserted, "updated": updated}
+
+    def export_csv(self, path: str = "current_full.csv") -> int:
+        """
+        Export housing_records to a CSV file. Returns row count written.
+
+        Column order matches the historical current_full.csv schema so existing
+        importers and downstream tools require no changes.
+        """
+        import csv as _csv
+        self.init_db()
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute("""
+            SELECT
+                authority        AS source_authority,
+                property_name,
+                address,
+                phone,
+                email,
+                '' AS bedrooms,
+                url,
+                status,
+                listing_status,
+                deadline,
+                '' AS income_limits,
+                '' AS unit_types,
+                '' AS eligibility_flags,
+                notes,
+                last_seen        AS scrape_date,
+                '' AS confidence,
+                '' AS administrator,
+                '' AS administrator_url,
+                '' AS administrator_phone,
+                '' AS administrator_contact,
+                last_seen,
+                first_seen,
+                source,
+                source_url,
+                expires_at
+            FROM housing_records
+            ORDER BY authority, property_name
+        """)
+        rows = c.fetchall()
+        fieldnames = [d[0] for d in c.description]
+
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = _csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(dict(zip(fieldnames, row)))
+
+        return len(rows)
+
+    def export_diff_csv(self, path: str = "diff.csv") -> int:
+        """
+        Export a diff CSV: every housing_record row tagged with its change type.
+
+        change_type values:
+          NEW     — first_seen == last_seen (seen for the first time this run)
+          UPDATED — last_seen > first_seen (re-seen; status may have changed)
+          STALE   — last_seen older than 2 runs ago (rough heuristic; useful for
+                    import pipelines that want to flag records not confirmed recently)
+
+        The intent is that any competent DBA or AI can ingest this CSV and drive
+        upserts into their own schema without knowing anything about this tool.
+        """
+        import csv as _csv
+        self.init_db()
+        conn = self.connect()
+        c = conn.cursor()
+
+        # Two-run staleness window: records not updated in the last 7 days
+        c.execute("""
+            SELECT
+                CASE
+                    WHEN first_seen = last_seen THEN 'NEW'
+                    WHEN last_seen < datetime('now', '-7 days') THEN 'STALE'
+                    ELSE 'UPDATED'
+                END                 AS change_type,
+                authority           AS source_authority,
+                property_name,
+                address,
+                phone,
+                email,
+                url,
+                status,
+                listing_status,
+                deadline,
+                notes,
+                last_seen,
+                first_seen,
+                source,
+                source_url,
+                expires_at
+            FROM housing_records
+            ORDER BY change_type, authority, property_name
+        """)
+        rows = c.fetchall()
+        fieldnames = [d[0] for d in c.description]
+
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = _csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(dict(zip(fieldnames, row)))
+
+        return len(rows)
 
 
 def get_manager(db_path: Optional[Path] = None) -> DatabaseManager:

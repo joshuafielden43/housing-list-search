@@ -415,54 +415,90 @@ class TestBloomPlaywrightCityFilter:
 
 
 # ---------------------------------------------------------------------------
-# cli.py — multi-measure targets run both housekeys AND cdn
+# runner.py — measure-driven dispatch (replaces inline cli.py routing)
 # ---------------------------------------------------------------------------
 
-class TestMultiMeasureRouting:
+class TestRunnerDispatch:
     """
-    A target with measures='housekeys,cdn' must invoke both adapters.
-    We stub both adapters and verify both are called.
+    run_target() must be driven purely by scraping_measures.
+    URL substrings and authority name patterns must NOT affect routing.
     """
 
-    def _make_target(self, measures):
+    def _target(self, measures, authority="City of Test", url="https://example.gov/housing",
+                admin_url=""):
         return {
-            "authority": "City of Gilroy",
-            "url": "https://www.cityofgilroy.org/279/Housing-and-Community-Services",
+            "authority": authority,
+            "url": url,
             "scraping_measures": measures,
-            "notes": "",
-            "administrator": "HouseKeys",
-            "administrator_url": "https://www.housekeys5.com/",
+            "administrator": "",
+            "administrator_url": admin_url,
             "administrator_phone": "",
             "administrator_contact": "",
+            "notes": "",
         }
 
-    def test_housekeys_and_cdn_both_called_for_combined_measures(self):
-        from housing_list_search.adapters.housekeys import scrape_housekeys
-        from housing_list_search.adapters.cdn import extract_underlying_records
-
-        hk_record = {"property_name": "HK Record", "authority": "City of Gilroy", "url": "https://www.housekeys5.com/"}
-        cdn_record = {"property_name": "CDN Record", "authority": "City of Gilroy", "url": "https://example.com/doc.pdf"}
+    def test_housekeys_and_cdn_both_called(self):
+        hk_rec = {"property_name": "HK Prop", "authority": "City of Test", "url": "https://hk.example.com/"}
+        cdn_rec = {"property_name": "CDN Prop", "authority": "City of Test", "url": "https://example.com/doc.pdf"}
 
         with (
-            patch("housing_list_search.adapters.housekeys.polite_get", return_value=None),
-            patch("housing_list_search.adapters.cdn.extract_underlying_records", return_value=[cdn_record]) as mock_cdn,
-            patch("housing_list_search.adapters.housekeys.scrape_housekeys", return_value=[hk_record]) as mock_hk,
-            patch("housing_list_search.extraction.extract_target", return_value=[]),
-            patch("housing_list_search.registry.load_targets_to_db"),
-            patch("housing_list_search.registry.get_active_targets", return_value=[self._make_target("housekeys,cdn")]),
-            patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
-            patch("housing_list_search.normalizer.save_current_full"),
-            patch("housing_list_search.changelog.generate_changelog"),
-            patch("housing_list_search.outputs.generate_daily_summary"),
-            patch("housing_list_search.dedupe.deduplicate_listings", side_effect=lambda x: x),
+            patch("housing_list_search.runner.extract_target", return_value=[]),
+            patch("housing_list_search.runner.scrape_housekeys", return_value=[hk_rec]) as mock_hk,
+            patch("housing_list_search.runner.extract_underlying_records", return_value=[cdn_rec]) as mock_cdn,
         ):
-            import sys
-            with patch.object(sys, "argv", ["main.py", "--run"]):
-                from housing_list_search.cli import main
-                try:
-                    main()
-                except SystemExit:
-                    pass
+            from housing_list_search.runner import run_target
+            result = run_target(self._target("housekeys,cdn"))
 
         mock_hk.assert_called_once()
         mock_cdn.assert_called_once()
+        names = {r["property_name"] for r in result}
+        assert "HK Prop" in names
+        assert "CDN Prop" in names
+
+    def test_john_stewart_routed_by_measure_not_url(self):
+        """john_stewart measure must trigger the adapter regardless of URL content."""
+        js_rec = {"property_name": "JS Prop", "authority": "City of Test", "url": "https://example.gov/housing"}
+
+        with (
+            patch("housing_list_search.runner.extract_target", return_value=[]),
+            patch("housing_list_search.runner.scrape_john_stewart", return_value=[js_rec]) as mock_js,
+        ):
+            from housing_list_search.runner import run_target
+            # URL has no "jscosccha" or "properties-list" — routing must come from the measure
+            result = run_target(self._target("john_stewart", url="https://example.gov/housing"))
+
+        mock_js.assert_called_once()
+        assert result[0]["property_name"] == "JS Prop"
+
+    def test_waf_blocked_returns_empty_immediately(self):
+        with patch("housing_list_search.runner.extract_target", return_value=[]) as mock_ext:
+            from housing_list_search.runner import run_target
+            result = run_target(self._target("waf_blocked,cdn"))
+        mock_ext.assert_not_called()
+        assert result == []
+
+    def test_unknown_measure_logged_not_crashed(self):
+        """A typo like 'housekey' (missing s) must warn but not raise."""
+        with (
+            patch("housing_list_search.runner.extract_target", return_value=[]),
+            patch("housing_list_search.runner.polite_get", return_value=None),
+        ):
+            from housing_list_search.runner import run_target
+            result = run_target(self._target("housekey_typo"))
+        assert isinstance(result, list)  # no exception
+
+    def test_extraction_layer_takes_priority(self):
+        """If extract_target returns records, named-measure adapters are not called."""
+        class FakeRecord:
+            def to_dict(self):
+                return {"property_name": "Bloom Prop", "authority": "Test", "url": ""}
+
+        with (
+            patch("housing_list_search.runner.extract_target", return_value=[FakeRecord()]),
+            patch("housing_list_search.runner.scrape_housekeys") as mock_hk,
+        ):
+            from housing_list_search.runner import run_target
+            result = run_target(self._target("housekeys"))
+
+        mock_hk.assert_not_called()
+        assert result[0]["property_name"] == "Bloom Prop"

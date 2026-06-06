@@ -36,9 +36,8 @@ def main():
 
     elif args.run:
         print(f"=== Normal Run Started at {datetime.now()} ===")
-        
+
         import logging
-        import sys
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(message)s",
@@ -47,145 +46,59 @@ def main():
         logger = logging.getLogger("housing_list_search")
 
         from housing_list_search.registry import load_targets_to_db, get_active_targets, get_skipped_targets
-        load_targets_to_db()
-        
-        from housing_list_search.normalizer import save_current_full
+        from housing_list_search.runner import run_target
+        from housing_list_search.dedupe import deduplicate_listings
+        from housing_list_search.db import get_manager
         from housing_list_search.changelog import generate_changelog
         from housing_list_search.outputs import generate_daily_summary
-        
-        all_listings = []
-        
-        # Get the intentionally skipped targets first (for reporting)
-        skipped_rows = get_skipped_targets()
+
+        load_targets_to_db()
+        db = get_manager()
+        db.init_db()
+
+        # Log intentionally skipped targets (no_public_list)
         skipped_targets = []
-        for t in skipped_rows:
+        for t in get_skipped_targets():
             authority = t["authority"]
             notes = t.get("notes") or ""
             logger.warning(
-                f"SKIPPING {authority} — marked 'no_public_list' in TARGETS.md. "
-                "Documented to prevent repeated research. See Notes column for details. "
-                "Remove the marker when a public structured source appears."
+                "SKIPPING %s — marked 'no_public_list' in TARGETS.md. "
+                "Remove the marker when a public structured source appears.",
+                authority,
             )
             skipped_targets.append((authority, notes[:200]))
 
-        # Now get only the targets we should actually process
-        active_targets = get_active_targets()
-        
         print("\n🔄 Scraping all targets...")
-        
-        for t in active_targets:
-            authority = t["authority"]
-            url = t["url"]
-            measures = t.get("scraping_measures") or ""
-            notes = t.get("notes") or ""
-            admin = t.get("administrator") or ""
-            admin_url = t.get("administrator_url") or ""
-            admin_phone = t.get("administrator_phone") or ""
-            admin_contact = t.get("administrator_contact") or ""
+        all_listings = []
 
-            print(f"\n→ Processing: {authority}")
+        for t in get_active_targets():
+            print(f"\n→ Processing: {t['authority']}")
             try:
-                # NEW high-quality extraction path (preferred)
-                from housing_list_search.extraction import extract_target
-                new_records = extract_target(url, authority)
-                if new_records:
-                    print(f"   [extraction] {len(new_records)} structured records via new path")
-                    for r in new_records:
-                        all_listings.append(r.to_dict())
-                    continue
+                recs = run_target(t)
+                all_listings.extend(recs)
+            except Exception as exc:
+                logger.error("Error on %s: %s", t["authority"], exc)
 
-                # First-class adapters
-                # Only attempt GIS extraction for targets that explicitly declare "gis" in measures (prevents spam on delegated-admin targets like HouseKeys, Housing Group, Alta)
-                if admin and ("gis" in (measures or "")):
-                    from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
-                    recs = extract_gis_portfolio(
-                        url,
-                        authority,
-                        administrator=admin,
-                        administrator_url=admin_url,
-                        administrator_phone=admin_phone,
-                        administrator_contact=admin_contact,
-                    )
-                    if recs:
-                        print(f"   [gis_extraction] {len(recs)} records (administrator: {admin})")
-                        all_listings.extend(recs)
-                        continue
-
-                # Skip targets confirmed inaccessible to all automation.
-                # waf_blocked = Akamai edge block, robots.txt unreachable, even
-                # real-browser Playwright returns 403. Attempting these wastes
-                # 30+ seconds and produces nothing. See TARGETS.md notes for
-                # each city and the investigation breadcrumbs in this commit.
-                if "waf_blocked" in measures:
-                    logger.warning(
-                        "SKIPPING %s — marked waf_blocked (Akamai IP-range block; "
-                        "robots.txt unreachable; manual browser inspection required "
-                        "to find an alternative entry point). See TARGETS.md notes.",
-                        authority,
-                    )
-                    continue
-
-                # Multi-measure targets (e.g. Gilroy: housekeys,cdn; Los Gatos: housekeys,cdn)
-                # must run EVERY matching adapter — not just the first one that fires.
-                # A city row with both housekeys and cdn has two distinct public data sources:
-                # the HouseKeys registration portal AND rental/PDF documents. Both must run.
-                # Use a flag to track whether any adapter produced results.
-                ran_any = False
-
-                if "properties-list" in url.lower() and "scchousingauthority.org" in url.lower():
-                    from housing_list_search.adapters.john_stewart import scrape_john_stewart
-                    all_listings.extend(scrape_john_stewart(url))
-                    ran_any = True
-                elif "john stewart" in authority.lower() or "jscosccha" in url.lower():
-                    from housing_list_search.adapters.john_stewart import scrape_john_stewart
-                    all_listings.extend(scrape_john_stewart(url))
-                    ran_any = True
-                else:
-                    # Run each remaining adapter if its measure is present.
-                    # Order: housekeys first (registration record), then cdn (rental docs),
-                    # then alta, then playwright, then generic.
-                    if "housekeys" in authority.lower() or "housekeys" in url.lower() or "housekeys" in measures:
-                        from housing_list_search.adapters.housekeys import scrape_housekeys
-                        all_listings.extend(scrape_housekeys(authority, url, admin_url=admin_url))
-                        ran_any = True
-
-                    if "cdn" in measures:
-                        from housing_list_search.adapters.cdn import extract_underlying_records
-                        recs = extract_underlying_records(url, authority)
-                        all_listings.extend(recs)
-                        if recs:
-                            ran_any = True
-
-                    if "alta" in measures:
-                        from housing_list_search.adapters.alta import scrape_alta
-                        all_listings.extend(scrape_alta(authority, url))
-                        ran_any = True
-
-                    if not ran_any:
-                        if "playwright_needed" in measures or "js_heavy" in measures:
-                            from housing_list_search.playwright_scraper import playwright_scrape
-                            all_listings.extend(playwright_scrape(authority, url))
-                        else:
-                            from housing_list_search.generic_scraper import generic_scrape
-                            from housing_list_search.scraper import polite_get
-                            resp = polite_get(url)
-                            if resp:
-                                all_listings.extend(generic_scrape(authority, url, resp.text))
-            except Exception as e:
-                print(f"   Error on {authority}: {e}")
-        
-        # Deduplicate across sources (San José portal + SCCHA directory + others will overlap)
-        from housing_list_search.dedupe import deduplicate_listings
+        # Deduplicate across sources
         all_listings = deduplicate_listings(all_listings)
 
-        save_current_full(all_listings)
+        # Write through to DB — this is now the source of truth
+        counts = db.upsert_listings(all_listings)
+        logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
+
+        # Export CSV outputs from DB
+        n_full = db.export_csv("current_full.csv")
+        n_diff = db.export_diff_csv("diff.csv")
+        print(f"   Exported current_full.csv ({n_full} rows), diff.csv ({n_diff} rows)")
+
         generate_changelog([], all_listings, skipped_targets=skipped_targets)
         generate_daily_summary(all_listings, skipped_targets=skipped_targets)
-        
-        print(f"\n✅ Run complete! {len(all_listings)} listings processed.")
+
+        print(f"\n✅ Run complete! {len(all_listings)} listings this run "
+              f"({counts['inserted']} new, {counts['updated']} updated).")
         if skipped_targets:
-            print(f"   ⚠️  Skipped {len(skipped_targets)} targets marked no_public_list (see daily_summary.md and logs)")
-        print("   Files ready: current_full.csv + daily_summary.md")
+            print(f"   ⚠️  Skipped {len(skipped_targets)} targets marked no_public_list")
+        print("   Files: current_full.csv  diff.csv  daily_summary.md  changelog_diffs.md")
 
     else:
         print("Usage:")
