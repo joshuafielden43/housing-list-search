@@ -64,6 +64,7 @@ def check_requirements() -> bool:
             "pymupdf": "fitz",
             "pdfplumber": "pdfplumber",
             "playwright": "playwright",
+            "pyyaml": "yaml",
         }.get(pkg, pkg)
 
         if find_spec(import_name) is None:
