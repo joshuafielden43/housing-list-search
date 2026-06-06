@@ -16,6 +16,8 @@ Coverage:
 - dedupe.py   shared URL does NOT deduplicate distinct named properties
 - normalizer.py  string eligibility_flags coerced to pipe-joined value
 - housekeys.py  city page 403 still produces a registration record
+- db.py  upsert_listings / export_csv / export_diff_csv / first_seen preservation
+- changelog.py  generate_changelog / run_prev.csv round-trip
 """
 
 from __future__ import annotations
@@ -507,3 +509,246 @@ class TestRunnerDispatch:
         names = {r["property_name"] for r in result}
         assert "Bloom Prop" in names
         assert "HK Prop" in names
+
+
+# ---------------------------------------------------------------------------
+# db.py — upsert_listings, export_csv, export_diff_csv, first_seen preservation
+# ---------------------------------------------------------------------------
+
+class TestDatabaseManager:
+    """DatabaseManager must persist listings, preserve first_seen, and tag diffs."""
+
+    def _make_db(self, tmp_path):
+        from pathlib import Path
+        from housing_list_search.db import DatabaseManager
+        db = DatabaseManager(db_path=Path(tmp_path) / "test.db")
+        db.init_db()
+        return db
+
+    def _listing(self, name, authority="Test City", url="", status="open",
+                 listing_status="open", first_seen=None, last_seen=None):
+        d = {
+            "property_name": name,
+            "authority": authority,
+            "url": url,
+            "status": status,
+            "listing_status": listing_status,
+            "eligibility_flags": [],
+        }
+        if first_seen:
+            d["first_seen"] = first_seen
+        if last_seen:
+            d["last_seen"] = last_seen
+        return d
+
+    def test_upsert_inserts_new_record(self, tmp_path):
+        db = self._make_db(tmp_path)
+        counts = db.upsert_listings([self._listing("Cedar Park")], run_id="run1")
+        assert counts["inserted"] == 1
+        assert counts["updated"] == 0
+        assert db.get_record_count() == 1
+
+    def test_upsert_updates_existing_record(self, tmp_path):
+        db = self._make_db(tmp_path)
+        db.upsert_listings([self._listing("Cedar Park", status="closed")], run_id="run1")
+        counts = db.upsert_listings([self._listing("Cedar Park", status="open")], run_id="run2")
+        assert counts["updated"] == 1
+        assert db.get_record_count() == 1
+
+    def test_first_seen_preserved_on_update(self, tmp_path):
+        import csv
+        from pathlib import Path
+        db = self._make_db(tmp_path)
+        db.upsert_listings([self._listing("Cedar Park", first_seen="2026-01-01T00:00:00")], run_id="run1")
+        db.upsert_listings([self._listing("Cedar Park", last_seen="2026-06-05T00:00:00")], run_id="run2")
+
+        export_path = str(Path(tmp_path) / "out.csv")
+        db.export_csv(export_path)
+        with open(export_path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+
+        assert len(rows) == 1
+        assert rows[0]["first_seen"] == "2026-01-01T00:00:00"
+
+    def test_export_csv_writes_rich_fields(self, tmp_path):
+        import csv
+        from pathlib import Path
+        db = self._make_db(tmp_path)
+        db.upsert_listings([{
+            "property_name": "Park View",
+            "authority": "Test City",
+            "url": "",
+            "bedrooms": "1BR,2BR",
+            "income_limits": "80% AMI",
+            "eligibility_flags": ["senior", "below_market_rate"],
+            "listing_status": "open",
+        }], run_id="run1")
+
+        export_path = str(Path(tmp_path) / "out.csv")
+        db.export_csv(export_path)
+        with open(export_path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+
+        assert rows[0]["bedrooms"] == "1BR,2BR"
+        assert rows[0]["income_limits"] == "80% AMI"
+        assert rows[0]["eligibility_flags"] == "senior|below_market_rate"
+        assert rows[0]["listing_status"] == "open"
+
+    def test_export_diff_csv_new_vs_stale(self, tmp_path):
+        """Records from run1 are STALE when diff is exported with run2's run_id."""
+        import csv
+        from pathlib import Path
+        db = self._make_db(tmp_path)
+        db.upsert_listings([
+            self._listing("New Prop"),
+            self._listing("Old Prop"),
+        ], run_id="run1")
+        # Second run only sees New Prop
+        db.upsert_listings([self._listing("New Prop")], run_id="run2")
+
+        diff_path = str(Path(tmp_path) / "diff.csv")
+        db.export_diff_csv(diff_path, run_id="run2")
+        with open(diff_path, newline="", encoding="utf-8") as f:
+            rows = {r["property_name"]: r["change_type"] for r in csv.DictReader(f)}
+
+        assert rows["New Prop"] == "UPDATED"   # seen in run2, existed before
+        assert rows["Old Prop"] == "STALE"     # not confirmed in run2
+
+    def test_export_diff_csv_marks_new(self, tmp_path):
+        """A brand-new record (first_seen == last_seen) must be tagged NEW."""
+        import csv
+        from pathlib import Path
+        db = self._make_db(tmp_path)
+        now = "2026-06-05T10:00:00"
+        db.upsert_listings([
+            self._listing("Fresh Prop", first_seen=now, last_seen=now),
+        ], run_id="run1")
+
+        diff_path = str(Path(tmp_path) / "diff.csv")
+        db.export_diff_csv(diff_path, run_id="run1")
+        with open(diff_path, newline="", encoding="utf-8") as f:
+            rows = {r["property_name"]: r["change_type"] for r in csv.DictReader(f)}
+
+        assert rows["Fresh Prop"] == "NEW"
+
+    def test_upsert_skips_records_missing_required_fields(self, tmp_path):
+        """Records without authority+property_name are silently skipped."""
+        db = self._make_db(tmp_path)
+        counts = db.upsert_listings([
+            {"authority": "", "property_name": "No Auth"},
+            {"authority": "City", "property_name": ""},
+            {"property_name": "Missing Auth"},
+        ], run_id="run1")
+        assert counts["inserted"] == 0
+        assert db.get_record_count() == 0
+
+
+# ---------------------------------------------------------------------------
+# changelog.py — generate_changelog / run_prev.csv round-trip
+# ---------------------------------------------------------------------------
+
+class TestChangelogRoundTrip:
+    """generate_changelog must diff against run_prev.csv and snapshot correctly."""
+
+    def _run_changelog(self, tmp_path, current, skipped=None):
+        import os
+        from housing_list_search.changelog import generate_changelog
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            generate_changelog(current, skipped_targets=skipped or [])
+        finally:
+            os.chdir(orig)
+
+    def _read_file(self, tmp_path, filename):
+        import os
+        return open(os.path.join(tmp_path, filename), encoding="utf-8").read()
+
+    def _read_csv(self, tmp_path, filename):
+        import csv, os
+        with open(os.path.join(tmp_path, filename), newline="", encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+
+    def test_first_run_writes_baseline_snapshot(self, tmp_path):
+        """First run (no run_prev.csv) produces a snapshot and reports initial population."""
+        listings = [
+            {"authority": "Test City", "property_name": "Park View", "status": "Open", "listing_status": "open"},
+        ]
+        self._run_changelog(tmp_path, listings)
+
+        import os
+        assert os.path.exists(os.path.join(tmp_path, "run_prev.csv"))
+        md = self._read_file(tmp_path, "changelog_diffs.md")
+        assert "First run" in md
+
+    def test_added_listing_appears_in_next_run_changelog(self, tmp_path):
+        """A listing present in run2 but absent from run1 must appear as Added."""
+        run1 = [{"authority": "City", "property_name": "Old Prop", "status": "Open", "listing_status": "open"}]
+        self._run_changelog(tmp_path, run1)
+
+        run2 = run1 + [{"authority": "City", "property_name": "New Prop", "status": "Open", "listing_status": "open"}]
+        self._run_changelog(tmp_path, run2)
+
+        md = self._read_file(tmp_path, "changelog_diffs.md")
+        assert "New Prop" in md
+        rows = self._read_csv(tmp_path, "changelog_diffs.csv")
+        added = [r for r in rows if r["change_type"] == "ADDED"]
+        assert any(r["property_name"] == "New Prop" for r in added)
+
+    def test_removed_listing_appears_in_next_run_changelog(self, tmp_path):
+        """A listing absent in run2 that was present in run1 must appear as Removed."""
+        run1 = [
+            {"authority": "City", "property_name": "Stays", "status": "Open", "listing_status": "open"},
+            {"authority": "City", "property_name": "Gone Prop", "status": "Open", "listing_status": "open"},
+        ]
+        self._run_changelog(tmp_path, run1)
+
+        run2 = [{"authority": "City", "property_name": "Stays", "status": "Open", "listing_status": "open"}]
+        self._run_changelog(tmp_path, run2)
+
+        md = self._read_file(tmp_path, "changelog_diffs.md")
+        assert "Gone Prop" in md
+        rows = self._read_csv(tmp_path, "changelog_diffs.csv")
+        removed = [r for r in rows if r["change_type"] == "REMOVED"]
+        assert any(r["property_name"] == "Gone Prop" for r in removed)
+
+    def test_removed_listing_does_not_accumulate_across_runs(self, tmp_path):
+        """The 'removed forever' bug: a removed record must NOT reappear in run3 changelog."""
+        run1 = [
+            {"authority": "City", "property_name": "Gone Prop", "status": "Open", "listing_status": "open"},
+            {"authority": "City", "property_name": "Stays", "status": "Open", "listing_status": "open"},
+        ]
+        self._run_changelog(tmp_path, run1)
+
+        run2 = [{"authority": "City", "property_name": "Stays", "status": "Open", "listing_status": "open"}]
+        self._run_changelog(tmp_path, run2)
+
+        # run3: same as run2 — Gone Prop should NOT appear again
+        self._run_changelog(tmp_path, run2)
+
+        rows = self._read_csv(tmp_path, "changelog_diffs.csv")
+        removed = [r for r in rows if r["change_type"] == "REMOVED"]
+        assert not any(r["property_name"] == "Gone Prop" for r in removed), (
+            "Gone Prop reappeared in run3 — run_prev.csv is using DB snapshot instead of run-seen snapshot"
+        )
+
+    def test_status_change_detected(self, tmp_path):
+        """A listing with a changed status field must appear in Status Changed section."""
+        run1 = [{"authority": "City", "property_name": "Monroe Commons", "status": "Open", "listing_status": "open"}]
+        self._run_changelog(tmp_path, run1)
+
+        run2 = [{"authority": "City", "property_name": "Monroe Commons", "status": "Closed", "listing_status": "closed"}]
+        self._run_changelog(tmp_path, run2)
+
+        rows = self._read_csv(tmp_path, "changelog_diffs.csv")
+        changed = [r for r in rows if r["change_type"] == "STATUS_CHANGE"]
+        assert any(r["property_name"] == "Monroe Commons" for r in changed)
+
+    def test_no_change_produces_no_change_row(self, tmp_path):
+        """Identical run1 and run2 must produce a NO_CHANGE row, not empty CSV."""
+        run = [{"authority": "City", "property_name": "Stable Prop", "status": "Open", "listing_status": "open"}]
+        self._run_changelog(tmp_path, run)
+        self._run_changelog(tmp_path, run)
+
+        rows = self._read_csv(tmp_path, "changelog_diffs.csv")
+        assert any(r["change_type"] == "NO_CHANGE" for r in rows)
