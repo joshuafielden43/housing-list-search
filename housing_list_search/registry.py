@@ -89,6 +89,10 @@ def sanitize_target(raw: dict) -> dict:
 
     Returns a cleaned dict. Logs warnings (does not raise) for anything
     that had to be repaired or looks suspicious.
+
+    Rows whose URL is blank after sanitization are skipped on ingest.
+    That is distinct from waf_blocked targets, which keep a valid URL in
+    TARGETS.md but are skipped at scrape time in runner.py before any fetch.
     """
     out = {}
 

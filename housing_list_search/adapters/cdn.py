@@ -449,6 +449,10 @@ def extract_underlying_records(
             except PlaywrightTimeout:
                 pass
 
+            content = page.content()
+            soup = BeautifulSoup(content, "html.parser")
+            raw = content
+
             # (Gilroy-specific diagnostics removed — data lives in DocumentCenter PDFs)
 
             # === 1. Aggressive link discovery + network interception (especially for showdocument IDs) ===
@@ -489,7 +493,6 @@ def extract_underlying_records(
             # that don't have obvious "flyer" text next to them in the rendered HTML.
             # We prioritize ones that look like property/AMI flyers.
             try:
-                raw = page.content()
                 dc_matches = re.findall(r'(/DocumentCenter/View/\d+)', raw)
                 # Sort so that slugs with property names or AMI indicators come first
                 def score(link):
@@ -627,7 +630,7 @@ def extract_underlying_records(
             # === 2. Try to extract tables directly from the current page (many cities render the list here) ===
             logger.info("[cdn] Attempting to extract tables from current page content")
             content = page.content()
-            soup = BeautifulSoup(content, "html.parser")
+            soup = BeautifulSoup(content, "html.parser")  # refresh after link-discovery pass
 
             for table in soup.find_all("table"):
                 rows = table.find_all("tr")
@@ -652,7 +655,6 @@ def extract_underlying_records(
                         "last_seen": now_iso,
                         "first_seen": now_iso,
                         "source": f"cdn:{authority.lower().replace(' ', '_').replace('.', '')}",
-                        "source_url": source,
                     }
                     for j, text in enumerate(cells):
                         key = headers[j] if j < len(headers) else f"col_{j}"
@@ -935,8 +937,10 @@ def extract_underlying_records(
             # Ultimate fallback: save screenshot + return page title + any visible text for debugging
             if len(records) == 0:
                 try:
-                    page.screenshot(path="/tmp/sunnyvale_debug.png", full_page=True)
-                    logger.info("[cdn] Saved debug screenshot to /tmp/sunnyvale_debug.png")
+                    debug_slug = re.sub(r"[^\w]+", "_", (authority or "unknown").lower()).strip("_")
+                    debug_path = f"/tmp/{debug_slug}_cdn_debug.png"
+                    page.screenshot(path=debug_path, full_page=True)
+                    logger.info("[cdn] Saved debug screenshot to %s", debug_path)
                 except Exception:
                     pass
 
