@@ -555,40 +555,64 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
         ),
     }
 
-    body = {
-        "view": "base",
-        "limit": 100,
-        "page": 1,
-        "orderBy": ["mostRecentlyPublished"],
-        "orderDir": ["desc"],
-        # No county filter in the body: fetch all, then filter client-side by city.
-        # County filters can be added per-instance in _API_INSTANCES if needed.
-        "filter": [],
-    }
+    # Page through the full dataset. The API is paginated; a single page-1 request
+    # ordered by mostRecentlyPublished can miss older listings that still exist and
+    # are perfectly valid (e.g. Santa Clara city listings in the Bay Area-wide feed).
+    # We fetch until the API signals no more pages via meta.totalItems or an empty page.
+    page_size = 100
+    all_items: list[dict] = []
+    page = 1
+    max_pages = 20  # safety cap (~2,000 listings max; the entire Bay Area has far fewer)
 
-    try:
-        resp = _requests.post(endpoint, json=body, headers=headers, timeout=30)
-    except Exception as exc:
-        logger.warning("[Bloom] API path: request to %s failed: %s", endpoint, exc)
-        return [], []
+    while page <= max_pages:
+        body = {
+            "view": "base",
+            "limit": page_size,
+            "page": page,
+            "orderBy": ["mostRecentlyPublished"],
+            "orderDir": ["desc"],
+            "filter": [],
+        }
 
-    if resp.status_code != 200:
-        logger.warning("[Bloom] API path: HTTP %d from %s", resp.status_code, endpoint)
-        return [], []
+        try:
+            resp = _requests.post(endpoint, json=body, headers=headers, timeout=30)
+        except Exception as exc:
+            logger.warning("[Bloom] API path: request to %s page %d failed: %s", endpoint, page, exc)
+            break
 
-    try:
-        payload = resp.json()
-    except Exception as exc:
-        logger.warning("[Bloom] API path: failed to parse JSON from %s: %s", endpoint, exc)
-        return [], []
+        if resp.status_code != 200:
+            logger.warning("[Bloom] API path: HTTP %d from %s page %d", resp.status_code, endpoint, page)
+            break
 
-    items = payload.get("items") or []
-    if not isinstance(items, list):
-        logger.warning("[Bloom] API path: unexpected payload shape from %s", endpoint)
-        return [], []
+        try:
+            payload = resp.json()
+        except Exception as exc:
+            logger.warning("[Bloom] API path: failed to parse JSON from %s page %d: %s", endpoint, page, exc)
+            break
+
+        page_items = payload.get("items") or []
+        if not isinstance(page_items, list):
+            logger.warning("[Bloom] API path: unexpected payload shape from %s page %d", endpoint, page)
+            break
+
+        all_items.extend(page_items)
+
+        # Stop if we got fewer items than the page size (last page) or the API
+        # tells us via meta.totalItems that we've collected everything
+        meta = payload.get("meta") or {}
+        total = meta.get("totalItems")
+        if total is not None and len(all_items) >= int(total):
+            break
+        if len(page_items) < page_size:
+            break
+
+        page += 1
+
+    items = all_items
 
     # Apply optional city filter (e.g. isolate "Santa Clara" city from the
-    # MTC Bay Area-wide feed which covers the whole county)
+    # MTC Bay Area-wide feed which covers the whole county).
+    # Applied after full pagination so no item is missed due to sort order.
     if city_filter:
         cf = city_filter.lower()
         items = [
@@ -597,9 +621,10 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
         ]
 
     logger.info(
-        "[Bloom] API path: %d items from %s (city_filter=%r)",
+        "[Bloom] API path: %d items from %s across %d page(s) (city_filter=%r)",
         len(items),
         endpoint,
+        page,
         city_filter,
     )
     # Return all as open_listings; status field within each item distinguishes
@@ -835,9 +860,21 @@ def extract_bloom_housing_listings(
             if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
         ]
 
-    # Path 3: Playwright fallback
+    # Path 3: Playwright fallback — re-apply city_filter afterwards because the
+    # Playwright heuristic captures all JSON on the page (potentially a full
+    # regional feed) and does not know about our filter.
     if not open_items and not closed_items:
         open_items, closed_items = _fetch_via_playwright(url)
+        if city_filter and (open_items or closed_items):
+            cf = city_filter.lower()
+            open_items = [
+                it for it in open_items
+                if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
+            ]
+            closed_items = [
+                it for it in closed_items
+                if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
+            ]
 
     if not open_items and not closed_items:
         logger.error(

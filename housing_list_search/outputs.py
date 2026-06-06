@@ -22,13 +22,24 @@ def generate_daily_summary(listings, skipped_targets=None):
             name = l.get("property_name", "")
             name_lower = name.lower()
 
-            # Very strict filter
-            if (l.get("status") == "Open"
+            # Determine whether this record represents an open/accepting listing.
+            # Bloom Housing records set status="accepting applications" in notes
+            # (from _bloom_record_from_item) rather than status="Open".
+            # Generic scrapers may set status="Open". Treat both as open.
+            status_val = (l.get("status") or "").lower()
+            notes_val = (l.get("notes") or "").lower()
+            is_open = (
+                status_val == "open"
+                or "accepting applications" in notes_val
+                or "waitlist open" in notes_val
+            )
+
+            if (is_open
                 and "closed" not in name_lower
                 and len(name) > 22
                 and name.count(" ") >= 4
-                and not any(name_lower.startswith(x) for x in 
-                    ["quick links", "skip to", "home /", "your city /", "in this section", 
+                and not any(name_lower.startswith(x) for x in
+                    ["quick links", "skip to", "home /", "your city /", "in this section",
                      "select this as", "housing open side", "/ your city"])):
 
                 unique_opens.append(l)

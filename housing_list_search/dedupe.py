@@ -70,10 +70,14 @@ def _norm_address(addr: str) -> str:
 def _make_key(rec: Dict[str, Any]) -> Tuple[str, str, str]:
     """Return (name_key, addr_key, addr_only_key).
     We treat a strong address match as sufficient for dedup even if names differ.
+
+    URLs are NOT used as address fallbacks: many distinct properties can share
+    the same source URL (e.g. a HouseKeys portal or a Housing Group page), so
+    treating the URL as an address key incorrectly deduplicates unrelated records.
     """
     name_key = _norm_name(rec.get("property_name") or rec.get("name", ""))
-    addr_key = _norm_address(rec.get("address") or rec.get("url", ""))
-    # Pure address key for fallback (longer = more trustworthy)
+    addr_key = _norm_address(rec.get("address", ""))
+    # Pure address key only when the address is substantial (a URL fragment is not)
     addr_only = addr_key if len(addr_key) >= 6 else ""
     return (name_key, addr_key, addr_only)
 

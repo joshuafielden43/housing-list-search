@@ -69,8 +69,11 @@ def save_current_full(listings: list):
         writer.writeheader()
         for item in listings:
             row = normalize_listing(item)
-            # Convert list to pipe-separated string for CSV
-            row["eligibility_flags"] = "|".join(row["eligibility_flags"])
+            # Coerce eligibility_flags to list before joining (scrapers may hand a string)
+            flags = row["eligibility_flags"]
+            if isinstance(flags, str):
+                flags = [flags] if flags else []
+            row["eligibility_flags"] = "|".join(flags)
             writer.writerow(row)
     
     print(f"✅ Saved current_full.csv with {len(listings)} listings")

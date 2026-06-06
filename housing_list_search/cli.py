@@ -124,31 +124,52 @@ def main():
                     )
                     continue
 
+                # Multi-measure targets (e.g. Gilroy: housekeys,cdn; Los Gatos: housekeys,cdn)
+                # must run EVERY matching adapter — not just the first one that fires.
+                # A city row with both housekeys and cdn has two distinct public data sources:
+                # the HouseKeys registration portal AND rental/PDF documents. Both must run.
+                # Use a flag to track whether any adapter produced results.
+                ran_any = False
+
                 if "properties-list" in url.lower() and "scchousingauthority.org" in url.lower():
                     from housing_list_search.adapters.john_stewart import scrape_john_stewart
                     all_listings.extend(scrape_john_stewart(url))
+                    ran_any = True
                 elif "john stewart" in authority.lower() or "jscosccha" in url.lower():
                     from housing_list_search.adapters.john_stewart import scrape_john_stewart
                     all_listings.extend(scrape_john_stewart(url))
-                elif "housekeys" in authority.lower() or "housekeys" in url.lower() or "housekeys" in measures:
-                    from housing_list_search.adapters.housekeys import scrape_housekeys
-                    all_listings.extend(scrape_housekeys(authority, url, admin_url=admin_url))
-                elif "cdn" in measures:
-                    from housing_list_search.adapters.cdn import extract_underlying_records
-                    recs = extract_underlying_records(url, authority)
-                    all_listings.extend(recs)
-                elif "alta" in measures:
-                    from housing_list_search.adapters.alta import scrape_alta
-                    all_listings.extend(scrape_alta(authority, url))
-                elif "playwright_needed" in measures or "js_heavy" in measures:
-                    from housing_list_search.playwright_scraper import playwright_scrape
-                    all_listings.extend(playwright_scrape(authority, url))
+                    ran_any = True
                 else:
-                    from housing_list_search.generic_scraper import generic_scrape
-                    from housing_list_search.scraper import polite_get
-                    resp = polite_get(url)
-                    if resp:
-                        all_listings.extend(generic_scrape(authority, url, resp.text))
+                    # Run each remaining adapter if its measure is present.
+                    # Order: housekeys first (registration record), then cdn (rental docs),
+                    # then alta, then playwright, then generic.
+                    if "housekeys" in authority.lower() or "housekeys" in url.lower() or "housekeys" in measures:
+                        from housing_list_search.adapters.housekeys import scrape_housekeys
+                        all_listings.extend(scrape_housekeys(authority, url, admin_url=admin_url))
+                        ran_any = True
+
+                    if "cdn" in measures:
+                        from housing_list_search.adapters.cdn import extract_underlying_records
+                        recs = extract_underlying_records(url, authority)
+                        all_listings.extend(recs)
+                        if recs:
+                            ran_any = True
+
+                    if "alta" in measures:
+                        from housing_list_search.adapters.alta import scrape_alta
+                        all_listings.extend(scrape_alta(authority, url))
+                        ran_any = True
+
+                    if not ran_any:
+                        if "playwright_needed" in measures or "js_heavy" in measures:
+                            from housing_list_search.playwright_scraper import playwright_scrape
+                            all_listings.extend(playwright_scrape(authority, url))
+                        else:
+                            from housing_list_search.generic_scraper import generic_scrape
+                            from housing_list_search.scraper import polite_get
+                            resp = polite_get(url)
+                            if resp:
+                                all_listings.extend(generic_scrape(authority, url, resp.text))
             except Exception as e:
                 print(f"   Error on {authority}: {e}")
         

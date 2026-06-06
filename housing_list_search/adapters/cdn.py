@@ -295,10 +295,10 @@ def extract_underlying_records(
                 if "docaccess.com" in url_lower and "domain.json" in url_lower:
                     try:
                         data = response.json()
-                        print(f"[DOCACCESS DOMAIN] {url}")
-                        print(f"   keys: {list(data.keys()) if isinstance(data, dict) else 'list'}")
-                        if isinstance(data, dict) and "available" in str(data).lower():
-                            print("   !!! Contains 'available' data")
+                        logger.debug("[cdn] docaccess domain.json at %s keys=%s available=%s",
+                                     url,
+                                     list(data.keys()) if isinstance(data, dict) else "list",
+                                     "available" in str(data).lower())
                     except Exception:
                         pass
             except Exception:
@@ -766,9 +766,8 @@ def extract_underlying_records(
                         has_flyer_links = any("official flyer" in a.get_text().lower() for a in doc_soup.find_all("a", href=True))
                         looks_like_availability_list = "affordable" in doc_url.lower() or "797" in doc_url or "list of affordable" in doc_url.lower()
                         if has_flyer_links and looks_like_availability_list:
-                            print(f"[DEBUG-AVAIL-LIST] Walking availability list page for doc_url={doc_url}, found has_flyer_links=True, looks_like_availability_list={looks_like_availability_list}")
                             dc_count = len([a for a in doc_soup.find_all("a", href=True) if "documentcenter/view" in a.get("href","").lower()])
-                            print(f"[DEBUG-AVAIL-LIST] Total DocumentCenter links on page: {dc_count}")
+                            logger.debug("[cdn] availability list page doc_url=%s flyer_links=True dc_links=%d", doc_url, dc_count)
                             # Find every link that is clearly one of the per-property Official Flyers
                             for a in doc_soup.find_all("a", href=True):
                                 href = a.get("href", "")
@@ -958,36 +957,24 @@ def extract_underlying_records(
 
     logger.info(f"[cdn] Extracted {len(records)} underlying records from {authority or source}")
 
-    # === AGGRESSIVE NETWORK DIAGNOSTIC REPORT (FULL) ===
-    if 'all_responses' in locals() and all_responses:
-        print(f"\n[NETWORK] Total responses seen during page load: {len(all_responses)}")
+    if logger.isEnabledFor(logging.DEBUG):
+        if 'all_responses' in locals() and all_responses:
+            from collections import Counter
+            cts = Counter(r.get("content_type", "").split(";")[0].strip() for r in all_responses if r.get("content_type"))
+            logger.debug("[cdn] %d network responses; content types: %s", len(all_responses),
+                         dict(cts.most_common(10)))
+            for i, r in enumerate(all_responses):
+                logger.debug("[cdn] response[%02d] %d %-35s %s", i, r['status'],
+                             r.get('content_type', '')[:35], r['url'])
 
-        from collections import Counter
-        cts = Counter(r.get("content_type", "").split(";")[0].strip() for r in all_responses if r.get("content_type"))
-        print("[NETWORK] Content types seen:")
-        for ct, count in cts.most_common(15):
-            print(f"   {count:3d}  {ct}")
+        if 'js_requests' in locals() and js_requests:
+            logger.debug("[cdn] %d JS-level requests captured", len(js_requests))
+            for req in js_requests[:30]:
+                logger.debug("[cdn] js-req: %s", req)
 
-        print(f"\n[NETWORK] ALL response URLs (in order):")
-        for i, r in enumerate(all_responses):
-            print(f"   [{i:02d}] {r['status']:3d}  {r.get('content_type','')[:35]:<35}  {r['url']}")
-    # === END AGGRESSIVE NETWORK DIAGNOSTIC REPORT ===
-
-    # === JS-LEVEL REQUESTS (the ones the browser actually made for content) ===
-    if 'js_requests' in locals() and js_requests:
-        print(f"\n[JS-NET] JavaScript-level requests captured: {len(js_requests)}")
-        for req in js_requests[:30]:
-            print(f"   {req}")
-    else:
-        print("\n[JS-NET] No additional JS-level requests logged (or hooks didn't fire)")
-    # === END JS-LEVEL REQUESTS ===
-
-    # Old targeted JSON diagnostic (kept for compatibility)
-    if 'captured_json' in locals() and captured_json:
-        print(f"\n[DEBUG] Intercepted {len(captured_json)} housing-related JSON responses (targeted filter):")
-        for item in captured_json[:5]:
-            print(f"    {item['url']}")
-    elif 'captured_json' in locals():
-        print("\n[DEBUG] No housing-related JSON responses intercepted on source page (targeted filter)")
+        if 'captured_json' in locals() and captured_json:
+            logger.debug("[cdn] %d housing-related JSON responses intercepted", len(captured_json))
+            for item in captured_json[:5]:
+                logger.debug("[cdn] json-response: %s", item['url'])
 
     return records
