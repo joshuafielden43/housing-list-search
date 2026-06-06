@@ -24,8 +24,8 @@ Current version: **v0.8.6**
 ```bash
 git clone https://github.com/joshuafielden43/housing-list-search.git
 cd housing-list-search
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+uv venv && source .venv/bin/activate
+uv pip install -r requirements.txt
 playwright install chromium          # only needed for Playwright fallback paths
 python scripts/doctor.py --fix      # validates environment + TARGETS.md ingestion
 python main.py --run                 # normal daily extraction
@@ -90,6 +90,7 @@ PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibilit
 - Commits in PRs should be atomic and have a subject line under 72 characters.
 - CI runs unit tests only (`pytest -m "not integration"`). Live portal tests are opt-in: `pytest -m integration`.
 - After each `--run`, check `diff.csv` for `STALE` rows; when the count is high, prune with `scripts/db_manage.py prune`.
+- `python main.py --run --target "City Name"` is a partial diagnostic run: `diff.csv` is scoped to the selected authority, `run_prev.csv` is not updated, and `daily_summary.md` intentionally contains only that subset.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
 
 ---

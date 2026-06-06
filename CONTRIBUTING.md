@@ -34,8 +34,8 @@ Thanks for helping. This project exists to make affordable housing data accessib
 ```bash
 git clone https://github.com/joshuafielden43/housing-list-search.git
 cd housing-list-search
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+uv venv && source .venv/bin/activate
+uv pip install -r requirements.txt
 playwright install chromium
 python scripts/doctor.py --fix
 ```

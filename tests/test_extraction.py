@@ -12,7 +12,7 @@ from housing_list_search.extraction import extract_target, HousingRecord
 @pytest.mark.integration
 def test_san_jose_dispatcher_returns_real_records():
     """San José portal via the dedicated Next.js listings.json extractor."""
-    records = extract_target("https://housing.sanjoseca.gov/", "City of San José")
+    records = extract_target("https://housing.sanjoseca.gov/listings", "City of San José")
     assert len(records) > 5, "Expected many real San José listings"
     r = records[0]
     assert isinstance(r, HousingRecord)
