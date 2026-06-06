@@ -2,6 +2,22 @@
 import csv
 from datetime import datetime
 
+_LISTING_STATUS_MAP = {
+    "open": "Open",
+    "waitlist": "Waitlist Open",
+    "coming_soon": "Coming Soon",
+    "closed": "Closed",
+}
+
+
+def _resolve_status(raw_data: dict) -> str:
+    """Prefer structured listing_status (set by Bloom/extraction adapters) over raw status."""
+    ls = (raw_data.get("listing_status") or "").lower().strip()
+    if ls in _LISTING_STATUS_MAP:
+        return _LISTING_STATUS_MAP[ls]
+    return raw_data.get("status", "Unknown") or "Unknown"
+
+
 def normalize_listing(raw_data: dict) -> dict:
     """Core + flexible fields. Now preserves rich fields from new HousingRecord extractors."""
     notes = raw_data.get("notes", "")
@@ -28,7 +44,7 @@ def normalize_listing(raw_data: dict) -> dict:
         "phone": raw_data.get("phone", ""),
         "email": raw_data.get("email", ""),
         "bedrooms": raw_data.get("bedrooms", ""),
-        "status": raw_data.get("status", "Unknown"),
+        "status": _resolve_status(raw_data),
         "deadline": raw_data.get("deadline", ""),
         "income_limits": raw_data.get("income_limits", ""),
         "unit_types": raw_data.get("bedrooms") or raw_data.get("unit_types", ""),

@@ -93,6 +93,18 @@ def deduplicate_listings(listings: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     if not listings:
         return []
 
+    # Coerce dataclass instances (e.g. HousingRecord from pdf_scraper / extraction)
+    # to plain dicts so all downstream .get() calls are safe.
+    plain: List[Dict[str, Any]] = []
+    for rec in listings:
+        if isinstance(rec, dict):
+            plain.append(rec)
+        elif hasattr(rec, "to_dict"):
+            plain.append(rec.to_dict())
+        else:
+            plain.append(vars(rec))
+    listings = plain
+
     # Prefer records with higher confidence and more complete contact info
     def score(rec):
         raw_c = rec.get("confidence", 0.5)

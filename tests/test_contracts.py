@@ -211,47 +211,77 @@ class TestDedupeSharedURL:
         assert len(result) == 1
         assert result[0]["authority"] == "SCCHA"  # higher confidence kept
 
+    def test_housing_record_dataclass_does_not_crash_dedupe(self):
+        """HousingRecord objects from pdf_scraper must not cause AttributeError in dedupe."""
+        from housing_list_search.dedupe import deduplicate_listings
+        from housing_list_search.extraction.pdf import HousingRecord
+        rec = HousingRecord(
+            authority="City of Test",
+            property_name="Cedar Park Apartments",
+            url="https://example.com/cedar.pdf",
+        )
+        result = deduplicate_listings([rec])
+        assert len(result) == 1
+        assert result[0]["property_name"] == "Cedar Park Apartments"
+
 
 # ---------------------------------------------------------------------------
-# normalizer.py — eligibility_flags string coercion
+# normalizer.py — eligibility_flags coercion and listing_status→status mapping
+# These tests call save_current_full() directly so a regression in the real
+# write path is caught rather than just the logic duplicated here.
 # ---------------------------------------------------------------------------
 
 class TestNormalizerFlagsCoercion:
+
+    def _csv_rows(self, listings):
+        """Write via save_current_full and return parsed CSV rows."""
+        import csv, os, tempfile
+        from housing_list_search.normalizer import save_current_full
+        orig = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                save_current_full(listings)
+                with open("current_full.csv", newline="", encoding="utf-8") as f:
+                    return list(csv.DictReader(f))
+            finally:
+                os.chdir(orig)
+
     def test_string_flag_is_joined_intact(self):
-        from housing_list_search.normalizer import normalize_listing
-        # normalizer itself returns the raw value; coercion happens in save_current_full.
-        # We test the save path via a mock writer.
-        import csv, io
-        from unittest.mock import patch, mock_open
-
-        raw = {"property_name": "Test", "eligibility_flags": "below_market_rate", "authority": "X"}
-
-        # Simulate exactly what save_current_full does
-        from housing_list_search import normalizer as nm
-        row = nm.normalize_listing(raw)
-        flags = row["eligibility_flags"]
-        if isinstance(flags, str):
-            flags = [flags] if flags else []
-        joined = "|".join(flags)
-        assert joined == "below_market_rate"
+        rows = self._csv_rows([{"property_name": "Test", "eligibility_flags": "below_market_rate", "authority": "X"}])
+        assert rows[0]["eligibility_flags"] == "below_market_rate"
 
     def test_list_flags_joined_with_pipe(self):
-        from housing_list_search import normalizer as nm
-        raw = {"property_name": "Test", "eligibility_flags": ["below_market_rate", "senior"], "authority": "X"}
-        row = nm.normalize_listing(raw)
-        flags = row["eligibility_flags"]
-        if isinstance(flags, str):
-            flags = [flags] if flags else []
-        assert "|".join(flags) == "below_market_rate|senior"
+        rows = self._csv_rows([{"property_name": "Test", "eligibility_flags": ["below_market_rate", "senior"], "authority": "X"}])
+        assert rows[0]["eligibility_flags"] == "below_market_rate|senior"
 
     def test_empty_string_flag_becomes_empty(self):
-        from housing_list_search import normalizer as nm
-        raw = {"property_name": "Test", "eligibility_flags": "", "authority": "X"}
-        row = nm.normalize_listing(raw)
-        flags = row["eligibility_flags"]
-        if isinstance(flags, str):
-            flags = [flags] if flags else []
-        assert "|".join(flags) == ""
+        rows = self._csv_rows([{"property_name": "Test", "eligibility_flags": "", "authority": "X"}])
+        assert rows[0]["eligibility_flags"] == ""
+
+    def test_listing_status_open_maps_to_Open_in_csv(self):
+        rows = self._csv_rows([{"property_name": "Monroe Commons", "listing_status": "open", "authority": "Test", "eligibility_flags": []}])
+        assert rows[0]["status"] == "Open"
+
+    def test_listing_status_waitlist_maps_correctly(self):
+        rows = self._csv_rows([{"property_name": "Park View", "listing_status": "waitlist", "authority": "Test", "eligibility_flags": []}])
+        assert rows[0]["status"] == "Waitlist Open"
+
+    def test_listing_status_closed_maps_correctly(self):
+        rows = self._csv_rows([{"property_name": "Elm Court", "listing_status": "closed", "authority": "Test", "eligibility_flags": []}])
+        assert rows[0]["status"] == "Closed"
+
+    def test_listing_status_overrides_raw_status_field(self):
+        """listing_status takes precedence over the generic status field."""
+        rows = self._csv_rows([{
+            "property_name": "Bloom Prop", "listing_status": "open", "status": "active",
+            "authority": "Test", "eligibility_flags": [],
+        }])
+        assert rows[0]["status"] == "Open"
+
+    def test_no_listing_status_falls_back_to_status_field(self):
+        rows = self._csv_rows([{"property_name": "Generic", "status": "Waitlisting", "authority": "Test", "eligibility_flags": []}])
+        assert rows[0]["status"] == "Waitlisting"
 
 
 # ---------------------------------------------------------------------------
