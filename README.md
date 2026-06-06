@@ -5,7 +5,7 @@
 Built for nonprofits that need a daily, structured picture of what low/no-income housing is open, closing, or on waitlist across a fragmented landscape of city portals, delegated administrators, and vendor platforms.
 
 Current scope: **17 Santa Clara County targets** across every city and the county housing authority.  
-Current version: **v0.8.5**
+Current version: **v0.8.6**
 
 ---
 
@@ -78,6 +78,7 @@ scripts/
 TARGETS.md           # Source of truth: all targets, measures, admin contacts
 SOUL.md              # Mission and guardrails
 AGENTS.md            # Notes for AI contributors and future maintainers
+PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibility split)
 ```
 
 ---
@@ -87,7 +88,8 @@ AGENTS.md            # Notes for AI contributors and future maintainers
 - `main` is protected: direct pushes are blocked; changes go through PRs.
 - PR titles follow `type: short description` — `feat:`, `fix:`, `docs:`, `chore:`.
 - Commits in PRs should be atomic and have a subject line under 72 characters.
-- CI runs `pytest tests/` on every PR (currently smoke tests; grows as adapters mature).
+- CI runs unit tests only (`pytest -m "not integration"`). Live portal tests are opt-in: `pytest -m integration`.
+- After each `--run`, check `diff.csv` for `STALE` rows; when the count is high, prune with `scripts/db_manage.py prune`.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
 
 ---

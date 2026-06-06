@@ -4,7 +4,7 @@ Database Management Layer for Housing List Search.
 This module provides the core logic for the bespoke "DBA in a box"
 used for validation, testing, and future trash compactor work.
 
-See PROJECT_CONTRACT_v0.8.2.md Section 7 for the governing contract.
+See PROJECT_CONTRACT_v0.8.6.md for the active contract.
 """
 
 import sqlite3
@@ -22,6 +22,9 @@ import yaml
 DB_PATH = Path("housing_registry.db")
 SNAPSHOTS_DIR = Path("snapshots")
 DEFAULT_SETTINGS_PATH = Path.home() / ".housing-list-search" / "settings.yaml"
+
+# Warn on --run when STALE rows in diff.csv meet or exceed this count.
+DEFAULT_STALE_WARN_THRESHOLD = 5
 
 
 class DatabaseManager:
@@ -66,23 +69,8 @@ class DatabaseManager:
         conn = self.connect()
         c = conn.cursor()
 
-        # targets table (existing, keep compatible)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS targets (
-                id INTEGER PRIMARY KEY,
-                authority TEXT UNIQUE,
-                url TEXT,
-                notes TEXT,
-                scraping_measures TEXT,
-                priority TEXT,
-                last_updated TEXT,
-                administrator TEXT,
-                administrator_url TEXT,
-                administrator_phone TEXT,
-                administrator_contact TEXT,
-                active INTEGER DEFAULT 1
-            )
-        """)
+        # Targets live in registry.py (TARGETS.md → targets table). This module
+        # owns housing_records and run_history only — see PROJECT_CONTRACT_v0.8.6.md.
 
         # housing_records table - the main data store for listings + freshness
         c.execute("""
@@ -547,6 +535,31 @@ class DatabaseManager:
                 writer.writerow(dict(zip(fieldnames, row)))
 
         return len(rows)
+
+    def diff_counts(self, run_id: str) -> dict[str, int]:
+        """
+        Count NEW / UPDATED / STALE rows using the same rules as export_diff_csv().
+
+        Returns e.g. {"NEW": 3, "UPDATED": 40, "STALE": 12}.
+        """
+        self.init_db()
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute("""
+            SELECT
+                CASE
+                    WHEN last_run_id = ? AND first_seen = last_seen THEN 'NEW'
+                    WHEN last_run_id = ? THEN 'UPDATED'
+                    ELSE 'STALE'
+                END AS change_type,
+                COUNT(*) AS n
+            FROM housing_records
+            GROUP BY change_type
+        """, (run_id, run_id))
+        counts = {row[0]: row[1] for row in c.fetchall()}
+        for key in ("NEW", "UPDATED", "STALE"):
+            counts.setdefault(key, 0)
+        return counts
 
 
 def get_manager(db_path: Optional[Path] = None) -> DatabaseManager:

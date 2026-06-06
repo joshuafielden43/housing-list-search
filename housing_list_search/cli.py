@@ -48,7 +48,7 @@ def main():
         from housing_list_search.registry import load_targets_to_db, get_active_targets, get_skipped_targets
         from housing_list_search.runner import run_target
         from housing_list_search.dedupe import deduplicate_listings
-        from housing_list_search.db import get_manager
+        from housing_list_search.db import get_manager, DEFAULT_STALE_WARN_THRESHOLD
         from housing_list_search.changelog import generate_changelog
         from housing_list_search.outputs import generate_daily_summary
 
@@ -94,6 +94,23 @@ def main():
         n_full = db.export_csv("current_full.csv")
         n_diff = db.export_diff_csv("diff.csv", run_id=run_id)
         print(f"   Exported current_full.csv ({n_full} rows), diff.csv ({n_diff} rows)")
+
+        diff_counts = db.diff_counts(run_id)
+        stale_n = diff_counts.get("STALE", 0)
+        if stale_n >= DEFAULT_STALE_WARN_THRESHOLD:
+            logger.warning(
+                "%d STALE record(s) in diff.csv (not confirmed this run; threshold=%d). "
+                "Review diff.csv, then prune when appropriate: "
+                "python scripts/db_manage.py prune --not-seen-since 45",
+                stale_n,
+                DEFAULT_STALE_WARN_THRESHOLD,
+            )
+        elif stale_n > 0:
+            logger.info(
+                "%d STALE record(s) in diff.csv (below warn threshold of %d)",
+                stale_n,
+                DEFAULT_STALE_WARN_THRESHOLD,
+            )
 
         generate_changelog(all_listings, skipped_targets=skipped_targets)
         generate_daily_summary(all_listings, skipped_targets=skipped_targets)

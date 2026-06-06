@@ -67,6 +67,7 @@ def normalize_listing(raw_data: dict) -> dict:
     }
 
 def save_current_full(listings: list):
+    """Write listings directly to CSV. Production --run uses db.export_csv() instead."""
     if not listings:
         print("⚠️ No listings to save")
         return

@@ -43,7 +43,8 @@ python scripts/doctor.py --fix
 Run tests:
 
 ```bash
-pytest tests/
+pytest tests/ -m "not integration"   # default — matches CI, no network
+pytest tests/ -m integration         # live San José + Gilroy portal checks
 ```
 
 ---
@@ -54,7 +55,7 @@ pytest tests/
 
 1. Check `TARGETS.md` — the city may already be documented (possibly as `no_public_list` or `waf_blocked`).
 2. If the city uses an existing platform (Bloom Housing, HouseKeys, Housing Group/CDN, Alta, GIS), just add a TARGETS.md row with the right URL and `scraping_measures`. No code needed.
-3. If it's a new platform, create `housing_list_search/adapters/{platform_name}.py` following the module docstring and Scope & Guardrails pattern from any existing adapter. Add routing in `cli.py`. Update `AGENTS.md`.
+3. If it's a new platform, create `housing_list_search/adapters/{platform_name}.py` following the module docstring and Scope & Guardrails pattern from any existing adapter. Add routing in `runner.py`. Update `AGENTS.md`.
 
 ### Fixing a bug or updating an adapter
 
@@ -82,7 +83,7 @@ Atomic commits — one logical change per commit. If a PR includes both a bug fi
 - Branch off `main`: `git checkout -b feat/your-description`
 - PR title matches commit style: `fix: gilroy cdn adapter misses page 2`
 - Fill out the PR description with: what changed, why, and how you verified it works
-- CI runs `pytest tests/` automatically — PRs with failing tests will not be merged
+- CI runs `pytest tests/ -m "not integration"` automatically — PRs with failing unit tests will not be merged
 - `main` is protected: you cannot push directly. All changes go through a PR, even solo work (this creates a permanent record of what changed and why)
 
 ---

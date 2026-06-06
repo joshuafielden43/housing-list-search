@@ -642,6 +642,19 @@ class TestDatabaseManager:
         assert counts["inserted"] == 0
         assert db.get_record_count() == 0
 
+    def test_diff_counts_matches_export_labels(self, tmp_path):
+        db = self._make_db(tmp_path)
+        db.upsert_listings([
+            self._listing("New Prop"),
+            self._listing("Old Prop"),
+        ], run_id="run1")
+        db.upsert_listings([self._listing("New Prop")], run_id="run2")
+
+        counts = db.diff_counts("run2")
+        assert counts["UPDATED"] == 1
+        assert counts["STALE"] == 1
+        assert counts["NEW"] == 0
+
 
 # ---------------------------------------------------------------------------
 # changelog.py — generate_changelog / run_prev.csv round-trip

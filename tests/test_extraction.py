@@ -1,16 +1,15 @@
 """
-First extraction-layer tests (priority chosen by user).
+Extraction-layer integration tests (live network).
 
-These are smoke / integration tests against the real working extractors
-for the two proving-ground sources (Gilroy PDF tables + San José JSON portal).
-
-They exercise the unified extract_target dispatcher and HousingRecord shape.
+Run explicitly: pytest tests/test_extraction.py -m integration
+CI runs unit tests only: pytest tests/ -m "not integration"
 """
 
 import pytest
 from housing_list_search.extraction import extract_target, HousingRecord
 
 
+@pytest.mark.integration
 def test_san_jose_dispatcher_returns_real_records():
     """San José portal via the dedicated Next.js listings.json extractor."""
     records = extract_target("https://housing.sanjoseca.gov/", "City of San José")
@@ -22,6 +21,7 @@ def test_san_jose_dispatcher_returns_real_records():
     assert r.document_url.startswith("https://housing.sanjoseca.gov/listing/"), "Should have direct listing link"
 
 
+@pytest.mark.integration
 def test_gilroy_pdf_dispatcher_returns_real_records():
     """Gilroy DocumentCenter PDF via the table-aware extractor (one of the known good lists)."""
     records = extract_target(

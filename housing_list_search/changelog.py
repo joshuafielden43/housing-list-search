@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def _load_csv_keyed(path: str) -> dict[str, dict]:
-    """Load a current_full.csv into a dict keyed by (source_authority, property_name)."""
+    """Load a run snapshot CSV into a dict keyed by (source_authority, property_name)."""
     rows = {}
     try:
         with open(path, newline="", encoding="utf-8") as f:

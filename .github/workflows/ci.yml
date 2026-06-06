@@ -25,5 +25,5 @@ jobs:
       - name: Validate imports (dry-run doctor)
         run: python scripts/doctor.py --dry-run
 
-      - name: Run tests
-        run: python -m pytest tests/ -q --tb=short
+      - name: Run unit tests (integration tests excluded)
+        run: python -m pytest tests/ -m "not integration" -q --tb=short

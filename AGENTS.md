@@ -159,7 +159,7 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 | `housing_list_search/runner.py` | Measure-driven dispatch — routes each target to adapter(s) |
 | `housing_list_search/cli.py` | Main run loop: load targets → runner → dedupe → DB → CSV export |
 | `housing_list_search/db.py` | DatabaseManager: upsert_listings, export_csv, export_diff_csv, prune |
-| `housing_list_search/registry.py` | TARGETS.md → SQLite targets table with sanitization nanny |
+| `housing_list_search/registry.py` | TARGETS.md → SQLite `targets` table (sole owner of that schema) |
 | `housing_list_search/scraper.py` | `polite_get()` — the only approved HTTP entry point |
 | `housing_list_search/extraction/bloom_housing.py` | Bloom Housing platform adapter |
 | `housing_list_search/extraction/__init__.py` | Extraction layer dispatcher (Bloom domains, PDF links) |
@@ -178,6 +178,13 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 | `changelog_diffs.md/.csv` | Added / removed / status-changed vs last run | Audit trail, change notification |
 
 `diff.csv` and `current_full.csv` serve different audiences. Use `diff.csv` when you want "what changed this run." Use `current_full.csv` when you want the full known inventory. `STALE` in `diff.csv` means a record exists in the DB but was not confirmed in the most recent run — it may have closed or been removed from the source. Prune stale records with `scripts/db_manage.py prune`.
+
+`--run` logs a WARNING when STALE count ≥ 5 (`DEFAULT_STALE_WARN_THRESHOLD` in `db.py`). Living contract: `PROJECT_CONTRACT_v0.8.6.md`.
+
+## Tests
+
+- CI and default local runs: `pytest tests/ -m "not integration"`
+- Live portal smoke tests: `pytest tests/ -m integration` (San José Bloom + Gilroy PDF)
 
 ---
 

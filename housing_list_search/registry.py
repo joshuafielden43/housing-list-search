@@ -1,4 +1,10 @@
 # registry.py
+"""
+TARGETS.md → SQLite targets table.
+
+This module is the sole owner of the `targets` schema in housing_registry.db.
+Listing persistence (housing_records, run_history) lives in db.py.
+"""
 import sqlite3
 import csv
 from datetime import datetime
