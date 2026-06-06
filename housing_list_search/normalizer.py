@@ -45,6 +45,7 @@ def normalize_listing(raw_data: dict) -> dict:
         "email": raw_data.get("email", ""),
         "bedrooms": raw_data.get("bedrooms", ""),
         "status": _resolve_status(raw_data),
+        "listing_status": (raw_data.get("listing_status") or "").lower(),
         "deadline": raw_data.get("deadline", ""),
         "income_limits": raw_data.get("income_limits", ""),
         "unit_types": raw_data.get("bedrooms") or raw_data.get("unit_types", ""),
@@ -72,7 +73,7 @@ def save_current_full(listings: list):
     
     fieldnames = [
         "source_authority", "property_name", "address", "phone", "email",
-        "bedrooms", "url", "status", "deadline",
+        "bedrooms", "url", "status", "listing_status", "deadline",
         "income_limits", "unit_types", "eligibility_flags", "notes",
         "scrape_date", "confidence",
         "administrator", "administrator_url", "administrator_phone", "administrator_contact",

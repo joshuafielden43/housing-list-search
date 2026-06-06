@@ -1,42 +1,136 @@
 # changelog.py
+import csv
+import os
 from datetime import datetime
+from pathlib import Path
+
+
+def _load_csv_keyed(path: str) -> dict[str, dict]:
+    """Load a current_full.csv into a dict keyed by (source_authority, property_name)."""
+    rows = {}
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                key = (row.get("source_authority", ""), row.get("property_name", ""))
+                rows[key] = row
+    except FileNotFoundError:
+        pass
+    return rows
+
+
+def _snapshot_path() -> str:
+    """Path where the previous run's CSV is stored."""
+    return "current_full_prev.csv"
+
 
 def generate_changelog(previous: list, current: list, skipped_targets=None):
-    """Generate changelog between runs (stub for v0.1).
-    Also documents intentionally skipped targets (no_public_list) in the human-readable log.
+    """
+    Diff the previous run's CSV against the current listings and write
+    changelog_diffs.md + changelog_diffs.csv.
+
+    previous: unused (kept for call-site compatibility); we load from disk instead.
+    current: list of raw listing dicts (pre-normalization) from this run.
     """
     skipped_targets = skipped_targets or []
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    content = f"""# Housing List Changelog
-Run: {timestamp}
-Previous listings: {len(previous)}
-Current listings: {len(current)}
-"""
+    prev_rows = _load_csv_keyed(_snapshot_path())
+    # Build current keyed rows from the raw dicts passed in
+    curr_rows: dict[tuple, dict] = {}
+    for item in current:
+        key = (item.get("authority", "") or item.get("source_authority", ""),
+               item.get("property_name", ""))
+        curr_rows[key] = item
+
+    added = [k for k in curr_rows if k not in prev_rows]
+    removed = [k for k in prev_rows if k not in curr_rows]
+
+    # Status changes: key present in both but status field differs
+    changed = []
+    for k in curr_rows:
+        if k not in prev_rows:
+            continue
+        old_status = (prev_rows[k].get("status") or "").strip()
+        new_status = _resolve_status_label(curr_rows[k])
+        if old_status and new_status and old_status != new_status:
+            changed.append((k, old_status, new_status))
+
+    is_first_run = not prev_rows
+
+    # --- Markdown ---
+    md = f"# Housing List Changelog\nRun: {timestamp}\n\n"
+
+    if is_first_run:
+        md += f"First run — {len(curr_rows)} listings loaded as baseline.\n\n"
+    else:
+        md += f"Previous: {len(prev_rows)} listings | Current: {len(curr_rows)} listings\n\n"
+        if added:
+            md += f"## ✅ New ({len(added)})\n"
+            for auth, name in sorted(added):
+                md += f"- {auth} — {name}\n"
+            md += "\n"
+        if removed:
+            md += f"## ❌ Removed ({len(removed)})\n"
+            for auth, name in sorted(removed):
+                md += f"- {auth} — {name}\n"
+            md += "\n"
+        if changed:
+            md += f"## 🔄 Status changed ({len(changed)})\n"
+            for (auth, name), old, new in sorted(changed):
+                md += f"- {auth} — {name}: {old} → {new}\n"
+            md += "\n"
+        if not added and not removed and not changed:
+            md += "_No changes detected since last run._\n\n"
 
     if skipped_targets:
-        content += "\n## ⚠️ Intentionally Skipped Targets (no_public_list)\n\n"
-        content += "These targets were skipped because they are marked in TARGETS.md as having no public\n"
-        content += "structured BMR list or extractable portal. They will not be researched again until the\n"
-        content += "marker is manually removed by a human.\n\n"
+        md += "## ⚠️ Intentionally Skipped Targets (no_public_list)\n\n"
+        md += ("These targets were skipped because they are marked in TARGETS.md as having no public "
+               "structured BMR list or extractable portal.\n\n")
         for auth, note in skipped_targets:
-            content += f"- {auth}"
+            md += f"- {auth}"
             if note:
-                content += f" — {note}"
-            content += "\n"
-        content += "\n"
+                md += f" — {note}"
+            md += "\n"
+        md += "\n"
 
-    content += """
-No previous data yet — this is the first run.
-Full diff engine coming soon.
-"""
     with open("changelog_diffs.md", "w", encoding="utf-8") as f:
-        f.write(content)
-    
-    with open("changelog_diffs.csv", "w", encoding="utf-8") as f:
-        f.write("change_type,authority,property_name,details,timestamp\n")
-        f.write(f"INITIAL_RUN,All Targets,First Scrape,Initial population,{timestamp}\n")
-        for auth, _ in skipped_targets:
-            f.write(f"SKIPPED,no_public_list,{auth},marked in TARGETS.md,{timestamp}\n")
-    
-    print("✅ Generated changelog_diffs.md and .csv")
+        f.write(md)
+
+    # --- CSV ---
+    csv_rows = []
+    if is_first_run:
+        csv_rows.append(("INITIAL_RUN", "All Targets", "First Scrape", "Initial population", timestamp))
+    else:
+        for auth, name in added:
+            csv_rows.append(("ADDED", auth, name, "", timestamp))
+        for auth, name in removed:
+            csv_rows.append(("REMOVED", auth, name, "", timestamp))
+        for (auth, name), old, new in changed:
+            csv_rows.append(("STATUS_CHANGE", auth, name, f"{old} → {new}", timestamp))
+        if not csv_rows:
+            csv_rows.append(("NO_CHANGE", "", "", f"{len(curr_rows)} listings unchanged", timestamp))
+
+    for auth, _ in skipped_targets:
+        csv_rows.append(("SKIPPED", "no_public_list", auth, "marked in TARGETS.md", timestamp))
+
+    with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["change_type", "authority", "property_name", "details", "timestamp"])
+        writer.writerows(csv_rows)
+
+    # Snapshot current_full.csv as the baseline for next run
+    if Path("current_full.csv").exists():
+        import shutil
+        shutil.copy2("current_full.csv", _snapshot_path())
+
+    print(f"✅ Generated changelog_diffs.md (+{len(added)} added, -{len(removed)} removed, "
+          f"{len(changed)} status changes)")
+
+
+def _resolve_status_label(item: dict) -> str:
+    """Derive the display status label from a raw listing dict (same logic as normalizer)."""
+    ls = (item.get("listing_status") or "").lower().strip()
+    mapping = {"open": "Open", "waitlist": "Waitlist Open", "coming_soon": "Coming Soon", "closed": "Closed"}
+    if ls in mapping:
+        return mapping[ls]
+    return (item.get("status") or "Unknown").strip()

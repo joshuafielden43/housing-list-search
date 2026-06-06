@@ -1,4 +1,8 @@
-# Housing List Aggregator — Project Contract (v0.8.2)
+# Housing List Aggregator — Project Contract (v0.8.2) [ARCHIVED]
+
+> **Archived as of v0.8.5.** This document describes the v0.8.2 deliverables and is kept for historical reference only.
+> The current product state is described in README.md, AGENTS.md, and SOUL.md.
+> Key divergences from this contract: six adapters (not five — bloom_housing added), san_jose.py replaced by bloom_housing.py, listing_status field added to every Bloom record, freshness fields now set by Bloom adapter, changelog stub replaced with real diff engine.
 
 **Note:** Filename is now versioned to match the release (iterated via `git mv`). Content is the authoritative contract for v0.8.2.
 

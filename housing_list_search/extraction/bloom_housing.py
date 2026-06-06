@@ -407,6 +407,9 @@ def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Op
     # go below medium even if some fields are sparse.
     confidence: str = "high" if (address and (phone or email)) else "medium"
 
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+
     return HousingRecord(
         authority=authority,
         property_name=name,
@@ -421,6 +424,10 @@ def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Op
         listing_status=listing_status,
         document_url=detail_url,
         confidence=confidence,
+        last_seen=now,
+        first_seen=now,
+        source=f"bloom:{listing_id}" if listing_id else "bloom",
+        source_url=detail_url,
     )
 
 
