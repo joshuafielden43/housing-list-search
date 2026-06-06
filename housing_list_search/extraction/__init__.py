@@ -43,7 +43,7 @@ def extract_target(url: str, authority: str = "") -> List[HousingRecord]:
     # Bloom Housing platform — covers San José and MTC Doorway and any future instances
     from urllib.parse import urlparse
     host = urlparse(url).netloc.lower()
-    if host in _KNOWN_BLOOM_DOMAINS or "sanjoseca.gov" in u or "housingbayarea.mtc.ca.gov" in u:
+    if host in _KNOWN_BLOOM_DOMAINS:
         # For MTC Doorway, pass a city_filter if the authority is a specific city.
         # Without a filter, all Bay Area listings come back (may be intentional for
         # county-wide searches, but TARGETS.md city rows should filter to that city).

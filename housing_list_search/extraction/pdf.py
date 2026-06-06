@@ -15,12 +15,15 @@ We keep the conservative, high-signal philosophy:
 from __future__ import annotations
 
 import io
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urlparse, parse_qs, unquote
 
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 try:
     import fitz  # PyMuPDF
@@ -481,10 +484,10 @@ def extract_records_from_pdf_tables(
 
                     field_map = build_field_map(cleaned_rows[header_index])
                     if not field_map:
-                        print("   [debug] No field_map built from header:", cleaned_rows[header_index])
+                        logger.debug("[pdf] No field_map built from header: %s", cleaned_rows[header_index])
                         continue
                     else:
-                        print("   [debug] Field map for this table:", field_map)
+                        logger.debug("[pdf] Field map for this table: %s", field_map)
 
                     for row in cleaned_rows[header_index + 1:]:
                         if looks_like_header_row(row):

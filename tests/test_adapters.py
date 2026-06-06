@@ -10,7 +10,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from bs4 import BeautifulSoup
+
+bs4 = pytest.importorskip("bs4", reason="bs4 not installed — skipping adapter fixture tests")
+BeautifulSoup = bs4.BeautifulSoup
 
 
 # ---------------------------------------------------------------------------

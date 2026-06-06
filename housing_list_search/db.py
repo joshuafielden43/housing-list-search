@@ -406,7 +406,8 @@ class DatabaseManager:
                 inserted += 1
 
         conn.commit()
-        self._log_run("upsert", "", inserted + updated, inserted + updated,
+        after = self.get_record_count()
+        self._log_run("upsert", "", after - inserted, after,
                       f"inserted={inserted} updated={updated}")
         return {"inserted": inserted, "updated": updated}
 

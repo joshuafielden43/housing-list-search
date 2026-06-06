@@ -406,7 +406,7 @@ def scrape_john_stewart(url: str) -> List[Dict[str, Any]]:
 #   4. Write a dedicated parser for the custom front-end (usually easy wins).
 #   5. Keep or improve the direct backend parser.
 #   6. Document the relationship in the module docstring exactly like above.
-#   7. Wire the new URL pattern into cli.py (and update TARGETS.md).
+#   7. Wire the new URL pattern into runner.py (and update TARGETS.md).
 #   8. Add the new source to the deduplication logic if it overlaps with
 #      existing sources.
 #
