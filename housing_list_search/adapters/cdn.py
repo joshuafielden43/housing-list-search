@@ -414,7 +414,6 @@ def extract_underlying_records(
                     }
                 """)
                 if final_candidates and len(final_candidates) > 0:
-                    print("[DEBUG] Final broad text candidates found:", final_candidates)
                     # Attempt to turn promising strings into lightweight records
                     for candidate in final_candidates:
                         units_match = re.search(r'(\d+)\s*(?:available\s*)?units?', candidate, re.IGNORECASE)

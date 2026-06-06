@@ -67,7 +67,7 @@ def is_housekeys_url(url: str) -> bool:
     return "housekeys" in url.lower()
 
 
-def scrape_housekeys(authority: str, url: str):
+def scrape_housekeys(authority: str, url: str, admin_url: str = ""):
     """
     Returns a minimal, actionable record directing users to register with HouseKeys
     for the specific city's BMR ownership program.
@@ -83,8 +83,9 @@ def scrape_housekeys(authority: str, url: str):
     # The real data lives behind account registration + lotteries.
     # The highest-value thing we can return is a clear pointer.
 
-    registration_url = "https://www.housekeys24.com/"
-    contact = "housing@milpitas.gov" if "milpitas" in authority.lower() else ""
+    # Use the city-specific HouseKeys subdomain from TARGETS.md when available;
+    # fall back to the Milpitas reference instance only as a last resort.
+    registration_url = admin_url if admin_url else "https://www.housekeys24.com/"
 
     notes = (
         f"Below Market Rate (BMR) ownership opportunities for {authority} are administered "

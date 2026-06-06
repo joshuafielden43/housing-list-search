@@ -116,9 +116,9 @@ def main():
                 elif "john stewart" in authority.lower() or "jscosccha" in url.lower():
                     from housing_list_search.adapters.john_stewart import scrape_john_stewart
                     all_listings.extend(scrape_john_stewart(url))
-                elif "housekeys" in authority.lower() or "housekeys" in url.lower():
+                elif "housekeys" in authority.lower() or "housekeys" in url.lower() or "housekeys" in measures:
                     from housing_list_search.adapters.housekeys import scrape_housekeys
-                    all_listings.extend(scrape_housekeys(authority, url))
+                    all_listings.extend(scrape_housekeys(authority, url, admin_url=admin_url))
                 elif "cdn" in measures:
                     from housing_list_search.adapters.cdn import extract_underlying_records
                     recs = extract_underlying_records(url, authority)

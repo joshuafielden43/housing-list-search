@@ -116,7 +116,9 @@ the adapter can evolve without requiring a full rewrite.
 from __future__ import annotations
 
 import json
+import logging
 import re
+from datetime import datetime as _dt
 from typing import List, Dict, Any, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -124,6 +126,8 @@ import requests
 from bs4 import BeautifulSoup
 
 from housing_list_search.scraper import polite_get
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -482,7 +486,7 @@ def _features_to_records(
         rec["last_seen"] = now_iso
         rec["first_seen"] = now_iso
         rec["source"] = f"gis:{authority.lower().replace(' ', '_')}"
-        rec["source_url"] = source
+        rec["source_url"] = source_url
         rec["expires_at"] = ""
 
         records.append(rec)
