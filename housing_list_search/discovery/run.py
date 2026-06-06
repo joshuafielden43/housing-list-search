@@ -10,23 +10,29 @@ import os
 from datetime import datetime
 
 
-def run_first_discovery(county: str, seed_urls: list, mode: str):
+def run_first_discovery(county: str, seed_urls: list, mode: str, confirmed: bool = False):
+    """
+    confirmed: must be True when called from --refresh-targets to overwrite curated data.
+               Prevents accidental destruction of the hand-edited TARGETS.md.
+               Set via the --yes-i-know flag in cli.py.
+    """
     targets_path = "TARGETS.md"
 
-    # Guard: refuse to overwrite a non-trivial TARGETS.md.
-    # A curated file has many rows; the bootstrap template has ~6.
+    # Guard: refuse to overwrite a non-trivial TARGETS.md unless the caller
+    # explicitly passed confirmed=True (i.e. used --yes-i-know on the CLI).
     if os.path.exists(targets_path):
         with open(targets_path, encoding="utf-8") as f:
             existing = f.read()
-        if existing.count("\n") > 15:
+        if existing.count("\n") > 15 and not confirmed:
             print(
                 "\n⚠️  TARGETS.md already exists and appears to contain curated data.\n"
                 "   --discover is for first-time bootstrap only.\n"
                 "   Edit TARGETS.md directly to add or modify targets.\n"
-                "   Use --refresh-targets only if you want to reset to defaults (destructive).\n"
+                "\n"
+                "   To reset to defaults (DESTRUCTIVE — overwrites your curated data):\n"
+                "       python main.py --refresh-targets --yes-i-know\n"
             )
-            if mode.upper() != "B" and "--refresh-targets" not in os.environ.get("HLS_FORCE", ""):
-                return
+            return
 
     print(f"\nRunning discovery for {county} in {mode.upper()} mode...\n")
 

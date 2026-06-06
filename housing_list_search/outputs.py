@@ -23,13 +23,18 @@ def generate_daily_summary(listings, skipped_targets=None):
             name_lower = name.lower()
 
             # Determine whether this record represents an open/accepting listing.
-            # Bloom Housing records embed status in notes ("accepting applications",
-            # "waitlist open") rather than setting status="Open".
-            # Generic scrapers may set status="Open". Treat both as open.
+            # Priority order:
+            #   1. listing_status field (set by Bloom extractor: "open", "waitlist",
+            #      "closed", "coming_soon") — reliable, no string fragility.
+            #   2. status field (generic scrapers set "Open" / "Unknown").
+            #   3. Notes string fallback for records produced before listing_status
+            #      was added (backwards compat).
+            listing_status = (l.get("listing_status") or "").lower()
             status_val = (l.get("status") or "").lower()
             notes_val = (l.get("notes") or "").lower()
             is_open = (
-                status_val == "open"
+                listing_status in ("open", "waitlist")
+                or status_val == "open"
                 or "accepting applications" in notes_val
                 or "waitlist open" in notes_val
             )

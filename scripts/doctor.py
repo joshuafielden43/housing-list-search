@@ -166,6 +166,22 @@ def check_playwright() -> bool:
         return True  # Not fatal — some targets work without it
 
 
+def _prune_snapshots(older_than_days: int):
+    import time
+    snapshots_dir = Path("snapshots")
+    if not snapshots_dir.exists():
+        print(f"   snapshots/ directory not found — nothing to prune")
+        return
+    cutoff = time.time() - older_than_days * 86400
+    removed = 0
+    for f in snapshots_dir.iterdir():
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            f.unlink()
+            print(f"   Pruned: {f.name}")
+            removed += 1
+    print(f"✅ Snapshot pruning complete — {removed} file(s) removed (older than {older_than_days} days)")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Housing List Search Doctor + Registry Fixer"
@@ -176,14 +192,28 @@ def main():
         help="Re-ingest TARGETS.md and re-run the sanitizer on all registry objects. "
              "Use this after editing TARGETS.md to guarantee the DB reflects the current (sanitized) state."
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate imports and config only — no network requests, no DB writes. "
+             "Safe to run in CI or restricted environments."
+    )
+    parser.add_argument(
+        "--prune-snapshots",
+        type=int,
+        metavar="DAYS",
+        help="Delete snapshots/ archives older than DAYS days."
+    )
     args = parser.parse_args()
 
-    if args.fix:
-        print("🔧 FIX MODE ENABLED")
-        print("   Will force a complete re-ingest + re-sanitization of all registry objects from TARGETS.md\n")
+    dry_run = args.dry_run
+
+    if dry_run:
+        print("🔍 DRY-RUN MODE — imports and config only, no network or DB writes")
+    if args.fix and not dry_run:
+        print("🔧 FIX MODE — will re-ingest TARGETS.md into registry\n")
 
     print("🏥 Housing List Search — Environment Doctor")
-    print("   (Run this after cloning or when things feel broken)")
 
     results = []
 
@@ -194,9 +224,7 @@ def main():
     section("Package Import Health")
     results.append(check_package_imports())
 
-    # If --fix was requested, force a full re-ingest right after we know imports work.
-    # This guarantees the registry objects have been re-scanned by the sanitizer.
-    if args.fix:
+    if args.fix and not dry_run:
         try:
             from housing_list_search.registry import load_targets_to_db
             print("\n🔧 --fix: Forcing fresh registry load + sanitization from TARGETS.md ...")
@@ -207,47 +235,55 @@ def main():
 
     section("Configuration")
     results.append(check_targets_file())
-    results.append(check_registry_load())
+    if not dry_run:
+        results.append(check_registry_load())
+    else:
+        print("   (skipping registry DB load in dry-run mode)")
 
     section("Optional but Recommended")
     results.append(check_playwright())
 
-    # Quick smoke of the new first-class housekeys + cdn adapters
-    try:
-        from housing_list_search.adapters.housekeys import scrape_housekeys
-        recs = scrape_housekeys("City of Milpitas (test)", "https://www.milpitas.gov/1303/Below-Market-Rate-BMR-Homeownership-Prog")
-        if recs and any("HouseKeys" in str(r) for r in recs):
-            print("✅ HouseKeys adapter smoke test passed")
-        else:
-            print("✅ HouseKeys adapter runs without crashing")
+    if not dry_run:
+        # Network smoke tests — skipped in dry-run / CI mode
+        try:
+            from housing_list_search.adapters.housekeys import scrape_housekeys
+            recs = scrape_housekeys("City of Milpitas (test)", "https://www.milpitas.gov/1303/Below-Market-Rate-BMR-Homeownership-Prog")
+            if recs and any("HouseKeys" in str(r) for r in recs):
+                print("✅ HouseKeys adapter smoke test passed")
+            else:
+                print("✅ HouseKeys adapter runs without crashing")
 
-        from housing_list_search.adapters.cdn import extract_underlying_records
-        # Document IDs 364/366/368 confirmed current as of 2026-06-05.
-        # ID 370 was stale; sunnyvale.ca.gov is WAF-blocked so these will
-        # return empty — the smoke test only validates no crash.
-        recs = extract_underlying_records(
-            "https://www.sunnyvale.ca.gov/homes-streets-and-property/housing/rental-programs",
-            authority="City of Sunnyvale (doctor smoke)",
-            known_document_urls=["https://www.sunnyvale.ca.gov/home/showpublisheddocument/368"],
-            timeout=30000
-        )
-        print("✅ cdn adapter smoke test ran (returned list, no crash)")
+            from housing_list_search.adapters.cdn import extract_underlying_records
+            # Document IDs 364/366/368 confirmed current as of 2026-06-05.
+            # sunnyvale.ca.gov is WAF-blocked so these return empty; smoke only validates no crash.
+            recs = extract_underlying_records(
+                "https://www.sunnyvale.ca.gov/homes-streets-and-property/housing/rental-programs",
+                authority="City of Sunnyvale (doctor smoke)",
+                known_document_urls=["https://www.sunnyvale.ca.gov/home/showpublisheddocument/368"],
+                timeout=30000
+            )
+            print("✅ cdn adapter smoke test ran (returned list, no crash)")
 
-        from housing_list_search.adapters.alta import scrape_alta
-        recs = scrape_alta("City of Palo Alto (doctor smoke)", "https://www.paloalto.gov/Departments/Planning-Development-Services/Housing-Policies-Projects/Below-Market-Rate-Housing")
-        print("✅ alta adapter smoke test ran (returned list, no crash)")
-    except Exception as e:
-        print(f"⚠️  Adapter smoke had issues (may be expected in restricted env): {e}")
+            from housing_list_search.adapters.alta import scrape_alta
+            recs = scrape_alta("City of Palo Alto (doctor smoke)", "https://www.paloalto.gov/Departments/Planning-Development-Services/Housing-Policies-Projects/Below-Market-Rate-Housing")
+            print("✅ alta adapter smoke test ran (returned list, no crash)")
+        except Exception as e:
+            print(f"⚠️  Adapter smoke had issues (may be expected in restricted env): {e}")
+
+    if args.prune_snapshots is not None:
+        _prune_snapshots(args.prune_snapshots)
 
     section("Summary")
 
-    if args.fix:
+    if args.fix and not dry_run:
         print("✅ --fix completed. Registry has been re-ingested and re-sanitized from TARGETS.md.")
-        print("   All target objects were re-scanned by the nanny layer.")
+    if dry_run:
+        print("✅ Dry-run complete — imports and config look good.")
 
     if all(results):
         print("✅ All critical checks passed. Your environment looks healthy.")
-        print("   You should be able to run: python main.py --run")
+        if not dry_run:
+            print("   You should be able to run: python main.py --run")
         sys.exit(0)
     else:
         print("❌ One or more checks failed. Fix the issues above and re-run this doctor.")

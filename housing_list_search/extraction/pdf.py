@@ -49,6 +49,9 @@ class HousingRecord:
     supportive_services: str = ""
     notes: str = ""
     document_url: str = ""
+    # Normalised availability status: "open", "closed", "waitlist", "coming_soon", or ""
+    # Set by structured extractors (Bloom, etc.); empty for generic/PDF records.
+    listing_status: str = ""
     page_number: int = 0
     raw_line: str = ""
     confidence: str = "low"   # "high", "medium", or "low"
@@ -76,6 +79,7 @@ class HousingRecord:
             "notes": self.notes,
             "document_url": self.document_url,
             "url": self.document_url,   # alias expected by some older code
+            "listing_status": self.listing_status,
             "confidence": self.confidence,
             "page_number": self.page_number,
             # Freshness fields

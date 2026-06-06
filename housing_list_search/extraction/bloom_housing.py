@@ -346,12 +346,17 @@ def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Op
 
     if status == "active" and marketing == "comingSoon":
         notes_parts.append("coming soon — not yet accepting applications")
+        listing_status = "coming_soon"
     elif status == "active":
         notes_parts.append("accepting applications")
+        listing_status = "open"
     elif status == "closed":
         notes_parts.append("closed — not currently accepting applications")
-    elif status:
-        notes_parts.append(f"status: {status}")
+        listing_status = "closed"
+    else:
+        listing_status = status or ""
+        if status:
+            notes_parts.append(f"status: {status}")
 
     if review == "lottery":
         lottery_status = (item.get("lotteryStatus") or "").strip()
@@ -362,6 +367,8 @@ def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Op
     if item.get("isWaitlistOpen"):
         spots = item.get("waitlistOpenSpots")
         notes_parts.append(f"waitlist open ({spots} spots)" if spots else "waitlist open")
+        if listing_status != "open":
+            listing_status = "waitlist"
     elif item.get("waitlistCurrentSize"):
         notes_parts.append(f"waitlist size: {item['waitlistCurrentSize']}")
 
@@ -411,6 +418,7 @@ def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Op
         bedrooms=bedrooms,
         supportive_services=services,
         notes=notes,
+        listing_status=listing_status,
         document_url=detail_url,
         confidence=confidence,
     )

@@ -9,6 +9,8 @@ Coverage:
 - cli.py  multi-measure routing (housekeys+cdn both fire)
 - bloom_housing.py  API pagination loop
 - bloom_housing.py  city_filter applied after Playwright fallback
+- bloom_housing.py  listing_status field set correctly on HousingRecord
+- outputs.py  listing_status field used for open detection (no string fragility)
 - outputs.py  structured records with short names appear in open section
 - outputs.py  "accepting applications" / "waitlist open" treated as open
 - dedupe.py   shared URL does NOT deduplicate distinct named properties
@@ -101,6 +103,82 @@ class TestSummaryOpenDetection:
         listings = [_listing("BMR", status="Open", notes="", source="generic_scrape")]
         md = self._run(listings)
         assert "## 🔥 CURRENTLY OPEN" not in md
+
+
+# ---------------------------------------------------------------------------
+# bloom_housing.py — listing_status field on HousingRecord
+# ---------------------------------------------------------------------------
+
+class TestBloomListingStatus:
+    """_bloom_record_from_item must set listing_status, not only embed it in notes."""
+
+    def _make_item(self, status, marketing="", is_waitlist_open=False):
+        return {
+            "id": "test-uuid",
+            "name": "Monroe Commons",
+            "status": status,
+            "marketingType": marketing,
+            "isWaitlistOpen": is_waitlist_open,
+            "reviewOrderType": "",
+            "leasingAgentPhone": "",
+            "leasingAgentEmail": "",
+            "listingsBuildingAddress": {"city": "Santa Clara"},
+            "units": [],
+        }
+
+    def test_active_listing_sets_open(self):
+        from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+        item = self._make_item("active")
+        rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "Test")
+        assert rec.listing_status == "open"
+
+    def test_closed_listing_sets_closed(self):
+        from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+        item = self._make_item("closed")
+        rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "Test")
+        assert rec.listing_status == "closed"
+
+    def test_coming_soon_sets_coming_soon(self):
+        from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+        item = self._make_item("active", marketing="comingSoon")
+        rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "Test")
+        assert rec.listing_status == "coming_soon"
+
+    def test_waitlist_open_sets_waitlist(self):
+        from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+        item = self._make_item("closed", is_waitlist_open=True)
+        rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "Test")
+        assert rec.listing_status == "waitlist"
+
+    def test_listing_status_field_surfaces_in_summary(self):
+        """outputs.py must use listing_status field — not require notes string."""
+        import tempfile, os
+        from housing_list_search.outputs import generate_daily_summary
+        from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+
+        item = {
+            "id": "abc", "name": "Monroe Commons", "status": "active",
+            "marketingType": "", "isWaitlistOpen": False, "reviewOrderType": "",
+            "leasingAgentPhone": "", "leasingAgentEmail": "",
+            "listingsBuildingAddress": {"city": "Santa Clara"},
+            "units": [],
+        }
+        rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "City of Santa Clara")
+        d = rec.to_dict()
+        # Blank out notes to confirm listing_status alone triggers open detection
+        d["notes"] = ""
+
+        orig = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                generate_daily_summary([d])
+                md = open("daily_summary.md").read()
+            finally:
+                os.chdir(orig)
+
+        assert "Monroe Commons" in md
+        assert "## 🔥 CURRENTLY OPEN" in md
 
 
 # ---------------------------------------------------------------------------
