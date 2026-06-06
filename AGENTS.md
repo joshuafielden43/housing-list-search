@@ -119,6 +119,15 @@ When you hit a WAF block: document it (what you tried, the specific block signat
 
 ---
 
+## Partial runs (--target)
+
+`python main.py --run --target "Morgan Hill"` filters the active targets list to rows whose authority contains the needle (case-insensitive). All normal run outputs are produced for the matched targets only:
+
+- `diff.csv` and `run_prev.csv` reflect only the matched-target results for that invocation — they are **not** a global DB diff. If you run `--target` followed by a full `--run`, `diff.csv` will correctly reflect the full-run delta on the next full run.
+- Useful for rapid iteration on a single adapter without waiting for all 17 targets.
+
+---
+
 ## Routing logic (runner.py)
 
 `runner.run_target(target_row)` is the single dispatch function. It is driven entirely by `scraping_measures` — URL substrings and authority name patterns are explicitly not used. Order of operations:
@@ -164,7 +173,7 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 | `housing_list_search/extraction/bloom_housing.py` | Bloom Housing platform adapter |
 | `housing_list_search/extraction/__init__.py` | Extraction layer dispatcher (Bloom domains, PDF links) |
 | `housing_list_search/adapters/` | Platform adapters |
-| `scripts/doctor.py` | Environment health check + --fix + --dry-run (used by CI) |
+| `scripts/doctor.py` | Environment health check + --fix (re-ingests TARGETS.md) + --dry-run (CI) |
 | `SOUL.md` | Mission and ethical guardrails |
 
 ## Output files (every --run)
@@ -185,6 +194,17 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 
 - CI and default local runs: `pytest tests/ -m "not integration"`
 - Live portal smoke tests: `pytest tests/ -m integration` (San José Bloom + Gilroy PDF)
+
+---
+
+## Pre-release checklist
+
+Before tagging a release or merging a PR that changes TARGETS.md or adapters:
+
+1. `python scripts/doctor.py --fix` — re-ingests TARGETS.md, re-runs sanitizer, smoke-tests adapter imports
+2. `pytest tests/ -m "not integration"` — all unit tests pass
+3. `python main.py --run --target "<one active city>"` — sanity check that the run loop produces output
+4. Update `AGENTS.md` version line and commit
 
 ---
 

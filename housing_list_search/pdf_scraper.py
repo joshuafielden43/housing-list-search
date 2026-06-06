@@ -1,4 +1,3 @@
-import requests
 import pdfplumber
 import re
 import io
@@ -6,6 +5,8 @@ import fitz  # PyMuPDF
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 from urllib.parse import urlparse, parse_qs, unquote
+
+from housing_list_search.scraper import polite_get
 
 @dataclass
 class HousingRecord:
@@ -22,10 +23,10 @@ class HousingRecord:
     notes: str
     document_url: str
 
-def fetch(url: str) -> requests.Response:
-    headers = {"User-Agent": "Mozilla/5.0 (housing-list-research-bot/0.1 nonprofit affordable housing data extraction)"}
-    resp = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
-    resp.raise_for_status()
+def fetch(url: str):
+    resp = polite_get(url)
+    if resp is None:
+        raise ValueError(f"polite_get returned None for {url} (robots.txt disallow or HTTP failure)")
     return resp
 
 def normalize_docaccess_url(url: str) -> tuple[str, str]:
