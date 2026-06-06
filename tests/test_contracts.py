@@ -593,6 +593,27 @@ class TestDatabaseManager:
         assert rows[0]["income_limits"] == "80% AMI"
         assert rows[0]["eligibility_flags"] == "senior|below_market_rate"
         assert rows[0]["listing_status"] == "open"
+        assert rows[0]["status"] == "Open"
+
+    def test_export_csv_maps_listing_status_to_display_status(self, tmp_path):
+        """Production DB export must preserve normalizer status semantics."""
+        import csv
+        from pathlib import Path
+        db = self._make_db(tmp_path)
+        db.upsert_listings([{
+            "property_name": "Monroe Commons",
+            "authority": "City of Santa Clara",
+            "url": "https://housingbayarea.mtc.ca.gov/listing/abc",
+            "status": "",
+            "listing_status": "open",
+        }], run_id="run1")
+
+        export_path = str(Path(tmp_path) / "out.csv")
+        db.export_csv(export_path)
+        with open(export_path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+
+        assert rows[0]["status"] == "Open"
 
     def test_export_diff_csv_new_vs_stale(self, tmp_path):
         """Records from run1 are STALE when diff is exported with run2's run_id."""
@@ -630,6 +651,22 @@ class TestDatabaseManager:
             rows = {r["property_name"]: r["change_type"] for r in csv.DictReader(f)}
 
         assert rows["Fresh Prop"] == "NEW"
+
+    def test_export_diff_csv_marks_inserted_record_new_even_with_imported_first_seen(self, tmp_path):
+        """run_id-based NEW detection must not depend on first_seen == last_seen."""
+        import csv
+        from pathlib import Path
+        db = self._make_db(tmp_path)
+        db.upsert_listings([
+            self._listing("Imported Fresh Prop", first_seen="2026-01-01T00:00:00"),
+        ], run_id="run1")
+
+        diff_path = str(Path(tmp_path) / "diff.csv")
+        db.export_diff_csv(diff_path, run_id="run1")
+        with open(diff_path, newline="", encoding="utf-8") as f:
+            rows = {r["property_name"]: r["change_type"] for r in csv.DictReader(f)}
+
+        assert rows["Imported Fresh Prop"] == "NEW"
 
     def test_upsert_skips_records_missing_required_fields(self, tmp_path):
         """Records without authority+property_name are silently skipped."""
@@ -751,6 +788,18 @@ class TestChangelogRoundTrip:
         self._run_changelog(tmp_path, run1)
 
         run2 = [{"authority": "City", "property_name": "Monroe Commons", "status": "Closed", "listing_status": "closed"}]
+        self._run_changelog(tmp_path, run2)
+
+        rows = self._read_csv(tmp_path, "changelog_diffs.csv")
+        changed = [r for r in rows if r["change_type"] == "STATUS_CHANGE"]
+        assert any(r["property_name"] == "Monroe Commons" for r in changed)
+
+    def test_listing_status_only_change_detected(self, tmp_path):
+        """Bloom-style rows may have blank status; listing_status must still drive changelog."""
+        run1 = [{"authority": "City", "property_name": "Monroe Commons", "status": "", "listing_status": "open"}]
+        self._run_changelog(tmp_path, run1)
+
+        run2 = [{"authority": "City", "property_name": "Monroe Commons", "status": "", "listing_status": "closed"}]
         self._run_changelog(tmp_path, run2)
 
         rows = self._read_csv(tmp_path, "changelog_diffs.csv")

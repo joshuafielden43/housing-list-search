@@ -66,12 +66,12 @@ def generate_changelog(current: list, skipped_targets=None):
     added = [k for k in curr_rows if k not in prev_rows]
     removed = [k for k in prev_rows if k not in curr_rows]
 
-    # Status changes: key present in both but status field differs
+    # Status changes: key present in both but resolved display status differs.
     changed = []
     for k in curr_rows:
         if k not in prev_rows:
             continue
-        old_status = (prev_rows[k].get("status") or "").strip()
+        old_status = _resolve_status_label(prev_rows[k])
         new_status = _resolve_status_label(curr_rows[k])
         if old_status and new_status and old_status != new_status:
             changed.append((k, old_status, new_status))

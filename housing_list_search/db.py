@@ -26,6 +26,21 @@ DEFAULT_SETTINGS_PATH = Path.home() / ".housing-list-search" / "settings.yaml"
 # Warn on --run when STALE rows in diff.csv meet or exceed this count.
 DEFAULT_STALE_WARN_THRESHOLD = 5
 
+_LISTING_STATUS_MAP = {
+    "open": "Open",
+    "waitlist": "Waitlist Open",
+    "coming_soon": "Coming Soon",
+    "closed": "Closed",
+}
+
+
+def _resolve_status_label(item: dict[str, Any]) -> str:
+    """Return the display status exported in current_full.csv and diff.csv."""
+    listing_status = (item.get("listing_status") or "").lower().strip()
+    if listing_status in _LISTING_STATUS_MAP:
+        return _LISTING_STATUS_MAP[listing_status]
+    return (item.get("status") or "Unknown").strip() or "Unknown"
+
 
 class DatabaseManager:
     """Core manager for the housing database operations."""
@@ -98,6 +113,7 @@ class DatabaseManager:
                 last_seen TEXT,
                 first_seen TEXT,
                 last_run_id TEXT,
+                first_run_id TEXT,
                 source TEXT,
                 source_url TEXT,
                 expires_at TEXT,
@@ -120,6 +136,7 @@ class DatabaseManager:
             ("administrator_phone", "TEXT"),
             ("administrator_contact", "TEXT"),
             ("last_run_id", "TEXT"),
+            ("first_run_id", "TEXT"),
         ]:
             if col not in existing_cols:
                 c.execute(f"ALTER TABLE housing_records ADD COLUMN {col} {coltype}")
@@ -312,8 +329,8 @@ class DatabaseManager:
             raw_json = json.dumps(item, default=str)
             last_seen = item.get("last_seen") or now
             first_seen_val = item.get("first_seen") or now
-            status = (item.get("status") or "").strip()
             listing_status = (item.get("listing_status") or "").strip()
+            status = _resolve_status_label(item)
             notes = (item.get("notes") or "").strip()
             source = (item.get("source") or "").strip()
             source_url = (item.get("source_url") or item.get("document_url") or "").strip()
@@ -373,15 +390,15 @@ class DatabaseManager:
                          bedrooms, income_limits, unit_types, eligibility_flags,
                          confidence, administrator, administrator_url,
                          administrator_phone, administrator_contact,
-                         last_seen, first_seen, last_run_id, source, source_url, expires_at, raw_data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         last_seen, first_seen, last_run_id, first_run_id, source, source_url, expires_at, raw_data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     authority, property_name, address, phone, email, url,
                     status, listing_status, deadline, notes,
                     bedrooms, income_limits, unit_types, eligibility_flags,
                     confidence, administrator, administrator_url,
                     administrator_phone, administrator_contact,
-                    last_seen, first_seen_val, run_id, source, source_url, expires_at, raw_json,
+                    last_seen, first_seen_val, run_id, run_id, source, source_url, expires_at, raw_json,
                 ))
                 inserted += 1
 
@@ -466,7 +483,7 @@ class DatabaseManager:
             c.execute("""
                 SELECT
                     CASE
-                        WHEN last_run_id = ? AND first_seen = last_seen THEN 'NEW'
+                        WHEN last_run_id = ? AND (first_run_id = ? OR (first_run_id IS NULL AND first_seen = last_seen)) THEN 'NEW'
                         WHEN last_run_id = ? THEN 'UPDATED'
                         ELSE 'STALE'
                     END                 AS change_type,
@@ -492,7 +509,7 @@ class DatabaseManager:
                     expires_at
                 FROM housing_records
                 ORDER BY change_type, authority, property_name
-            """, (run_id, run_id))
+            """, (run_id, run_id, run_id))
         else:
             # Fallback when no run_id: STALE = not seen in 7 days
             c.execute("""
@@ -548,14 +565,14 @@ class DatabaseManager:
         c.execute("""
             SELECT
                 CASE
-                    WHEN last_run_id = ? AND first_seen = last_seen THEN 'NEW'
+                    WHEN last_run_id = ? AND (first_run_id = ? OR (first_run_id IS NULL AND first_seen = last_seen)) THEN 'NEW'
                     WHEN last_run_id = ? THEN 'UPDATED'
                     ELSE 'STALE'
                 END AS change_type,
                 COUNT(*) AS n
             FROM housing_records
             GROUP BY change_type
-        """, (run_id, run_id))
+        """, (run_id, run_id, run_id))
         counts = {row[0]: row[1] for row in c.fetchall()}
         for key in ("NEW", "UPDATED", "STALE"):
             counts.setdefault(key, 0)
