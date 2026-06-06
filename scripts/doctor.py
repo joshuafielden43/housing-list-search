@@ -222,10 +222,13 @@ def main():
             print("✅ HouseKeys adapter runs without crashing")
 
         from housing_list_search.adapters.cdn import extract_underlying_records
+        # Document IDs 364/366/368 confirmed current as of 2026-06-05.
+        # ID 370 was stale; sunnyvale.ca.gov is WAF-blocked so these will
+        # return empty — the smoke test only validates no crash.
         recs = extract_underlying_records(
             "https://www.sunnyvale.ca.gov/homes-streets-and-property/housing/rental-programs",
             authority="City of Sunnyvale (doctor smoke)",
-            known_document_urls=["https://www.sunnyvale.ca.gov/home/showdocument/370"],
+            known_document_urls=["https://www.sunnyvale.ca.gov/home/showpublisheddocument/368"],
             timeout=30000
         )
         print("✅ cdn adapter smoke test ran (returned list, no crash)")

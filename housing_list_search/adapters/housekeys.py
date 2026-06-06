@@ -74,10 +74,12 @@ def scrape_housekeys(authority: str, url: str, admin_url: str = ""):
     """
     print(f"🧩 Running HouseKeys adapter on {url} (delegated administrator)")
 
-    resp = polite_get(url)
-    if not resp:
-        # polite_get already logged the 403/404/etc.
-        return []
+    # Attempt to fetch the city page for confirmation, but do NOT gate the
+    # registration record on its success. City pages (mountainview.gov, etc.)
+    # can be WAF-blocked or temporarily down; the HouseKeys subdomain in
+    # admin_url is the real actionable entry point and is independent of the
+    # city site. A 403 from the city should not suppress a valid record.
+    polite_get(url)  # fire-and-forget; result intentionally ignored
 
     # We deliberately do not do deep scraping here.
     # The real data lives behind account registration + lotteries.

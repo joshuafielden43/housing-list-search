@@ -23,8 +23,8 @@ def generate_daily_summary(listings, skipped_targets=None):
             name_lower = name.lower()
 
             # Determine whether this record represents an open/accepting listing.
-            # Bloom Housing records set status="accepting applications" in notes
-            # (from _bloom_record_from_item) rather than status="Open".
+            # Bloom Housing records embed status in notes ("accepting applications",
+            # "waitlist open") rather than setting status="Open".
             # Generic scrapers may set status="Open". Treat both as open.
             status_val = (l.get("status") or "").lower()
             notes_val = (l.get("notes") or "").lower()
@@ -34,13 +34,25 @@ def generate_daily_summary(listings, skipped_targets=None):
                 or "waitlist open" in notes_val
             )
 
-            if (is_open
-                and "closed" not in name_lower
-                and len(name) > 22
-                and name.count(" ") >= 4
-                and not any(name_lower.startswith(x) for x in
-                    ["quick links", "skip to", "home /", "your city /", "in this section",
-                     "select this as", "housing open side", "/ your city"])):
+            nav_prefixes = [
+                "quick links", "skip to", "home /", "your city /", "in this section",
+                "select this as", "housing open side", "/ your city",
+            ]
+
+            # Hard exclusions apply to all records regardless of source.
+            if "closed" in name_lower:
+                continue
+            if any(name_lower.startswith(x) for x in nav_prefixes):
+                continue
+
+            # Length/word-count heuristics only apply to generic-scraper records.
+            # Structured records (bloom:*, housekeys:*, gis:*, etc.) have already
+            # been filtered at extraction time — a short real name like "Monroe Commons"
+            # should never be blocked by the noise filter.
+            is_structured = bool(l.get("source") and ":" in str(l.get("source", "")))
+            name_is_real = is_structured or (len(name) > 4)
+
+            if is_open and name_is_real:
 
                 unique_opens.append(l)
 
