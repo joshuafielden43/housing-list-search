@@ -1,0 +1,41 @@
+# Human-validated record-count bounds for live portal checks.
+# Last reviewed: 2026-06-06. Widen ranges when a portal legitimately grows.
+#
+# Run: pytest tests/test_ground_truth.py -m integration
+# Also runs weekly in .github/workflows/integration-weekly.yml
+
+targets:
+  - name: san_jose_bloom
+    method: extract_target
+    authority: City of San José
+    url: https://housing.sanjoseca.gov/listings
+    min_records: 50
+    max_records: 120
+
+  - name: gilroy_pdf
+    method: extract_target
+    authority: City of Gilroy
+    url: https://www.cityofgilroy.org/DocumentCenter/View/16518
+    min_records: 3
+    max_records: 40
+
+  - name: santa_clara_mtc
+    method: extract_target
+    authority: City of Santa Clara
+    url: https://housingbayarea.mtc.ca.gov/listings
+    min_records: 1
+    max_records: 20
+
+  - name: morgan_hill_housekeys
+    method: run_target
+    min_records: 1
+    max_records: 1
+    target:
+      authority: City of Morgan Hill
+      url: https://www.morganhill.ca.gov/629/Housing
+      scraping_measures: housekeys
+      notes: ""
+      administrator: HouseKeys
+      administrator_url: https://www.housekeys1.com/
+      administrator_phone: ""
+      administrator_contact: ""

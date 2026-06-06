@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from housing_list_search.status_labels import resolve_status_label
+
 
 def _load_csv_keyed(path: str) -> dict[str, dict]:
     """Load a run snapshot CSV into a dict keyed by (source_authority, property_name)."""
@@ -71,8 +73,8 @@ def generate_changelog(current: list, skipped_targets=None):
     for k in curr_rows:
         if k not in prev_rows:
             continue
-        old_status = _resolve_status_label(prev_rows[k])
-        new_status = _resolve_status_label(curr_rows[k])
+        old_status = resolve_status_label(prev_rows[k])
+        new_status = resolve_status_label(curr_rows[k])
         if old_status and new_status and old_status != new_status:
             changed.append((k, old_status, new_status))
 
@@ -147,12 +149,3 @@ def generate_changelog(current: list, skipped_targets=None):
 
     print(f"✅ Generated changelog_diffs.md (+{len(added)} added, -{len(removed)} removed, "
           f"{len(changed)} status changes)")
-
-
-def _resolve_status_label(item: dict) -> str:
-    """Derive the display status label from a raw listing dict (same logic as normalizer)."""
-    ls = (item.get("listing_status") or "").lower().strip()
-    mapping = {"open": "Open", "waitlist": "Waitlist Open", "coming_soon": "Coming Soon", "closed": "Closed"}
-    if ls in mapping:
-        return mapping[ls]
-    return (item.get("status") or "Unknown").strip()

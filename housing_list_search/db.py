@@ -19,6 +19,8 @@ from typing import Optional, Dict, Any, List
 
 import yaml
 
+from housing_list_search.status_labels import resolve_status_label
+
 # Centralized paths
 DB_PATH = Path("housing_registry.db")
 SNAPSHOTS_DIR = Path("snapshots")
@@ -26,22 +28,6 @@ DEFAULT_SETTINGS_PATH = Path.home() / ".housing-list-search" / "settings.yaml"
 
 # Warn on --run when STALE rows in diff.csv meet or exceed this count.
 DEFAULT_STALE_WARN_THRESHOLD = 5
-
-_LISTING_STATUS_MAP = {
-    "open": "Open",
-    "waitlist": "Waitlist Open",
-    "coming_soon": "Coming Soon",
-    "closed": "Closed",
-}
-
-
-def _resolve_status_label(item: dict[str, Any]) -> str:
-    """Return the display status exported in current_full.csv and diff.csv."""
-    listing_status = (item.get("listing_status") or "").lower().strip()
-    if listing_status in _LISTING_STATUS_MAP:
-        return _LISTING_STATUS_MAP[listing_status]
-    return (item.get("status") or "Unknown").strip() or "Unknown"
-
 
 def _git_short_commit() -> str:
     try:
@@ -347,7 +333,7 @@ class DatabaseManager:
             last_seen = item.get("last_seen") or now
             first_seen_val = item.get("first_seen") or now
             listing_status = (item.get("listing_status") or "").strip()
-            status = _resolve_status_label(item)
+            status = resolve_status_label(item)
             notes = (item.get("notes") or "").strip()
             source = (item.get("source") or "").strip()
             source_url = (item.get("source_url") or item.get("document_url") or "").strip()

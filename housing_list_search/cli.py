@@ -11,6 +11,11 @@ def main():
     parser.add_argument("--refresh-targets", action="store_true", help="Reset TARGETS.md to defaults (destructive — requires --yes-i-know)")
     parser.add_argument("--yes-i-know", action="store_true", help="Confirm destructive --refresh-targets overwrite")
     parser.add_argument("--run", action="store_true", help="Normal daily scrape")
+    parser.add_argument(
+        "--target",
+        metavar="AUTHORITY",
+        help="With --run: process only targets whose authority contains this substring (case-insensitive)",
+    )
     args = parser.parse_args()
 
     if args.discover or args.refresh_targets:
@@ -46,6 +51,7 @@ def main():
         logger = logging.getLogger("housing_list_search")
 
         from housing_list_search.registry import load_targets_to_db, get_active_targets, get_skipped_targets
+        from housing_list_search.target_filter import filter_targets_by_authority
         from housing_list_search.runner import run_target
         from housing_list_search.dedupe import deduplicate_listings
         from housing_list_search.db import get_manager, DEFAULT_STALE_WARN_THRESHOLD
@@ -68,10 +74,18 @@ def main():
             )
             skipped_targets.append((authority, notes[:200]))
 
-        print("\n🔄 Scraping all targets...")
+        active = get_active_targets()
+        if args.target:
+            active = filter_targets_by_authority(active, args.target)
+            if not active:
+                print(f"⚠️  No active targets match --target {args.target!r}")
+                sys.exit(1)
+            print(f"\n🔄 Scraping {len(active)} target(s) matching {args.target!r}...")
+        else:
+            print("\n🔄 Scraping all targets...")
         all_listings = []
 
-        for t in get_active_targets():
+        for t in active:
             print(f"\n→ Processing: {t['authority']}")
             try:
                 recs = run_target(t)
@@ -126,6 +140,7 @@ def main():
         print("  python main.py --discover")
         print("  python main.py --refresh-targets")
         print("  python main.py --run")
+        print("  python main.py --run --target \"San José\"")
         sys.exit(0)
 
 
