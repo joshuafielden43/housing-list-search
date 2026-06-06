@@ -21,8 +21,6 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urlparse, parse_qs, unquote
 
-from bs4 import BeautifulSoup
-
 logger = logging.getLogger(__name__)
 
 try:

@@ -122,7 +122,10 @@ import logging
 import re
 from typing import Any, List, Optional
 
-from bs4 import BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 
 from housing_list_search.extraction.pdf import HousingRecord
 from housing_list_search.scraper import polite_get

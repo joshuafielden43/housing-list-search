@@ -49,13 +49,14 @@ def extract_target(url: str, authority: str = "") -> List[HousingRecord]:
         # county-wide searches, but TARGETS.md city rows should filter to that city).
         city_filter = ""
         if "housingbayarea.mtc.ca.gov" in u and authority:
-            # Strip common prefixes like "City of " to get the bare city name
-            city_filter = (
-                authority
-                .replace("City of ", "")
-                .replace("Town of ", "")
-                .strip()
-            )
+            # Strip common prefixes and any parenthetical qualifiers to get the
+            # bare city name that matches listingsBuildingAddress.city in Bloom.
+            # e.g. "City of Santa Clara (rentals via MTC Doorway)" → "Santa Clara"
+            import re as _re
+            city_filter = authority
+            city_filter = city_filter.replace("City of ", "").replace("Town of ", "")
+            city_filter = _re.sub(r"\s*\(.*\)\s*$", "", city_filter)
+            city_filter = city_filter.strip()
         return extract_bloom_housing_listings(url, authority=authority, city_filter=city_filter)
 
     # Direct PDF or Gilroy DocumentCenter links

@@ -68,7 +68,8 @@ def generate_daily_summary(listings, skipped_targets=None):
                 f.write(f"**{name}**\n")
                 f.write(f"Deadline: {l.get('deadline') or 'None listed'}\n")
                 f.write(f"Source: {l['authority']}\n")
-                f.write(f"Link: {l['url']}\n\n")
+                link = l.get("url") or l.get("source_url") or l.get("document_url") or l.get("flyer_url") or ""
+                f.write(f"Link: {link}\n\n")
         else:
             f.write("**No currently open lists detected in this run.**\n\n")
 

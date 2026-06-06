@@ -417,6 +417,116 @@ class TestBloomPlaywrightCityFilter:
 
 
 # ---------------------------------------------------------------------------
+# extraction/__init__.py — city_filter derivation for MTC Doorway targets
+# ---------------------------------------------------------------------------
+
+class TestCityFilterDerivation:
+    """extract_target must strip parenthetical qualifiers from authority names
+    so city_filter exactly matches listingsBuildingAddress.city in Bloom."""
+
+    def _city_filter_for(self, authority: str) -> str:
+        """Replicate the derivation logic from extraction/__init__.py."""
+        import re
+        cf = authority.replace("City of ", "").replace("Town of ", "")
+        cf = re.sub(r"\s*\(.*\)\s*$", "", cf).strip()
+        return cf
+
+    def test_parenthetical_qualifier_stripped(self):
+        """'City of Santa Clara (rentals via MTC Doorway)' must yield 'Santa Clara'."""
+        assert self._city_filter_for("City of Santa Clara (rentals via MTC Doorway)") == "Santa Clara"
+
+    def test_plain_city_of_prefix_stripped(self):
+        assert self._city_filter_for("City of Santa Clara") == "Santa Clara"
+
+    def test_town_of_prefix_stripped(self):
+        assert self._city_filter_for("Town of Los Gatos") == "Los Gatos"
+
+    def test_no_prefix_unchanged(self):
+        assert self._city_filter_for("MTC Doorway Bay Area") == "MTC Doorway Bay Area"
+
+    def test_extract_target_passes_clean_filter(self):
+        """extract_target must call extract_bloom_housing_listings with the bare
+        city name, not the full authority string including parenthetical."""
+        from unittest.mock import patch, call
+
+        with patch("housing_list_search.extraction.extract_bloom_housing_listings",
+                   return_value=[]) as mock_bloom:
+            from housing_list_search.extraction import extract_target
+            extract_target(
+                "https://housingbayarea.mtc.ca.gov/listings",
+                authority="City of Santa Clara (rentals via MTC Doorway)",
+            )
+
+        assert mock_bloom.called
+        _, kwargs = mock_bloom.call_args
+        assert kwargs.get("city_filter") == "Santa Clara", (
+            f"Expected city_filter='Santa Clara', got {kwargs.get('city_filter')!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# outputs.py — daily_summary KeyError on missing url field
+# ---------------------------------------------------------------------------
+
+class TestDailySummaryUrlFallback:
+    """generate_daily_summary must not crash when a listing lacks a 'url' key."""
+
+    def _run(self, listings):
+        import os, tempfile
+        from housing_list_search.outputs import generate_daily_summary
+        orig = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                generate_daily_summary(listings)
+                return open("daily_summary.md", encoding="utf-8").read()
+            finally:
+                os.chdir(orig)
+
+    def test_listing_with_source_url_does_not_crash(self):
+        listing = {
+            "property_name": "Wheeler Manor",
+            "authority": "City of Gilroy",
+            "listing_status": "open",
+            "status": "Open",
+            "notes": "",
+            "source": "cdn:gilroy",
+            "source_url": "https://www.cityofgilroy.org/DocumentCenter/View/16932",
+            "deadline": "",
+            # intentionally no 'url' key
+        }
+        md = self._run([listing])
+        assert "Wheeler Manor" in md
+
+    def test_listing_with_document_url_does_not_crash(self):
+        listing = {
+            "property_name": "Cedar Park Apts",
+            "authority": "City of Test",
+            "listing_status": "open",
+            "status": "Open",
+            "notes": "",
+            "source": "cdn:test",
+            "document_url": "https://example.com/cedar.pdf",
+            "deadline": "",
+        }
+        md = self._run([listing])
+        assert "Cedar Park Apts" in md
+
+    def test_listing_with_no_url_fields_does_not_crash(self):
+        listing = {
+            "property_name": "No Link Property",
+            "authority": "City of Test",
+            "listing_status": "open",
+            "status": "Open",
+            "notes": "",
+            "source": "cdn:test",
+            "deadline": "",
+        }
+        md = self._run([listing])
+        assert "No Link Property" in md
+
+
+# ---------------------------------------------------------------------------
 # runner.py — measure-driven dispatch (replaces inline cli.py routing)
 # ---------------------------------------------------------------------------
 
