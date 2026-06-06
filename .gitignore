@@ -29,6 +29,8 @@ ENV/
 
 # Output artifacts — generated at runtime (not source code)
 current_full.csv
+diff.csv
+run_prev.csv
 daily_summary.md
 changelog_diffs.*
 housing_registry.db

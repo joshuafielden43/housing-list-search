@@ -12,7 +12,7 @@ Current version: **v0.8.5**
 ## What it does
 
 - Runs a daily scrape against every target in `TARGETS.md`
-- Produces `current_full.csv` (all known listings), `daily_summary.md` (human-readable diff), and `changelog_diffs.csv`
+- Produces `current_full.csv` (full DB snapshot), `diff.csv` (NEW/UPDATED/STALE delta for importers), `daily_summary.md` (human-readable open listings), and `changelog_diffs.csv` (run-to-run change log)
 - Handles six distinct backend patterns with purpose-built adapters (see [Adapter Map](#adapter-map))
 - Skips WAF-blocked and no-public-list cities cleanly with documented rationale instead of crashing or returning junk
 - Deduplicates across overlapping sources (e.g. San José portal + SCCHA directory)
@@ -31,7 +31,7 @@ python scripts/doctor.py --fix      # validates environment + TARGETS.md ingesti
 python main.py --run                 # normal daily extraction
 ```
 
-Outputs land in the repo root: `current_full.csv`, `daily_summary.md`, `changelog_diffs.md`.
+Outputs land in the repo root: `current_full.csv`, `diff.csv`, `daily_summary.md`, `changelog_diffs.md`.
 
 ---
 
@@ -58,7 +58,7 @@ Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit beh
 
 **If it's a new Bloom Housing instance:** add the hostname to `_KNOWN_BLOOM_DOMAINS` in `extraction/__init__.py`. If it's a CSR/API instance, also add it to `_API_INSTANCES` in `extraction/bloom_housing.py`. No adapter code needed.
 
-**If it's a genuinely new platform:** create a new adapter in `housing_list_search/adapters/`, name it after the platform, follow the module docstring and Scope & Guardrails pattern in any existing adapter, and add routing in `cli.py`. Document the pattern in `AGENTS.md`.
+**If it's a genuinely new platform:** create a new adapter in `housing_list_search/adapters/`, name it after the platform, follow the module docstring and Scope & Guardrails pattern in any existing adapter, and add routing in `runner.py`. Document the pattern in `AGENTS.md`.
 
 ---
 
@@ -68,11 +68,13 @@ Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit beh
 housing_list_search/
   adapters/          # First-class platform adapters (bloom_housing, housekeys, cdn, …)
   extraction/        # Structured extraction layer (bloom_housing, pdf)
+  runner.py          # Measure-driven target dispatcher (routes each TARGETS.md row)
+  db.py              # DatabaseManager: upsert, export_csv, export_diff_csv, prune
   scraper.py         # polite_get() — rate-limited, robots.txt-respecting HTTP
-  registry.py        # TARGETS.md → SQLite with sanitization nanny
-  cli.py             # Main run loop and routing dispatcher
+  registry.py        # TARGETS.md → SQLite targets table with sanitization nanny
+  cli.py             # Main run loop: load → runner → dedupe → DB → CSV export
 scripts/
-  doctor.py          # Environment health check + --fix mode
+  doctor.py          # Environment health check + --fix + --dry-run (CI)
 TARGETS.md           # Source of truth: all targets, measures, admin contacts
 SOUL.md              # Mission and guardrails
 AGENTS.md            # Notes for AI contributors and future maintainers

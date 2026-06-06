@@ -14,7 +14,7 @@ Joshua dislikes constant permission approval prompts during active development.
 
 ---
 
-## Current state (v0.8.5, 2026-06-05)
+## Current state (v0.8.6, 2026-06-05)
 
 Six first-class adapters, all named after the recurring **platform or vendor** (never the city):
 
@@ -27,7 +27,7 @@ Six first-class adapters, all named after the recurring **platform or vendor** (
 | `adapters/cdn.py` | CDN/WAF-protected document viewers | Housing Group cities (Campbell, Los Altos, Menlo Park, Half Moon Bay), Gilroy PDFs |
 | `adapters/alta.py` | Alta Housing delegated administrator | Palo Alto |
 
-High-quality structured extraction lives in `extraction/`. Adapters in `adapters/` handle messier or registration-only cases. The dispatcher in `cli.py` routes targets to the right adapter based on `scraping_measures` and URL patterns.
+High-quality structured extraction lives in `extraction/`. Adapters in `adapters/` handle messier or registration-only cases. Routing lives in `runner.py` (not `cli.py`), driven entirely by `scraping_measures`.
 
 ---
 
@@ -119,16 +119,22 @@ When you hit a WAF block: document it (what you tried, the specific block signat
 
 ---
 
-## Routing logic (cli.py)
+## Routing logic (runner.py)
 
-The dispatcher in `cli.py` tries, in order:
-1. `extract_target()` from `extraction/__init__.py` — handles Bloom Housing domains and PDF/DocumentCenter links
-2. GIS extraction (if `gis` in measures and administrator is set)
-3. `waf_blocked` early-exit (logs WARN, skips to next target)
-4. Platform-specific adapter routing based on URL/measures keywords
-5. Generic scraper (last resort, noisy — avoid)
+`runner.run_target(target_row)` is the single dispatch function. It is driven entirely by `scraping_measures` — URL substrings and authority name patterns are explicitly not used. Order of operations:
 
-When adding a new adapter, add routing in step 4. If the platform can be detected reliably by URL or measure keyword, it belongs here. Keep conditions specific — the order matters and broad conditions shadow narrower ones below.
+1. `extract_target()` — handles Bloom Housing domains and PDF/DocumentCenter links. Results are collected but do **not** suppress named-measure adapters (a row can produce records from both Bloom and HouseKeys).
+2. Named-measure adapters fire for every matching measure: `john_stewart`, `gis`, `housekeys`, `cdn`, `alta`. All matching adapters run; zero results from one does not suppress others.
+3. `waf_blocked` — immediate empty return before any adapter or network call.
+4. Playwright or generic-scrape fallback — only if no named measure fired.
+
+Unknown measures produce a WARNING log so TARGETS.md typos surface immediately.
+
+When adding a new adapter:
+1. Add the measure name to `known` in `runner.py`
+2. Add a module-level import guard at the top of `runner.py`
+3. Add an `if "your_measure" in measures` block in section 2
+4. Add routing documentation here
 
 ---
 
@@ -150,14 +156,28 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 | File | Purpose |
 |---|---|
 | `TARGETS.md` | Source of truth: all targets, measures, admin contacts, WAF notes |
-| `housing_list_search/cli.py` | Main run loop and routing dispatcher |
-| `housing_list_search/registry.py` | TARGETS.md → SQLite with sanitization |
+| `housing_list_search/runner.py` | Measure-driven dispatch — routes each target to adapter(s) |
+| `housing_list_search/cli.py` | Main run loop: load targets → runner → dedupe → DB → CSV export |
+| `housing_list_search/db.py` | DatabaseManager: upsert_listings, export_csv, export_diff_csv, prune |
+| `housing_list_search/registry.py` | TARGETS.md → SQLite targets table with sanitization nanny |
 | `housing_list_search/scraper.py` | `polite_get()` — the only approved HTTP entry point |
 | `housing_list_search/extraction/bloom_housing.py` | Bloom Housing platform adapter |
-| `housing_list_search/extraction/__init__.py` | High-quality extraction dispatcher |
+| `housing_list_search/extraction/__init__.py` | Extraction layer dispatcher (Bloom domains, PDF links) |
 | `housing_list_search/adapters/` | Platform adapters |
-| `scripts/doctor.py` | Environment health check + --fix mode |
+| `scripts/doctor.py` | Environment health check + --fix + --dry-run (used by CI) |
 | `SOUL.md` | Mission and ethical guardrails |
+
+## Output files (every --run)
+
+| File | What it is | When to use |
+|---|---|---|
+| `current_full.csv` | Full DB snapshot — all ever-seen records | Complete view for reference; import baseline |
+| `diff.csv` | Delta view: NEW / UPDATED / STALE per `run_id` | Incremental imports; drive upserts without re-processing everything |
+| `run_prev.csv` | This run's listing set (written at end of run) | Used internally as changelog diff baseline; ignore in downstream tools |
+| `daily_summary.md` | Human-readable open listings + skipped targets | Nonprofit staff, mailing list |
+| `changelog_diffs.md/.csv` | Added / removed / status-changed vs last run | Audit trail, change notification |
+
+`diff.csv` and `current_full.csv` serve different audiences. Use `diff.csv` when you want "what changed this run." Use `current_full.csv` when you want the full known inventory. `STALE` in `diff.csv` means a record exists in the DB but was not confirmed in the most recent run — it may have closed or been removed from the source. Prune stale records with `scripts/db_manage.py prune`.
 
 ---
 
@@ -166,7 +186,7 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 1. Create `housing_list_search/adapters/{platform_name}.py`
 2. Module docstring must include: what the platform is, current design assumptions, Scope & Guardrails, extension guidance
 3. One public entry point with a stable signature (look at any existing adapter)
-4. Add routing in `cli.py` step 4
+4. Add routing in `runner.py` (new `if "your_measure" in measures` block)
 5. Add a row to `AGENTS.md` adapter table
 6. Add a TARGETS.md row for the reference city with appropriate measures
 

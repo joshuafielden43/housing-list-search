@@ -73,8 +73,10 @@ def generate_daily_summary(listings, skipped_targets=None):
             f.write("**No currently open lists detected in this run.**\n\n")
 
         f.write("## 📊 Full Dataset for Import\n")
-        f.write(f"- `current_full.csv` — {len(listings)} rows (ready for database import)\n")
-        f.write("- `changelog_diffs.md` — changes since last run\n\n")
+        f.write(f"- `current_full.csv` — full DB snapshot (all ever-seen rows; may exceed this run's count)\n")
+        f.write(f"- `diff.csv` — this run's delta: NEW / UPDATED / STALE rows (use for incremental imports)\n")
+        f.write("- `changelog_diffs.md` / `changelog_diffs.csv` — human/machine changelog vs last run\n\n")
+        f.write(f"This run produced **{len(listings)} listings** after deduplication.\n\n")
         f.write("**Note:** Some city sites block automated access.\n")
         f.write("\nReady for internal tech mailing list.\n")
 

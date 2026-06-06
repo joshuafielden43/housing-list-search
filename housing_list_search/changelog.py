@@ -41,12 +41,11 @@ def _write_run_snapshot(current: list) -> None:
             writer.writerow([auth, name, status, ls])
 
 
-def generate_changelog(previous: list, current: list, skipped_targets=None):
+def generate_changelog(current: list, skipped_targets=None):
     """
     Diff the previous run's seen-listings against the current run and write
     changelog_diffs.md + changelog_diffs.csv.
 
-    previous: unused (kept for call-site compatibility); we load from disk instead.
     current: list of raw listing dicts (pre-normalization) from this run.
 
     Baseline is run_prev.csv — written from the previous run's *deduped listing

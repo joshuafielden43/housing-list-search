@@ -95,7 +95,7 @@ def main():
         n_diff = db.export_diff_csv("diff.csv", run_id=run_id)
         print(f"   Exported current_full.csv ({n_full} rows), diff.csv ({n_diff} rows)")
 
-        generate_changelog([], all_listings, skipped_targets=skipped_targets)
+        generate_changelog(all_listings, skipped_targets=skipped_targets)
         generate_daily_summary(all_listings, skipped_targets=skipped_targets)
 
         print(f"\n✅ Run complete! {len(all_listings)} listings this run "
