@@ -1,139 +1,118 @@
 """
-San José Affordable Housing Portal Extractor
-housing.sanjoseca.gov  —  Next.js / Bloom Housing platform
+Bloom Housing Platform Adapter (First-Class)
 
-=== ARCHITECTURE: WHY THIS IS NOT A PLAYWRIGHT SCRAPER ===
+This adapter handles ANY deployment of the open-source Bloom Housing platform
+(github.com/bloom-housing/bloom). Bloom is used by multiple Bay Area cities and
+regional portals. Write once, works everywhere Bloom is deployed.
 
-The portal at housing.sanjoseca.gov is a Next.js app built on the open-source
-Bloom Housing platform (github.com/bloom-housing/bloom). It appears to be a
-JavaScript-heavy SPA, but the /listings route uses Next.js Server-Side Rendering
-(SSR): the server embeds ALL listing data into the page HTML before it reaches
-the browser, inside a <script id="__NEXT_DATA__" type="application/json"> tag.
+Known instances as of 2026-06-05:
+  housing.sanjoseca.gov       San José — SSR instance, /listings has __NEXT_DATA__
+  housingbayarea.mtc.ca.gov   MTC Doorway (Bay Area regional) — CSR + REST API
 
-This means polite_get("/listings") returns a 1.3 MB HTML file containing every
-open and closed listing as structured JSON — no browser execution required.
+New Bloom instances can be added to TARGETS.md with authority matching the city
+and URL pointing to the instance's /listings page. No new adapter code required
+unless the platform version introduces new field names.
 
-Confirmed working as of 2026-06-05: 46 openListings + 48 closedListings.
+=== THREE EXTRACTION PATHS (tried in order) ===
 
-=== WHY /listings, NOT / ===
+PATH 1 — SSR via __NEXT_DATA__ (preferred, fastest):
+  Some Bloom instances use Next.js getServerSideProps on /listings. The full
+  dataset is embedded in a <script id="__NEXT_DATA__"> tag before the browser
+  runs any JavaScript. polite_get("/listings") returns the entire listing
+  payload in ~2 seconds with no browser overhead.
 
-The homepage (/) is a pure SPA shell. polite_get("/") returns:
-    <div id="__next"></div>
-...with __NEXT_DATA__ that has empty pageProps (no listing data). The homepage
-relies entirely on client-side JavaScript to populate the UI. Fetching / and
-trying to parse listings from it will always yield zero results.
+  Data path: data["props"]["pageProps"]["openListings"] / ["closedListings"]
 
-The /listings route is SSR (getServerSideProps), so it ships the full dataset
-in the initial HTML response. Always target /listings.
+  IMPORTANT: data["pageProps"] does NOT exist at the top level in Next.js.
+  The correct path is data["props"]["pageProps"]. Accessing data["pageProps"]
+  silently returns an empty dict and yields zero listings — this was the bug
+  in the original San José extractor.
 
-=== WHY NOT /api/listings ===
+  Known SSR instances: housing.sanjoseca.gov (confirmed 2026-06-05)
 
-There is no public REST API. /api/listings returns HTTP 404. The Bloom Housing
-backend API is internal; the only public surface for listing data is the SSR
-page props embedded in /listings HTML.
+PATH 2 — REST API (for CSR instances like MTC Doorway):
+  Some Bloom instances use client-side rendering; /listings __NEXT_DATA__ is
+  empty. These instances expose a REST API at /api/adapter/listings/combined
+  that the browser fetches via XHR after page load.
 
-=== HOW TO FIND THE DATA IN __NEXT_DATA__ ===
+  How to call it (discovered by intercepting Playwright network traffic):
+    POST https://{host}/api/adapter/listings/combined
+    Headers:
+      jurisdictionname: {jurisdiction name, e.g. "Bay Area"}
+      appurl: https://{host}
+      language: en
+      content-type: application/json
+    Body:
+      {
+        "view": "base",
+        "limit": 100,
+        "page": 1,
+        "filter": [{"$comparison": "IN", "counties": ["{county}"]}],
+        "orderBy": ["mostRecentlyPublished"],
+        "orderDir": ["desc"]
+      }
 
-Standard Next.js __NEXT_DATA__ shape:
-    {
-      "props": {                      <-- always present
-        "pageProps": {                <-- SSR data lives here
-          "openListings": [...],      <-- 46 active listings as of 2026-06-05
-          "closedListings": [...],    <-- 48 closed/waitlist-only listings
-          "paginationData": {...},
-          "jurisdiction": {...},
-          "multiselectData": {...}
-        },
-        "__N_SSP": true               <-- confirms this is getServerSideProps
-      },
-      "page": "/listings",
-      "buildId": "...",               <-- changes on each Next.js deploy
-      ...
-    }
+  The API returns {"items": [...], "meta": {...}} where items are listing objects.
+  The "base" view omits some fields (e.g. units[], reservedCommunityTypes) compared
+  to the SSR "full" view. Contact info and address are present.
 
-IMPORTANT: Do NOT read data["pageProps"] directly — that key does not exist at
-the top level. The correct path is data["props"]["pageProps"]. The previous
-version of this extractor had this wrong and always returned zero results from
-the SSR path.
+  To filter to a specific city: filter items by
+  item["listingsBuildingAddress"]["city"] == city_name after fetching.
+
+  Known CSR/API instances: housingbayarea.mtc.ca.gov (confirmed 2026-06-05)
+
+PATH 3 — Playwright fallback (last resort):
+  If both SSR and API paths yield zero results, Playwright launches a headless
+  Chromium browser and intercepts all JSON network responses. This handles:
+  - Instances that change from SSR to CSR without notice
+  - Instances with unusual authentication or routing
+  It is deliberately slower (~10s) so that it only runs as a fallback.
+
+  Signs the fallback has activated:
+  - Log: "[Bloom] Playwright fallback activated for {url}"
+  - The daily run for this target takes noticeably longer
+
+=== ADDING A NEW BLOOM HOUSING INSTANCE ===
+
+1. Add a row to TARGETS.md with the /listings URL and authority name.
+2. Add the domain to _KNOWN_BLOOM_DOMAINS in extraction/__init__.py so the
+   dispatcher routes it here.
+3. If the instance is SSR: no code changes needed, Path 1 handles it.
+4. If the instance is CSR (API): add it to _API_INSTANCES with the correct
+   jurisdictionname and county. Path 2 handles it.
+5. Run a test: python -c "from housing_list_search.extraction.bloom_housing
+   import extract_bloom_housing_listings; print(len(
+   extract_bloom_housing_listings('https://your-instance.gov/listings')))"
 
 === FIELD REFERENCE (Bloom Housing listing object) ===
 
-Top-level fields used by this extractor:
-  id                      UUID, stable identifier
+Top-level fields used by this adapter:
+  id                      UUID — stable identifier across instances
   name                    Property name (always present)
   status                  "active" | "closed" | "pending"
-  urlSlug                 URL-safe slug, used to construct the listing detail URL
-  listingsBuildingAddress {street, city, state, zipCode, latitude, longitude}
+  urlSlug                 URL-safe slug for the detail page URL
+  listingsBuildingAddress {street, city, county, state, zipCode, lat, lon}
   leasingAgentPhone       Contact phone
   leasingAgentEmail       Contact email
   leasingAgentName        Property manager / leasing contact name
-  leasingAgentOfficeHours Office hours string
-  developer               Management company (fallback if leasingAgentName absent)
-  units[]                 Array of unit objects (see UNIT FIELDS below)
-  unitsSummarized         Aggregated rent/income ranges (see UNITS SUMMARIZED)
-  servicesOffered         Supportive services description
+  developer               Management company (fallback for leasingAgentName)
+  units[]                 Per-unit objects: numBedrooms, amiPercentage, monthlyRent
+  unitsSummarized.byUnitTypeAndRent[]  Aggregated rent/income ranges per type
+  servicesOffered         Supportive services text
   reservedCommunityTypes  [{name: "Senior"}, ...] or null
-  reservedCommunityDescription / reservedCommunityMinAge  Senior/special pop info
-  isWaitlistOpen          bool
-  waitlistOpenSpots       int or null
-  waitlistCurrentSize     int or null
-  applicationDueDate      ISO datetime string
-  applicationOpenDate     ISO datetime string
-  applicationFee          string (e.g. "25")
-  digitalApplication      bool
-  paperApplication        bool
+  isWaitlistOpen / waitlistOpenSpots / waitlistCurrentSize
+  applicationDueDate      ISO datetime
+  applicationFee          string ("25")
+  digitalApplication / paperApplication  bool
   reviewOrderType         "firstComeFirstServe" | "lottery"
-  lotteryStatus           null | string (only for lottery-type listings)
-  rentalAssistance        Text describing voucher/Section 8 acceptance
-  homeType                null for apartments; "singleFamily" etc. for other types
-  marketingType           "marketing" (accepting apps) | "comingSoon" | etc.
+  rentalAssistance        Voucher/Section 8 acceptance text
+  marketingType           "marketing" | "comingSoon"
 
-UNIT FIELDS (units[] items):
-  numBedrooms             int (0 = studio)
-  numBathrooms            float
-  monthlyRent             string ("2250")
-  amiPercentage           string ("60") — percent of Area Median Income
-  sqFeet                  string
-  unitTypes.name          "studio" | "oneBdrm" | "twoBdrm" | "threeBdrm" | "fourBdrm"
-
-UNITS SUMMARIZED (unitsSummarized):
-  byUnitTypeAndRent[]     Array of aggregated ranges per unit type:
-    unitTypes.name        Same as unit field above
-    rentRange.min/max     "$2,250" / "$2,635"
-    minIncomeRange        Min income required range
-    areaRange             sqft range
-
-=== PLAYWRIGHT FALLBACK ===
-
-If __NEXT_DATA__ disappears from /listings (e.g. the city migrates to a
-different Bloom Housing version that moves to client-side fetching), the
-Playwright fallback below will activate. It intercepts network responses
-looking for any JSON blob containing openListings/closedListings. The fallback
-is intentionally kept working so that a Next.js upgrade doesn't silently break
-the daily run — it just becomes slower (Playwright launch ~5s vs ~2s for a
-plain HTTP fetch).
-
-Signs that the SSR path has broken and the fallback has activated:
-  - Log line: "[SanJosé] SSR path: __NEXT_DATA__ not found or empty ..."
-  - Log line: "[SanJosé] Playwright fallback: captured N JSON responses"
-  - Daily run becomes noticeably slower for the San José target
-
-If the fallback also stops working, the next place to look is:
-  1. The Bloom Housing API (github.com/bloom-housing/bloom) — check if the
-     city has exposed a public listings endpoint in a newer API version.
-  2. Network tab in Chrome DevTools on housing.sanjoseca.gov/listings — look
-     for any XHR/fetch calls that return listing arrays.
-  3. File a ticket with the city's IT vendor (current: Bloom Housing / HUD).
-
-=== UPDATING THIS EXTRACTOR ===
-
-When field names change in a Bloom Housing upgrade:
-  - The _san_jose_record_from_item() function maps raw item dicts to HousingRecord.
-  - Field names are unlikely to change (Bloom is open-source and stable), but
-    if they do, compare the raw item keys printed in DEBUG logging against the
-    field reference above and update the getter calls.
-  - The _extract_address() and _extract_bedrooms_from_units() helpers isolate
-    the fragile structural assumptions; update there first.
+UNIT FIELDS:
+  numBedrooms    int (0 = studio)
+  amiPercentage  string ("60") — % of Area Median Income
+  monthlyRent    string ("2250")
+  unitTypes.name "studio"|"oneBdrm"|"twoBdrm"|"threeBdrm"|"fourBdrm"
 """
 
 from __future__ import annotations
@@ -150,13 +129,29 @@ from housing_list_search.scraper import polite_get
 
 logger = logging.getLogger(__name__)
 
-# The only URL that reliably returns SSR-embedded listing data.
-# Do not change to "/" — see module docstring for why.
-_LISTINGS_URL = "https://housing.sanjoseca.gov/listings"
+# Bloom instances that use the REST API rather than SSR.
+# Key: hostname. Value: dict of API config for that instance.
+#
+# To add a new API instance: add its hostname here with the jurisdictionname
+# (from the Bloom admin config) and the county filter name.
+# The endpoint path (/api/adapter/listings/combined) is the same for all instances.
+_API_INSTANCES: dict[str, dict] = {
+    "housingbayarea.mtc.ca.gov": {
+        "jurisdictionname": "Bay Area",
+        "endpoint": "https://housingbayarea.mtc.ca.gov/api/adapter/listings/combined",
+    },
+}
 
-# Base URL for individual listing detail pages.
-# Pattern: /listing/{uuid}/{url-slug}
-_LISTING_DETAIL_BASE = "https://housing.sanjoseca.gov/listing"
+def _listing_detail_url(listings_url: str, listing_id: str, slug: str) -> str:
+    """Build the detail URL for a listing given the instance's base URL."""
+    from urllib.parse import urlparse
+    parsed = urlparse(listings_url)
+    base = f"{parsed.scheme}://{parsed.netloc}/listing"
+    if slug:
+        return f"{base}/{listing_id}/{slug}"
+    elif listing_id:
+        return f"{base}/{listing_id}"
+    return listings_url
 
 
 # =============================================================================
@@ -309,14 +304,17 @@ def _extract_community_type(item: dict) -> str:
 # RECORD MAPPER
 # =============================================================================
 
-def _san_jose_record_from_item(item: dict) -> Optional[HousingRecord]:
+def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Optional[HousingRecord]:
     """
     Map one Bloom Housing listing object → HousingRecord.
 
-    Called for both openListings and closedListings. Closed listings are
-    included because they represent real properties in the city's affordable
-    housing inventory — their waitlists and contact info are still actionable
-    for the nonprofit that uses this data.
+    Called for both openListings and closedListings from any Bloom instance.
+    Closed listings are included — they represent real inventory the nonprofit
+    wants to track (waitlist sizes, contact info, unit types) for outreach.
+
+    listings_url: the full URL used to fetch this instance (e.g.
+        "https://housing.sanjoseca.gov/listings"). Used to build detail URLs.
+    authority: the city/authority label for this record (e.g. "City of San José").
     """
     if not isinstance(item, dict):
         return None
@@ -328,12 +326,7 @@ def _san_jose_record_from_item(item: dict) -> Optional[HousingRecord]:
 
     listing_id = item.get("id") or ""
     slug = item.get("urlSlug") or ""
-    if slug:
-        detail_url = f"{_LISTING_DETAIL_BASE}/{listing_id}/{slug}"
-    elif listing_id:
-        detail_url = f"{_LISTING_DETAIL_BASE}/{listing_id}"
-    else:
-        detail_url = _LISTINGS_URL
+    detail_url = _listing_detail_url(listings_url, listing_id, slug)
 
     address = _extract_address(item)
     phone = (item.get("leasingAgentPhone") or "").strip()
@@ -400,15 +393,15 @@ def _san_jose_record_from_item(item: dict) -> Optional[HousingRecord]:
         if sec8 not in ("false", "none", ""):
             notes_parts.append(f"section8: {item['section8Acceptance']}")
 
-    notes = "; ".join(notes_parts) if notes_parts else f"San José listing id:{listing_id}"
+    notes = "; ".join(notes_parts) if notes_parts else f"Bloom listing id:{listing_id}"
 
     # Confidence scoring: high if we have address + contact, medium otherwise.
-    # These are authoritative records from the city's own portal, so we never
+    # These are authoritative records from the portal itself, so we never
     # go below medium even if some fields are sparse.
     confidence: str = "high" if (address and (phone or email)) else "medium"
 
     return HousingRecord(
-        authority="City of San José",
+        authority=authority,
         property_name=name,
         address=address,
         phone=phone,
@@ -427,7 +420,7 @@ def _san_jose_record_from_item(item: dict) -> Optional[HousingRecord]:
 # SSR PRIMARY PATH
 # =============================================================================
 
-def _fetch_via_ssr() -> tuple[list[dict], list[dict]]:
+def _fetch_via_ssr(listings_url: str) -> tuple[list[dict], list[dict]]:
     """
     Primary extraction path: polite HTTP GET + __NEXT_DATA__ JSON parsing.
 
@@ -450,30 +443,30 @@ def _fetch_via_ssr() -> tuple[list[dict], list[dict]]:
       3. The Bloom platform added authentication in front of the listings page.
          Sign: HTTP 401 or redirect to a login page.
     """
-    resp = polite_get(_LISTINGS_URL)
+    resp = polite_get(listings_url)
     if not resp:
-        logger.warning("[SanJosé] SSR path: polite_get(%s) returned no response", _LISTINGS_URL)
+        logger.warning("[Bloom] SSR path: polite_get(%s) returned no response", listings_url)
         return [], []
 
     if resp.status_code != 200:
-        logger.warning("[SanJosé] SSR path: HTTP %d for %s", resp.status_code, resp.url)
+        logger.warning("[Bloom] SSR path: HTTP %d for %s", resp.status_code, resp.url)
         return [], []
 
     soup = BeautifulSoup(resp.text, "html.parser")
     tag = soup.find("script", id="__NEXT_DATA__")
     if not tag or not tag.string:
         logger.warning(
-            "[SanJosé] SSR path: __NEXT_DATA__ tag not found in %s response. "
+            "[Bloom] SSR path: __NEXT_DATA__ tag not found in %s response. "
             "The route may have switched to client-side rendering. "
-            "Playwright fallback will activate.",
-            _LISTINGS_URL,
+            "API or Playwright fallback will activate.",
+            listings_url,
         )
         return [], []
 
     try:
         data = json.loads(tag.string)
     except json.JSONDecodeError as exc:
-        logger.warning("[SanJosé] SSR path: failed to parse __NEXT_DATA__ JSON: %s", exc)
+        logger.warning("[Bloom] SSR path: failed to parse __NEXT_DATA__ JSON: %s", exc)
         return [], []
 
     # IMPORTANT: the standard Next.js shape nests page data under
@@ -487,31 +480,144 @@ def _fetch_via_ssr() -> tuple[list[dict], list[dict]]:
 
     if not isinstance(open_l, list) or not isinstance(closed_l, list):
         logger.warning(
-            "[SanJosé] SSR path: pageProps found but openListings/closedListings "
+            "[Bloom] SSR path: pageProps found but openListings/closedListings "
             "are not lists. Schema may have changed. Keys present: %s",
             list(pp.keys()),
         )
         return [], []
 
     logger.info(
-        "[SanJosé] SSR path: %d open + %d closed listings from __NEXT_DATA__",
+        "[Bloom] SSR path: %d open + %d closed listings from %s __NEXT_DATA__",
         len(open_l),
         len(closed_l),
+        listings_url,
     )
     return open_l, closed_l
+
+
+# =============================================================================
+# REST API PATH (CSR instances like MTC Doorway)
+# =============================================================================
+
+def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict], list[dict]]:
+    """
+    REST API extraction path for Bloom instances that use client-side rendering.
+
+    Bloom CSR instances (e.g. housingbayarea.mtc.ca.gov) load the page as a
+    shell and fetch listing data via XHR POST to /api/adapter/listings/combined.
+    This function replicates that request directly without a browser.
+
+    API details discovered by intercepting Playwright network traffic on
+    housingbayarea.mtc.ca.gov (confirmed 2026-06-05):
+      POST /api/adapter/listings/combined
+      Required headers:
+        jurisdictionname: {name from _API_INSTANCES config}
+        appurl: https://{host}
+        language: en
+        accept: application/json
+        content-type: application/json
+      Body: {"view":"base","limit":100,"page":1,
+             "filter":[{"$comparison":"IN","counties":["{county}"]}],
+             "orderBy":["mostRecentlyPublished"],"orderDir":["desc"]}
+
+    Returns all items as "open_listings" (the API mixes open/closed via status
+    field). closed_listings is always returned empty — the caller inspects
+    item["status"] for filtering.
+
+    city_filter: if non-empty, only return items whose
+        listingsBuildingAddress.city matches (case-insensitive).
+    """
+    from urllib.parse import urlparse
+    import requests as _requests
+
+    parsed = urlparse(listings_url)
+    host = parsed.netloc  # e.g. "housingbayarea.mtc.ca.gov"
+
+    cfg = _API_INSTANCES.get(host)
+    if not cfg:
+        logger.debug("[Bloom] API path: %s is not in _API_INSTANCES — skipping", host)
+        return [], []
+
+    endpoint = cfg["endpoint"]
+    jurisdiction = cfg["jurisdictionname"]
+
+    headers = {
+        "jurisdictionname": jurisdiction,
+        "appurl": f"https://{host}",
+        "language": "en",
+        "accept": "application/json",
+        "content-type": "application/json",
+        # Browser-like User-Agent avoids some bot-detection rejections
+        "user-agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+    }
+
+    body = {
+        "view": "base",
+        "limit": 100,
+        "page": 1,
+        "orderBy": ["mostRecentlyPublished"],
+        "orderDir": ["desc"],
+        # No county filter in the body: fetch all, then filter client-side by city.
+        # County filters can be added per-instance in _API_INSTANCES if needed.
+        "filter": [],
+    }
+
+    try:
+        resp = _requests.post(endpoint, json=body, headers=headers, timeout=30)
+    except Exception as exc:
+        logger.warning("[Bloom] API path: request to %s failed: %s", endpoint, exc)
+        return [], []
+
+    if resp.status_code != 200:
+        logger.warning("[Bloom] API path: HTTP %d from %s", resp.status_code, endpoint)
+        return [], []
+
+    try:
+        payload = resp.json()
+    except Exception as exc:
+        logger.warning("[Bloom] API path: failed to parse JSON from %s: %s", endpoint, exc)
+        return [], []
+
+    items = payload.get("items") or []
+    if not isinstance(items, list):
+        logger.warning("[Bloom] API path: unexpected payload shape from %s", endpoint)
+        return [], []
+
+    # Apply optional city filter (e.g. isolate "Santa Clara" city from the
+    # MTC Bay Area-wide feed which covers the whole county)
+    if city_filter:
+        cf = city_filter.lower()
+        items = [
+            it for it in items
+            if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
+        ]
+
+    logger.info(
+        "[Bloom] API path: %d items from %s (city_filter=%r)",
+        len(items),
+        endpoint,
+        city_filter,
+    )
+    # Return all as open_listings; status field within each item distinguishes
+    # open vs closed and is preserved in _bloom_record_from_item.
+    return items, []
 
 
 # =============================================================================
 # PLAYWRIGHT FALLBACK
 # =============================================================================
 
-def _fetch_via_playwright() -> tuple[list[dict], list[dict]]:
+def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
     """
     Fallback extraction path: Playwright browser + JSON network interception.
 
-    This activates only when the SSR path yields zero listings. It launches a
-    headless Chromium browser, navigates to /listings, and intercepts all JSON
-    network responses looking for the openListings/closedListings payload.
+    This activates only when both SSR and API paths yield zero listings. It
+    launches a headless Chromium browser, navigates to /listings, and intercepts
+    all JSON network responses looking for the openListings/closedListings payload.
 
     On newer Bloom Housing versions the listings data may be fetched via XHR
     after page load rather than embedded in __NEXT_DATA__. This fallback
@@ -519,6 +625,7 @@ def _fetch_via_playwright() -> tuple[list[dict], list[dict]]:
 
     WHEN THIS IS CALLED:
       - __NEXT_DATA__ was absent or empty from the SSR path.
+      - The instance is not in _API_INSTANCES (or the API also returned nothing).
       - This is NOT the normal daily code path — if it activates frequently,
         investigate whether the site's architecture has changed permanently.
 
@@ -528,19 +635,19 @@ def _fetch_via_playwright() -> tuple[list[dict], list[dict]]:
         _find_listing_arrays() heuristic filters out non-listing blobs.
 
     HOW TO KNOW IF THIS IS RUNNING:
-      - Look for the log line "[SanJosé] Playwright fallback activated"
-      - The daily run for San José will take longer than usual.
+      - Look for the log line "[Bloom] Playwright fallback activated"
+      - The daily run for this target will take longer than usual.
     """
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
         logger.error(
-            "[SanJosé] Playwright not installed. Cannot run fallback. "
+            "[Bloom] Playwright not installed. Cannot run fallback. "
             "Install it with: pip install playwright && playwright install chromium"
         )
         return [], []
 
-    logger.warning("[SanJosé] Playwright fallback activated — SSR path yielded no data")
+    logger.warning("[Bloom] Playwright fallback activated for %s — SSR/API paths yielded no data", listings_url)
 
     captured_payloads: list[dict] = []
 
@@ -569,7 +676,7 @@ def _fetch_via_playwright() -> tuple[list[dict], list[dict]]:
 
         # /listings is the SSR route; if we're here it may have changed to CSR,
         # so we load it and wait for the browser to fetch the data via XHR.
-        page.goto(_LISTINGS_URL, wait_until="networkidle", timeout=120_000)
+        page.goto(listings_url, wait_until="networkidle", timeout=120_000)
         page.wait_for_timeout(4_000)  # extra wait for lazy-loaded XHR
 
         # Scroll to trigger any infinite-scroll or lazy-load mechanisms
@@ -582,8 +689,9 @@ def _fetch_via_playwright() -> tuple[list[dict], list[dict]]:
         browser.close()
 
     logger.info(
-        "[SanJosé] Playwright fallback: captured %d JSON responses",
+        "[Bloom] Playwright fallback: captured %d JSON responses for %s",
         len(captured_payloads),
+        listings_url,
     )
 
     # Look for openListings/closedListings at any depth in captured payloads.
@@ -596,14 +704,14 @@ def _fetch_via_playwright() -> tuple[list[dict], list[dict]]:
             closed_l = data.get("closedListings") or data.get("props", {}).get("pageProps", {}).get("closedListings", [])
             if isinstance(open_l, list) and len(open_l) > 0:
                 logger.info(
-                    "[SanJosé] Playwright fallback: found listings in response from %s",
+                    "[Bloom] Playwright fallback: found listings in response from %s",
                     payload["url"],
                 )
                 return open_l, closed_l or []
 
     # Absolute last resort: heuristic scan of all captured JSON blobs
     logger.warning(
-        "[SanJosé] Playwright fallback: no direct openListings/closedListings found. "
+        "[Bloom] Playwright fallback: no direct openListings/closedListings found. "
         "Trying heuristic array scan across %d captured payloads.",
         len(captured_payloads),
     )
@@ -675,49 +783,83 @@ def _find_listing_arrays(obj: Any, depth: int = 0, max_depth: int = 8) -> list[l
 # PUBLIC ENTRY POINT
 # =============================================================================
 
-def extract_san_jose_listings(max_results: int = 200) -> list[HousingRecord]:
+def extract_bloom_housing_listings(
+    url: str,
+    authority: str = "",
+    city_filter: str = "",
+    max_results: int = 200,
+) -> list[HousingRecord]:
     """
-    Main entry point. Returns HousingRecord objects for all San José listings.
+    Main entry point. Returns HousingRecord objects for any Bloom Housing instance.
 
-    Tries the fast SSR path first (polite_get + __NEXT_DATA__ parsing).
-    Falls back to Playwright if the SSR path yields nothing.
+    Works with both SSR instances (e.g. housing.sanjoseca.gov) and CSR/API
+    instances (e.g. housingbayarea.mtc.ca.gov). The three-path strategy:
+      1. SSR via __NEXT_DATA__ (fast, preferred)
+      2. REST API (for instances in _API_INSTANCES, e.g. MTC Doorway)
+      3. Playwright network interception (last resort fallback)
+
+    url: the /listings URL of the Bloom instance to extract from.
+    authority: label for records (e.g. "City of San José"). Inferred from URL
+        host if not provided.
+    city_filter: if provided, only return listings whose city matches this
+        string (case-insensitive). Useful for CSR instances that serve a whole
+        county (e.g. MTC Doorway) when you only want one city.
+    max_results: cap on combined open+closed records returned. Default 200 is
+        intentionally high — the nonprofit wants the full inventory picture.
 
     Both openListings and closedListings are returned:
       - openListings: actively accepting applications right now.
-      - closedListings: currently not accepting applications, but represent
-        real inventory the nonprofit wants to track (waitlist sizes, contact
-        info, unit types) for outreach and referral.
-
-    max_results applies to the combined open+closed total. Default 200 is
-    intentionally high — the portal had 94 combined listings as of 2026-06-05
-    and the nonprofit wants the full picture, not a paginated sample.
+      - closedListings: not currently accepting applications but represent real
+        inventory (waitlist sizes, contact info, unit types) for outreach/referral.
     """
-    open_items, closed_items = _fetch_via_ssr()
+    from urllib.parse import urlparse
 
+    if not authority:
+        authority = urlparse(url).netloc
+
+    # Path 1: SSR via __NEXT_DATA__
+    open_items, closed_items = _fetch_via_ssr(url)
+
+    # Path 2: REST API (CSR instances)
     if not open_items and not closed_items:
-        # SSR path returned nothing — activate Playwright fallback
-        open_items, closed_items = _fetch_via_playwright()
+        open_items, closed_items = _fetch_via_api(url, city_filter=city_filter)
+    elif city_filter:
+        # SSR gave us results but we still need to filter by city
+        cf = city_filter.lower()
+        open_items = [
+            it for it in open_items
+            if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
+        ]
+        closed_items = [
+            it for it in closed_items
+            if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
+        ]
+
+    # Path 3: Playwright fallback
+    if not open_items and not closed_items:
+        open_items, closed_items = _fetch_via_playwright(url)
 
     if not open_items and not closed_items:
         logger.error(
-            "[SanJosé] Both SSR and Playwright paths returned zero listings. "
+            "[Bloom] All three extraction paths returned zero listings for %s. "
             "Manual investigation required. Check: "
-            "(1) Is housing.sanjoseca.gov up? "
+            "(1) Is the portal up? "
             "(2) Has the /listings route moved? "
-            "(3) Is the portal behind a login wall now?"
+            "(3) Is authentication now required?",
+            url,
         )
         return []
 
     records: list[HousingRecord] = []
     seen: set[str] = set()
 
-    # Open listings first — they're higher priority for the nonprofit's daily use
+    # Open listings first — higher priority for the nonprofit's daily use
     for item in open_items:
         uid = str(item.get("id") or item.get("name") or "")
         if uid in seen:
             continue
         seen.add(uid)
-        rec = _san_jose_record_from_item(item)
+        rec = _bloom_record_from_item(item, url, authority)
         if rec:
             records.append(rec)
         if len(records) >= max_results:
@@ -730,18 +872,28 @@ def extract_san_jose_listings(max_results: int = 200) -> list[HousingRecord]:
         if uid in seen:
             continue
         seen.add(uid)
-        rec = _san_jose_record_from_item(item)
+        rec = _bloom_record_from_item(item, url, authority)
         if rec:
             records.append(rec)
 
     logger.info(
-        "[SanJosé] Produced %d HousingRecord objects (%d open + %d closed source items)",
+        "[Bloom] Produced %d HousingRecord objects from %s (%d open + %d closed source items)",
         len(records),
+        url,
         len(open_items),
         len(closed_items),
     )
-    print(f"   [san_jose] {len(records)} records ({len(open_items)} open + {len(closed_items)} closed)")
+    print(f"   [bloom_housing] {len(records)} records ({len(open_items)} open + {len(closed_items)} closed) from {url}")
     return records
+
+
+def extract_san_jose_listings(max_results: int = 200) -> list[HousingRecord]:
+    """Backwards-compatible shim — callers using the old San José-specific name still work."""
+    return extract_bloom_housing_listings(
+        "https://housing.sanjoseca.gov/listings",
+        authority="City of San José",
+        max_results=max_results,
+    )
 
 
 # =============================================================================
