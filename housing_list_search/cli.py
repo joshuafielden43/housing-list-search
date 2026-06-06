@@ -110,6 +110,20 @@ def main():
                         all_listings.extend(recs)
                         continue
 
+                # Skip targets confirmed inaccessible to all automation.
+                # waf_blocked = Akamai edge block, robots.txt unreachable, even
+                # real-browser Playwright returns 403. Attempting these wastes
+                # 30+ seconds and produces nothing. See TARGETS.md notes for
+                # each city and the investigation breadcrumbs in this commit.
+                if "waf_blocked" in measures:
+                    logger.warning(
+                        "SKIPPING %s — marked waf_blocked (Akamai IP-range block; "
+                        "robots.txt unreachable; manual browser inspection required "
+                        "to find an alternative entry point). See TARGETS.md notes.",
+                        authority,
+                    )
+                    continue
+
                 if "properties-list" in url.lower() and "scchousingauthority.org" in url.lower():
                     from housing_list_search.adapters.john_stewart import scrape_john_stewart
                     all_listings.extend(scrape_john_stewart(url))
