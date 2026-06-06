@@ -1,19 +1,97 @@
 # housing-list-search
 
-**Modular Low/No-Income Housing Waitlist Aggregator**  
-Built for Santa Clara County nonprofits. Portable to any county.
+**Modular affordable-housing waitlist aggregator for Santa Clara County — portable to any county.**
 
-**v0.8.2** — Five first-class adapters (john_stewart, gis_extraction, housekeys, cdn, alta) + freshness metadata + registry guardrails + operational `no_public_list` handling. Clean daily runs via `python main.py --run` after `doctor --fix`.
+Built for nonprofits that need a daily, structured picture of what low/no-income housing is open, closing, or on waitlist across a fragmented landscape of city portals, delegated administrators, and vendor platforms.
 
-## Quick Start
+Current scope: **17 Santa Clara County targets** across every city and the county housing authority.  
+Current version: **v0.8.5**
+
+---
+
+## What it does
+
+- Runs a daily scrape against every target in `TARGETS.md`
+- Produces `current_full.csv` (all known listings), `daily_summary.md` (human-readable diff), and `changelog_diffs.csv`
+- Handles six distinct backend patterns with purpose-built adapters (see [Adapter Map](#adapter-map))
+- Skips WAF-blocked and no-public-list cities cleanly with documented rationale instead of crashing or returning junk
+- Deduplicates across overlapping sources (e.g. San José portal + SCCHA directory)
+
+---
+
+## Quick start
+
 ```bash
 git clone https://github.com/joshuafielden43/housing-list-search.git
 cd housing-list-search
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python scripts/doctor.py --fix     # Recommended after clone or TARGETS.md changes
-python main.py --run               # Normal daily extraction
+playwright install chromium          # only needed for Playwright fallback paths
+python scripts/doctor.py --fix      # validates environment + TARGETS.md ingestion
+python main.py --run                 # normal daily extraction
 ```
 
-See `PROJECT_CONTRACT_v0.8.2.md` and `AGENTS.md` for architecture, extension patterns, and how to add new cities that use existing administrators (Housing Group, Alta, HouseKeys, etc.).
+Outputs land in the repo root: `current_full.csv`, `daily_summary.md`, `changelog_diffs.md`.
+
+---
+
+## Adapter map
+
+Adapters are named after the **platform or vendor**, never the city. The same adapter covers every city that uses that backend.
+
+| Adapter | Platform | Cities / Use cases |
+|---|---|---|
+| `bloom_housing.py` | Bloom Housing (Next.js) | San José (SSR), MTC Doorway/Bay Area (REST API) |
+| `john_stewart.py` | John Stewart Company portal | SCCHA-managed properties |
+| `gis_extraction.py` | Municipal GIS layers | Cupertino + Rise Housing |
+| `housekeys.py` | HouseKeys registration portal | Morgan Hill, Gilroy, Los Gatos, Mountain View, Milpitas, (Santa Clara transitional) |
+| `cdn.py` | CDN/WAF-protected document viewers | Campbell, Los Altos, Menlo Park, Half Moon Bay (Housing Group); Gilroy PDFs |
+| `alta.py` | Alta Housing portal | Palo Alto |
+
+Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit behind Akamai WAF and are documented as `waf_blocked` in `TARGETS.md`. Mountain View and Santa Clara have viable alternative entry points (HouseKeys subdomain and MTC Doorway respectively). Sunnyvale's document viewer also fetches from the blocked domain; documented with correct document IDs for when the block resolves.
+
+---
+
+## Adding a new city
+
+**If it uses an existing platform:** add a row to `TARGETS.md` with the platform's URL and the correct `scraping_measures` value (e.g. `housekeys`, `cdn`, `native_requests`). No code changes needed.
+
+**If it's a new Bloom Housing instance:** add the hostname to `_KNOWN_BLOOM_DOMAINS` in `extraction/__init__.py`. If it's a CSR/API instance, also add it to `_API_INSTANCES` in `extraction/bloom_housing.py`. No adapter code needed.
+
+**If it's a genuinely new platform:** create a new adapter in `housing_list_search/adapters/`, name it after the platform, follow the module docstring and Scope & Guardrails pattern in any existing adapter, and add routing in `cli.py`. Document the pattern in `AGENTS.md`.
+
+---
+
+## Repo layout
+
+```
+housing_list_search/
+  adapters/          # First-class platform adapters (bloom_housing, housekeys, cdn, …)
+  extraction/        # Structured extraction layer (bloom_housing, pdf)
+  scraper.py         # polite_get() — rate-limited, robots.txt-respecting HTTP
+  registry.py        # TARGETS.md → SQLite with sanitization nanny
+  cli.py             # Main run loop and routing dispatcher
+scripts/
+  doctor.py          # Environment health check + --fix mode
+TARGETS.md           # Source of truth: all targets, measures, admin contacts
+SOUL.md              # Mission and guardrails
+AGENTS.md            # Notes for AI contributors and future maintainers
+```
+
+---
+
+## Branch / contribution discipline
+
+- `main` is protected: direct pushes are blocked; changes go through PRs.
+- PR titles follow `type: short description` — `feat:`, `fix:`, `docs:`, `chore:`.
+- Commits in PRs should be atomic and have a subject line under 72 characters.
+- CI runs `pytest tests/` on every PR (currently smoke tests; grows as adapters mature).
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Built by Joshua Fielden with Claude Sonnet (Anthropic), OpenAI Codex, and Grok Code CLI (xAI).
