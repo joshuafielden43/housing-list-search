@@ -10,6 +10,7 @@ See PROJECT_CONTRACT_v0.8.6.md for the active contract.
 import sqlite3
 import json
 import os
+import subprocess
 import tarfile
 import tempfile
 from datetime import datetime, timedelta
@@ -40,6 +41,22 @@ def _resolve_status_label(item: dict[str, Any]) -> str:
     if listing_status in _LISTING_STATUS_MAP:
         return _LISTING_STATUS_MAP[listing_status]
     return (item.get("status") or "Unknown").strip() or "Unknown"
+
+
+def _git_short_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
 
 
 class DatabaseManager:
@@ -252,7 +269,7 @@ class DatabaseManager:
             "created_at": datetime.now().isoformat(),
             "db_path": str(self.db_path),
             "record_count": self.get_record_count(),
-            "git_commit": os.popen("git rev-parse --short HEAD 2>/dev/null || echo 'unknown'").read().strip(),
+            "git_commit": _git_short_commit(),
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:

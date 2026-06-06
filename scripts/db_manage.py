@@ -4,7 +4,7 @@ Database Management CLI for Housing List Search.
 
 This is the "sharp tools" script for intentional database operations.
 
-See PROJECT_CONTRACT_v0.8.2.md Section 7 for the full contract.
+See PROJECT_CONTRACT_v0.8.6.md for the active contract.
 
 Usage examples:
     python scripts/db_manage.py init

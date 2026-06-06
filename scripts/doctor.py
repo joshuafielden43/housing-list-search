@@ -20,7 +20,6 @@ cloning or when things feel broken.
 
 import sys
 import argparse
-import subprocess
 from pathlib import Path
 from importlib.util import find_spec
 

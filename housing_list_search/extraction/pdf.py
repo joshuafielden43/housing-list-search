@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urlparse, parse_qs, unquote
 
-import requests
 from bs4 import BeautifulSoup
 
 try:
@@ -95,36 +94,18 @@ class HousingRecord:
 # PDF Text Extraction
 # ------------------------------------------------------------------
 
-def _resolve_gilroy_documentcenter(url: str) -> str:
-    """
-    Gilroy often serves PDFs through /DocumentCenter/View/XXXX which redirects
-    or wraps the real PDF. Try to get the final downloadable URL.
-    """
-    try:
-        headers = {"User-Agent": "HousingListAggregator-Nonprofit-SantaClara-v1"}
-        resp = requests.head(url, headers=headers, allow_redirects=True, timeout=15)
-        return resp.url
-    except Exception:
-        return url
-
-
 def _fetch_pdf(url: str, timeout: int = 30) -> bytes:
-    """Download a PDF with a polite user agent. Handles Gilroy DocumentCenter links."""
-    headers = {
-        "User-Agent": "HousingListAggregator-Nonprofit-SantaClara-v1 (contact: joshua@fielden.org)"
-    }
+    """Download a PDF via polite_get (robots.txt + rate limit). Handles DocumentCenter redirects."""
+    from housing_list_search.scraper import polite_get
 
-    final_url = _resolve_gilroy_documentcenter(url)
+    resp = polite_get(url)
+    if not resp:
+        raise ValueError(f"Could not fetch PDF (robots.txt disallow or HTTP failure): {url}")
 
-    resp = requests.get(final_url, headers=headers, timeout=timeout, allow_redirects=True)
-    resp.raise_for_status()
-
-    # Basic sanity check
     content_type = resp.headers.get("content-type", "")
-    if "pdf" not in content_type.lower() and not final_url.lower().endswith(".pdf"):
-        # Sometimes we still get HTML — try one more time with the original URL
-        resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
-        resp.raise_for_status()
+    if "pdf" not in content_type.lower() and not url.lower().endswith(".pdf"):
+        # DocumentCenter may return HTML wrapper — caller may retry at a higher layer
+        pass
 
     return resp.content
 
