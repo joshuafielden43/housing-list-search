@@ -82,13 +82,17 @@ def main():
         # Deduplicate across sources
         all_listings = deduplicate_listings(all_listings)
 
+        # Stable run identifier — shared between upsert and diff export so
+        # NEW/UPDATED labels in diff.csv are based on run membership, not timestamps.
+        run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
+
         # Write through to DB — this is now the source of truth
-        counts = db.upsert_listings(all_listings)
+        counts = db.upsert_listings(all_listings, run_id=run_id)
         logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
 
         # Export CSV outputs from DB
         n_full = db.export_csv("current_full.csv")
-        n_diff = db.export_diff_csv("diff.csv")
+        n_diff = db.export_diff_csv("diff.csv", run_id=run_id)
         print(f"   Exported current_full.csv ({n_full} rows), diff.csv ({n_diff} rows)")
 
         generate_changelog([], all_listings, skipped_targets=skipped_targets)

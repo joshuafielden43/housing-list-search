@@ -98,8 +98,18 @@ class DatabaseManager:
                 listing_status TEXT,
                 deadline TEXT,
                 notes TEXT,
+                bedrooms TEXT,
+                income_limits TEXT,
+                unit_types TEXT,
+                eligibility_flags TEXT,
+                confidence TEXT,
+                administrator TEXT,
+                administrator_url TEXT,
+                administrator_phone TEXT,
+                administrator_contact TEXT,
                 last_seen TEXT,
                 first_seen TEXT,
+                last_run_id TEXT,
                 source TEXT,
                 source_url TEXT,
                 expires_at TEXT,
@@ -108,10 +118,23 @@ class DatabaseManager:
             )
         """)
 
-        # Lightweight migration: add listing_status if this DB was created before v0.8.6
-        existing_cols = [row[1] for row in c.execute("PRAGMA table_info(housing_records)").fetchall()]
-        if "listing_status" not in existing_cols:
-            c.execute("ALTER TABLE housing_records ADD COLUMN listing_status TEXT")
+        # Lightweight migration: add columns for DBs created before v0.8.6
+        existing_cols = {row[1] for row in c.execute("PRAGMA table_info(housing_records)").fetchall()}
+        for col, coltype in [
+            ("listing_status", "TEXT"),
+            ("bedrooms", "TEXT"),
+            ("income_limits", "TEXT"),
+            ("unit_types", "TEXT"),
+            ("eligibility_flags", "TEXT"),
+            ("confidence", "TEXT"),
+            ("administrator", "TEXT"),
+            ("administrator_url", "TEXT"),
+            ("administrator_phone", "TEXT"),
+            ("administrator_contact", "TEXT"),
+            ("last_run_id", "TEXT"),
+        ]:
+            if col not in existing_cols:
+                c.execute(f"ALTER TABLE housing_records ADD COLUMN {col} {coltype}")
 
         # run_history for audit
         c.execute("""
@@ -263,13 +286,17 @@ class DatabaseManager:
         except Exception:
             return 0
 
-    def upsert_listings(self, listings: list) -> dict:
+    def upsert_listings(self, listings: list, run_id: str = "") -> dict:
         """
         Insert or update housing_records from a list of plain dicts.
 
+        run_id: opaque string identifying this run (e.g. ISO timestamp). Used by
+            export_diff_csv() to tag NEW vs UPDATED reliably without relying on
+            timestamp equality.
+
         On conflict (same authority + property_name + url):
-          - last_seen is always updated to now
-          - status, listing_status, notes, source updated if non-empty
+          - last_seen and last_run_id are always updated
+          - all content fields updated to the latest values
           - first_seen is preserved (never overwritten)
           - raw_data stores the full JSON of the most recent record
 
@@ -279,6 +306,8 @@ class DatabaseManager:
         conn = self.connect()
         c = conn.cursor()
         now = datetime.now().isoformat()
+        if not run_id:
+            run_id = now
         inserted = updated = 0
 
         for item in listings:
@@ -305,6 +334,20 @@ class DatabaseManager:
             phone = (item.get("phone") or "").strip()
             email = (item.get("email") or "").strip()
             deadline = (item.get("deadline") or "").strip()
+            bedrooms = str(item.get("bedrooms") or "").strip()
+            income_limits = str(item.get("income_limits") or "").strip()
+            unit_types = str(item.get("unit_types") or "").strip()
+            # eligibility_flags may be a list; store as pipe-joined string
+            flags = item.get("eligibility_flags") or []
+            if isinstance(flags, list):
+                eligibility_flags = "|".join(str(f) for f in flags)
+            else:
+                eligibility_flags = str(flags)
+            confidence = str(item.get("confidence") or "").strip()
+            administrator = str(item.get("administrator") or "").strip()
+            administrator_url = str(item.get("administrator_url") or "").strip()
+            administrator_phone = str(item.get("administrator_phone") or "").strip()
+            administrator_contact = str(item.get("administrator_contact") or "").strip()
 
             # Check if record exists
             c.execute(
@@ -317,14 +360,20 @@ class DatabaseManager:
                 # Preserve original first_seen; update everything else
                 c.execute("""
                     UPDATE housing_records SET
-                        last_seen=?, status=?, listing_status=?, notes=?,
+                        last_seen=?, last_run_id=?, status=?, listing_status=?, notes=?,
                         source=?, source_url=?, expires_at=?, address=?,
-                        phone=?, email=?, deadline=?, raw_data=?
+                        phone=?, email=?, deadline=?,
+                        bedrooms=?, income_limits=?, unit_types=?, eligibility_flags=?,
+                        confidence=?, administrator=?, administrator_url=?,
+                        administrator_phone=?, administrator_contact=?, raw_data=?
                     WHERE authority=? AND property_name=? AND url=?
                 """, (
-                    last_seen, status, listing_status, notes,
+                    last_seen, run_id, status, listing_status, notes,
                     source, source_url, expires_at, address,
-                    phone, email, deadline, raw_json,
+                    phone, email, deadline,
+                    bedrooms, income_limits, unit_types, eligibility_flags,
+                    confidence, administrator, administrator_url,
+                    administrator_phone, administrator_contact, raw_json,
                     authority, property_name, url,
                 ))
                 updated += 1
@@ -333,12 +382,18 @@ class DatabaseManager:
                     INSERT INTO housing_records
                         (authority, property_name, address, phone, email, url,
                          status, listing_status, deadline, notes,
-                         last_seen, first_seen, source, source_url, expires_at, raw_data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         bedrooms, income_limits, unit_types, eligibility_flags,
+                         confidence, administrator, administrator_url,
+                         administrator_phone, administrator_contact,
+                         last_seen, first_seen, last_run_id, source, source_url, expires_at, raw_data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     authority, property_name, address, phone, email, url,
                     status, listing_status, deadline, notes,
-                    last_seen, first_seen_val, source, source_url, expires_at, raw_json,
+                    bedrooms, income_limits, unit_types, eligibility_flags,
+                    confidence, administrator, administrator_url,
+                    administrator_phone, administrator_contact,
+                    last_seen, first_seen_val, run_id, source, source_url, expires_at, raw_json,
                 ))
                 inserted += 1
 
@@ -365,21 +420,21 @@ class DatabaseManager:
                 address,
                 phone,
                 email,
-                '' AS bedrooms,
+                bedrooms,
                 url,
                 status,
                 listing_status,
                 deadline,
-                '' AS income_limits,
-                '' AS unit_types,
-                '' AS eligibility_flags,
+                income_limits,
+                unit_types,
+                eligibility_flags,
                 notes,
                 last_seen        AS scrape_date,
-                '' AS confidence,
-                '' AS administrator,
-                '' AS administrator_url,
-                '' AS administrator_phone,
-                '' AS administrator_contact,
+                confidence,
+                administrator,
+                administrator_url,
+                administrator_phone,
+                administrator_contact,
                 last_seen,
                 first_seen,
                 source,
@@ -399,15 +454,17 @@ class DatabaseManager:
 
         return len(rows)
 
-    def export_diff_csv(self, path: str = "diff.csv") -> int:
+    def export_diff_csv(self, path: str = "diff.csv", run_id: str = "") -> int:
         """
         Export a diff CSV: every housing_record row tagged with its change type.
 
         change_type values:
-          NEW     — first_seen == last_seen (seen for the first time this run)
-          UPDATED — last_seen > first_seen (re-seen; status may have changed)
-          STALE   — last_seen older than 2 runs ago (rough heuristic; useful for
-                    import pipelines that want to flag records not confirmed recently)
+          NEW     — last_run_id matches the current run_id (first time seen this run)
+          UPDATED — confirmed this run but existed before (last_run_id == run_id, first_seen earlier)
+          STALE   — not confirmed in the current run (last_run_id != run_id or no run_id given)
+
+        run_id: the same run_id passed to upsert_listings(). When omitted,
+            falls back to timestamp comparison (less reliable but still useful).
 
         The intent is that any competent DBA or AI can ingest this CSV and drive
         upserts into their own schema without knowing anything about this tool.
@@ -417,32 +474,69 @@ class DatabaseManager:
         conn = self.connect()
         c = conn.cursor()
 
-        # Two-run staleness window: records not updated in the last 7 days
-        c.execute("""
-            SELECT
-                CASE
-                    WHEN first_seen = last_seen THEN 'NEW'
-                    WHEN last_seen < datetime('now', '-7 days') THEN 'STALE'
-                    ELSE 'UPDATED'
-                END                 AS change_type,
-                authority           AS source_authority,
-                property_name,
-                address,
-                phone,
-                email,
-                url,
-                status,
-                listing_status,
-                deadline,
-                notes,
-                last_seen,
-                first_seen,
-                source,
-                source_url,
-                expires_at
-            FROM housing_records
-            ORDER BY change_type, authority, property_name
-        """)
+        if run_id:
+            c.execute("""
+                SELECT
+                    CASE
+                        WHEN last_run_id = ? AND first_seen = last_seen THEN 'NEW'
+                        WHEN last_run_id = ? THEN 'UPDATED'
+                        ELSE 'STALE'
+                    END                 AS change_type,
+                    authority           AS source_authority,
+                    property_name,
+                    address,
+                    phone,
+                    email,
+                    url,
+                    status,
+                    listing_status,
+                    deadline,
+                    bedrooms,
+                    income_limits,
+                    unit_types,
+                    eligibility_flags,
+                    confidence,
+                    notes,
+                    last_seen,
+                    first_seen,
+                    source,
+                    source_url,
+                    expires_at
+                FROM housing_records
+                ORDER BY change_type, authority, property_name
+            """, (run_id, run_id))
+        else:
+            # Fallback when no run_id: STALE = not seen in 7 days
+            c.execute("""
+                SELECT
+                    CASE
+                        WHEN first_seen = last_seen THEN 'NEW'
+                        WHEN last_seen < datetime('now', '-7 days') THEN 'STALE'
+                        ELSE 'UPDATED'
+                    END                 AS change_type,
+                    authority           AS source_authority,
+                    property_name,
+                    address,
+                    phone,
+                    email,
+                    url,
+                    status,
+                    listing_status,
+                    deadline,
+                    bedrooms,
+                    income_limits,
+                    unit_types,
+                    eligibility_flags,
+                    confidence,
+                    notes,
+                    last_seen,
+                    first_seen,
+                    source,
+                    source_url,
+                    expires_at
+                FROM housing_records
+                ORDER BY change_type, authority, property_name
+            """)
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
 

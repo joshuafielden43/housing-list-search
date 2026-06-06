@@ -19,17 +19,39 @@ def _load_csv_keyed(path: str) -> dict[str, dict]:
 
 
 def _snapshot_path() -> str:
-    """Path where the previous run's CSV is stored."""
-    return "current_full_prev.csv"
+    """Path where the previous run's seen-this-run listing set is stored.
+
+    This is NOT current_full.csv (which is a full DB export and retains records
+    across runs). It is a lightweight CSV of exactly what was seen in the most
+    recent run, used only for changelog diffing.
+    """
+    return "run_prev.csv"
+
+
+def _write_run_snapshot(current: list) -> None:
+    """Write the current run's listing set to run_prev.csv for next-run diffing."""
+    with open(_snapshot_path(), "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["source_authority", "property_name", "status", "listing_status"])
+        for item in current:
+            auth = item.get("authority") or item.get("source_authority") or ""
+            name = item.get("property_name") or ""
+            status = item.get("status") or ""
+            ls = item.get("listing_status") or ""
+            writer.writerow([auth, name, status, ls])
 
 
 def generate_changelog(previous: list, current: list, skipped_targets=None):
     """
-    Diff the previous run's CSV against the current listings and write
+    Diff the previous run's seen-listings against the current run and write
     changelog_diffs.md + changelog_diffs.csv.
 
     previous: unused (kept for call-site compatibility); we load from disk instead.
     current: list of raw listing dicts (pre-normalization) from this run.
+
+    Baseline is run_prev.csv — written from the previous run's *deduped listing
+    set*, not from current_full.csv. This means a record missing from this run
+    is correctly reported as removed, even if the DB still holds it.
     """
     skipped_targets = skipped_targets or []
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -118,10 +140,11 @@ def generate_changelog(previous: list, current: list, skipped_targets=None):
         writer.writerow(["change_type", "authority", "property_name", "details", "timestamp"])
         writer.writerows(csv_rows)
 
-    # Snapshot current_full.csv as the baseline for next run
-    if Path("current_full.csv").exists():
-        import shutil
-        shutil.copy2("current_full.csv", _snapshot_path())
+    # Snapshot the current run's listing set as the baseline for next-run diffing.
+    # We snapshot from `current` (what was seen this run), NOT from current_full.csv
+    # (which is a full DB export and retains records across runs — using it as a
+    # diff baseline would cause removed records to appear as "removed" forever).
+    _write_run_snapshot(current)
 
     print(f"✅ Generated changelog_diffs.md (+{len(added)} added, -{len(removed)} removed, "
           f"{len(changed)} status changes)")

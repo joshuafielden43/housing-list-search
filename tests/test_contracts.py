@@ -218,7 +218,7 @@ class TestDedupeSharedURL:
         rec = HousingRecord(
             authority="City of Test",
             property_name="Cedar Park Apartments",
-            url="https://example.com/cedar.pdf",
+            document_url="https://example.com/cedar.pdf",
         )
         result = deduplicate_listings([rec])
         assert len(result) == 1
@@ -487,18 +487,23 @@ class TestRunnerDispatch:
             result = run_target(self._target("housekey_typo"))
         assert isinstance(result, list)  # no exception
 
-    def test_extraction_layer_takes_priority(self):
-        """If extract_target returns records, named-measure adapters are not called."""
+    def test_extraction_and_named_adapters_both_run(self):
+        """Extraction layer results do not suppress named-measure adapters.
+        A row with a Bloom URL AND housekeys measure must produce records from both."""
         class FakeRecord:
             def to_dict(self):
                 return {"property_name": "Bloom Prop", "authority": "Test", "url": ""}
 
+        hk_rec = {"property_name": "HK Prop", "authority": "Test", "url": "https://hk.example.com/"}
+
         with (
             patch("housing_list_search.runner.extract_target", return_value=[FakeRecord()]),
-            patch("housing_list_search.runner.scrape_housekeys") as mock_hk,
+            patch("housing_list_search.runner.scrape_housekeys", return_value=[hk_rec]) as mock_hk,
         ):
             from housing_list_search.runner import run_target
             result = run_target(self._target("housekeys"))
 
-        mock_hk.assert_not_called()
-        assert result[0]["property_name"] == "Bloom Prop"
+        mock_hk.assert_called_once()
+        names = {r["property_name"] for r in result}
+        assert "Bloom Prop" in names
+        assert "HK Prop" in names

@@ -103,23 +103,27 @@ def run_target(target: dict[str, Any]) -> list[dict]:
         return []
 
     # ----------------------------------------------------------------
-    # 1. Extraction layer (Bloom Housing, etc.) — takes priority
-    #    extract_target() returns HousingRecord objects; coerce to dicts.
+    # 1. Extraction layer (Bloom Housing, etc.)
+    #    Contributes to results but does NOT short-circuit named-measure
+    #    adapters. A row with both a Bloom URL and housekeys,cdn measures
+    #    (e.g. a future city using both) will run all three sources.
     # ----------------------------------------------------------------
+    results: list[dict] = []
+    ran_any = False
+
     if extract_target is not None:
         try:
-            records = extract_target(url, authority)
-            if records:
-                logger.info("[runner] %s: %d records via extraction layer", authority, len(records))
-                return [r.to_dict() if hasattr(r, "to_dict") else r for r in records]
+            ext_records = extract_target(url, authority)
+            if ext_records:
+                logger.info("[runner] %s: %d records via extraction layer", authority, len(ext_records))
+                results.extend(r.to_dict() if hasattr(r, "to_dict") else r for r in ext_records)
+                ran_any = True
         except Exception as exc:
             logger.warning("[runner] %s: extraction layer failed (%s) — falling through to adapters", authority, exc)
 
     # ----------------------------------------------------------------
     # 2. Named-measure adapters — run every matching measure
     # ----------------------------------------------------------------
-    results: list[dict] = []
-    ran_any = False
 
     if "john_stewart" in measures and scrape_john_stewart is not None:
         try:
