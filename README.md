@@ -46,7 +46,12 @@ Adapters are named after the **platform or vendor**, never the city. The same ad
 | `gis_extraction.py` | Municipal GIS layers | Cupertino + Rise Housing |
 | `housekeys.py` | HouseKeys registration portal | Morgan Hill, Gilroy, Los Gatos, Mountain View, Milpitas, (Santa Clara transitional) |
 | `civicplus.py` | CivicPlus municipal CMS (DocumentCenter, Froala) behind CDN/WAF | Campbell, Los Altos (Housing Group); Gilroy PDFs |
-| `alta.py` | Alta Housing portal | Palo Alto |
+| `alta.py` | Alta Housing portal + property directory | Palo Alto, Mountain View |
+| `charities_housing.py` | Charities Housing directory + REST API | Santa Clara County |
+| `midpen.py` | MidPen Housing county search (waitlist statuses) | Santa Clara County |
+| `eden.py` | Eden Housing county property grid | Santa Clara County |
+| `eah.py` | EAH Housing all-properties list | Santa Clara County |
+| `first_housing.py` | First Community Housing portfolio (contacts) | San José |
 
 Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit behind Akamai WAF and are documented as `waf_blocked` in `TARGETS.md`. Mountain View and Santa Clara have viable alternative entry points (HouseKeys subdomain and MTC Doorway respectively). Sunnyvale's document viewer also fetches from the blocked domain; documented with correct document IDs for when the block resolves.
 

@@ -299,12 +299,105 @@ def _parse_direct_geojson(url: str, authority: str) -> List[Dict[str, Any]]:
 
 def _parse_arcgis_rest(url: str, authority: str) -> List[Dict[str, Any]]:
     """
-    Placeholder for real ArcGIS FeatureServer / MapServer queries.
-    Will be implemented when we encounter a live example.
+    ArcGIS FeatureServer / MapServer query endpoints.
+
+    Reference implementation: City of Sunnyvale (June 2026) —
+    gis.sunnyvale.ca.gov/arcgis/rest/services/CDD/AffordableHousing/MapServer/0/query
+    The GIS subdomain is publicly queryable even though the main city site is
+    Akamai WAF-blocked. The layer carries Name, Address, Agency (the property
+    manager), Income_Level, AffordableUnits, Bedrooms, PopulationServed,
+    PhoneNumber, Website, and last-edited audit fields.
+
+    `url` may be the layer URL or a full /query URL; query params are
+    normalized either way.
     """
     logger.debug(f"GIS (ArcGIS) on {url}")
-    print("   ArcGIS REST parser not yet implemented — returning empty list")
-    return []
+
+    query_url = url.split("?")[0]
+    if not query_url.rstrip("/").endswith("/query"):
+        query_url = query_url.rstrip("/") + "/query"
+
+    resp = polite_get(f"{query_url}?where=1%3D1&outFields=*&f=json")
+    if not resp:
+        return []
+
+    try:
+        data = resp.json()
+    except Exception as exc:
+        logger.warning("ArcGIS response from %s is not JSON: %s", url, exc)
+        return []
+
+    if "error" in data:
+        logger.warning("ArcGIS error from %s: %s", url, data["error"])
+        return []
+
+    return _arcgis_features_to_records(data, url, authority)
+
+
+def _arcgis_features_to_records(
+    data: Dict[str, Any], source_url: str, authority: str
+) -> List[Dict[str, Any]]:
+    """Convert ArcGIS REST query results (features[].attributes) to records."""
+    features = data.get("features", [])
+    if not isinstance(features, list):
+        return []
+
+    def pick(attrs: Dict[str, Any], *names: str) -> str:
+        lower = {k.lower(): v for k, v in attrs.items()}
+        for n in names:
+            v = lower.get(n.lower())
+            if v not in (None, "", "Null"):
+                return str(v).strip()
+        return ""
+
+    records: List[Dict[str, Any]] = []
+    now_iso = _dt.now().isoformat()
+
+    for feat in features:
+        attrs = feat.get("attributes", {}) if isinstance(feat, dict) else {}
+        if not attrs:
+            continue
+
+        name = pick(attrs, "Name", "PROPERTY_NAME", "ProjectName", "SiteName")
+        if not name:
+            continue
+
+        units = pick(attrs, "AffordableUnits", "NumUnits", "TotalUnits", "Units", "UNIT_COUNT")
+        manager = pick(attrs, "Agency", "Manager", "PropertyManager", "Owner")
+        notes_bits = [f"Source: municipal ArcGIS layer"]
+        for label, *fields in (
+            ("Building type", "BuildingType", "ProjectType"),
+            ("Income level", "Income_Level", "IncomeLevel", "AMI"),
+            ("Population", "PopulationServed", "Population"),
+        ):
+            val = pick(attrs, *fields)
+            if val:
+                notes_bits.append(f"{label}: {val}")
+
+        rec: Dict[str, Any] = {
+            "authority": authority or "Municipal GIS Portfolio",
+            "property_name": name,
+            "address": pick(attrs, "Address", "SiteAddress", "FullAddress"),
+            "phone": pick(attrs, "PhoneNumber", "Phone"),
+            "url": pick(attrs, "Website", "URL", "Link"),
+            "unit_count": units,
+            "bedrooms": pick(attrs, "Bedrooms", "UnitTypes"),
+            "notes": " | ".join(notes_bits),
+            "confidence": "high",  # structured municipal data, not scraped HTML
+            "last_seen": now_iso,
+            "first_seen": now_iso,
+            "source": f"gis:{authority.lower().replace(' ', '_')}",
+            "source_url": source_url,
+            "expires_at": "",
+        }
+        if manager:
+            rec["administrator"] = manager
+            rec["notes"] += f" | Manager: {manager}"
+
+        records.append(rec)
+
+    print(f"   → Extracted {len(records)} properties from ArcGIS source")
+    return records
 
 
 def _parse_page_for_embedded_gis(

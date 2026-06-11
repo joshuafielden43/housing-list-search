@@ -358,6 +358,97 @@ def _scrape_direct_john_stewart(url: str) -> List[Dict[str, Any]]:
 
 
 # =============================================================================
+# CORPORATE PORTFOLIO PARSER: jsco.net WordPress REST API
+# =============================================================================
+# John Stewart's corporate site (jsco.net) exposes its full property portfolio
+# through the standard WordPress REST API with a `city` taxonomy. One request
+# returns every Santa Clara County property (67 as of June 2026) — far broader
+# coverage than the jscosccha.com waitlist site, which only lists SCCHA
+# Section 8 properties. robots.txt allows general agents (Allow: /).
+# theunitedeffort.org watches these same 67 property pages individually.
+# =============================================================================
+
+_JSCO_API_BASE = "https://jsco.net/wp-json/wp/v2"
+
+# WordPress `city` taxonomy term IDs for Santa Clara County (verified 2026-06-10
+# via /wp-json/wp/v2/city). If jsco.net adds a new county city, add its ID here.
+_JSCO_SCC_CITIES = {
+    23: "San Jose",
+    52: "Campbell",
+    56: "Santa Clara",
+    108: "Gilroy",
+    110: "Milpitas",
+    220: "Palo Alto",
+    221: "Mountain View",
+    292: "Morgan Hill",
+}
+
+
+def _scrape_jsco_portfolio(url: str) -> List[Dict[str, Any]]:
+    """Fetch all Santa Clara County properties from the jsco.net REST API.
+
+    Single paginated query filtered by city taxonomy; returns one record per
+    property with name, city, detail link, and the post's last-modified date
+    (a genuine freshness signal maintained by the vendor).
+    """
+    import html as _html
+
+    print(f"🧩 Running John Stewart adapter (jsco.net corporate portfolio mode)")
+
+    city_filter = ",".join(str(i) for i in _JSCO_SCC_CITIES)
+    listings: List[Dict[str, Any]] = []
+    page_num = 1
+
+    while page_num <= 3:  # 67 properties fit in one page of 100; cap defensively
+        api_url = f"{_JSCO_API_BASE}/property?city={city_filter}&per_page=100&page={page_num}"
+        resp = polite_get(api_url)
+        if not resp:
+            break
+        try:
+            items = resp.json()
+        except Exception:
+            print("   ⚠️ jsco.net API returned non-JSON — site may have changed")
+            break
+        if not isinstance(items, list) or not items:
+            break
+
+        now_iso = _dt.now().isoformat()
+        for item in items:
+            name = _html.unescape((item.get("title") or {}).get("rendered", "")).strip()
+            if not name:
+                continue
+            city_ids = item.get("city") or []
+            city = next((_JSCO_SCC_CITIES[i] for i in city_ids if i in _JSCO_SCC_CITIES), "")
+            modified = (item.get("modified") or "")[:10]
+
+            listings.append({
+                "authority": "John Stewart Company (jsco.net portfolio)",
+                "property_name": name,
+                "address": f"{city}, CA" if city else "",
+                "url": item.get("link") or "",
+                "status": "Check with property",
+                "notes": (
+                    f"John Stewart managed property in {city or 'Santa Clara County'}"
+                    + (f" | vendor page last updated {modified}" if modified else "")
+                ),
+                "unit_types": "Varies",
+                "confidence": "high",
+                "last_seen": now_iso,
+                "first_seen": now_iso,
+                "source": "john_stewart:jsco_portfolio",
+                "source_url": api_url.split("&page=")[0],
+                "expires_at": "",
+            })
+
+        if len(items) < 100:
+            break
+        page_num += 1
+
+    print(f"   → jsco.net portfolio: {len(listings)} Santa Clara County properties")
+    return listings
+
+
+# =============================================================================
 # PUBLIC API
 # =============================================================================
 
@@ -383,6 +474,10 @@ def scrape_john_stewart(url: str) -> List[Dict[str, Any]]:
     # SCCHA custom front-end (special structured page)
     if "properties-list" in lower_url and "scchousingauthority.org" in lower_url:
         return _scrape_sccha_directory(url)
+
+    # Corporate portfolio via WordPress REST API (jsco.net)
+    if "jsco.net" in lower_url:
+        return _scrape_jsco_portfolio(url)
 
     # Any direct page on the John Stewart platform
     if "jscosccha.com" in lower_url or "jscosccha" in lower_url:

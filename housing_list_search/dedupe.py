@@ -77,8 +77,10 @@ def _make_key(rec: Dict[str, Any]) -> Tuple[str, str, str]:
     """
     name_key = _norm_name(rec.get("property_name") or rec.get("name", ""))
     addr_key = _norm_address(rec.get("address", ""))
-    # Pure address key only when the address is substantial (a URL fragment is not)
-    addr_only = addr_key if len(addr_key) >= 6 else ""
+    # Pure address key only when the address is a real street address: it must
+    # contain a street number. City-only addresses ("San Jose, CA") normalize
+    # to identical keys and would collapse every property in that city.
+    addr_only = addr_key if len(addr_key) >= 6 and any(c.isdigit() for c in addr_key) else ""
     return (name_key, addr_key, addr_only)
 
 

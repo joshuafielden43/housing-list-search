@@ -49,7 +49,13 @@ Six first-class adapters, all named after the recurring **platform or vendor** (
 | `adapters/gis_extraction.py` | Municipal GIS layers + federated managers | Cupertino + Rise Housing |
 | `adapters/housekeys.py` | Registration/notification/lottery portal | Morgan Hill, Gilroy, Los Gatos, Mountain View, Milpitas |
 | `adapters/civicplus.py` | CivicPlus municipal CMS (DocumentCenter viewers, Froala blocks) behind CDN/WAF | Gilroy, Campbell, Los Altos, Los Gatos |
-| `adapters/alta.py` | Alta Housing delegated administrator | Palo Alto |
+| `adapters/alta.py` | Alta Housing delegated administrator + property directory | Palo Alto, Mountain View |
+| `adapters/john_stewart.py` (jsco.net mode) | Corporate portfolio via WordPress REST API | 67 county properties |
+| `adapters/charities_housing.py` | Charities Housing find-a-home cards + WP REST API | ~48 county properties |
+| `adapters/midpen.py` | MidPen county-filtered search (leasing statuses) | ~46 county properties |
+| `adapters/eden.py` | Eden Housing county-filtered grid (statuses) | ~36 county properties |
+| `adapters/eah.py` | EAH all-properties list, county filter | ~27 county properties |
+| `adapters/first_housing.py` | First Community Housing Wix portfolio (contacts) | ~21 properties |
 
 High-quality structured extraction lives in `extraction/`. Adapters in `adapters/` handle messier or registration-only cases. Routing lives in `runner.py` (not `cli.py`), driven entirely by `scraping_measures`.
 
@@ -161,7 +167,7 @@ When you hit a WAF block: document it (what you tried, the specific block signat
 `runner.run_target(target_row)` is the single dispatch function. It is driven entirely by `scraping_measures` — URL substrings and authority name patterns are explicitly not used. Order of operations:
 
 1. `extract_target()` — handles Bloom Housing domains and PDF/DocumentCenter links. Results are collected but do **not** suppress named-measure adapters (a row can produce records from both Bloom and HouseKeys).
-2. Named-measure adapters fire for every matching measure: `john_stewart`, `gis`, `housekeys`, `civicplus` (legacy alias: `cdn`), `alta`. All matching adapters run; zero results from one does not suppress others.
+2. Named-measure adapters fire for every matching measure: `john_stewart`, `gis`, `housekeys`, `civicplus` (legacy alias: `cdn`), `alta`, `charities_housing`, `midpen`, `eden`, `eah`, `first_housing`. All matching adapters run; zero results from one does not suppress others.
 3. `waf_blocked` — immediate empty return before any adapter or network call.
 4. Playwright or generic-scrape fallback — only if no named measure fired.
 

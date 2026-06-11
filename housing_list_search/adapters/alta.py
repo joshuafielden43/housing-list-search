@@ -76,7 +76,24 @@ from typing import Any
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+from housing_list_search.scraper import polite_get
+
 logger = logging.getLogger(__name__)
+
+# Alta's own property directory — a static WordPress grid of .prop-box cards,
+# each carrying name, full address, waitlist status, and a detail-page link.
+# This is the per-property availability signal (theunitedeffort.org watches
+# these same pages for staleness).
+PROPERTY_DIRECTORY_URL = "https://altahousing.org/current-properties/"
+
+# .prop-flag badge text → our listing_status vocabulary (status_labels.py)
+_STATUS_MAP = {
+    "waitlist open": "waitlist",
+    "waitlist closed": "closed",
+    "available": "open",
+    "now leasing": "open",
+    "coming soon": "coming_soon",
+}
 
 
 def _jitter(seconds: float = 0.8) -> None:
@@ -199,7 +216,70 @@ def scrape_alta(authority: str, url: str, timeout: int = 60000) -> list[dict[str
         finally:
             browser.close()
 
+    # Per-property availability from Alta's own directory (single static fetch;
+    # polite_get applies the rate-limit delay).
+    records.extend(scrape_property_directory(authority))
+
     logger.info(f"[alta] Extracted {len(records)} records for {authority}")
+    return records
+
+
+def scrape_property_directory(authority: str = "") -> list[dict[str, Any]]:
+    """Parse altahousing.org/current-properties/ into per-property records.
+
+    Each .prop-box card yields property name, full street address (with city),
+    waitlist status, and the property detail URL. The directory spans every
+    city Alta operates in (Palo Alto, Mountain View, Redwood City), so the
+    city lives in the address while `authority` records which TARGETS.md row
+    triggered the scrape.
+    """
+    resp = polite_get(PROPERTY_DIRECTORY_URL)
+    if not resp:
+        logger.warning("[alta] Could not fetch property directory %s", PROPERTY_DIRECTORY_URL)
+        return []
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    now_iso = _dt.now().isoformat()
+    records: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+
+    for box in soup.find_all("div", class_="prop-box"):
+        title_link = box.select_one(".prop-title a") or box.find("a", href=True)
+        if not title_link:
+            continue
+        name = title_link.get_text(strip=True)
+        detail_url = title_link.get("href", "")
+        if not name or detail_url in seen_urls:
+            continue
+        seen_urls.add(detail_url)
+
+        flag = box.select_one(".prop-flag")
+        status_text = flag.get_text(strip=True) if flag else ""
+        listing_status = _STATUS_MAP.get(status_text.lower(), "")
+
+        desc = box.select_one(".block-desc")
+        address = desc.get_text(" ", strip=True) if desc else ""
+
+        records.append({
+            "authority": authority or "Alta Housing",
+            "property_name": name,
+            "address": address,
+            "url": detail_url,
+            "status": status_text or "See property page",
+            "listing_status": listing_status,
+            "administrator": "Alta Housing",
+            "administrator_url": "https://altahousing.org/",
+            "administrator_phone": "(650) 321-9709",
+            "notes": f"Alta Housing managed property | directory status: {status_text}",
+            "confidence": "high",
+            "last_seen": now_iso,
+            "first_seen": now_iso,
+            "source": "alta:property_directory",
+            "source_url": PROPERTY_DIRECTORY_URL,
+            "expires_at": "",
+        })
+
+    logger.info("[alta] Property directory: %d properties", len(records))
     return records
 
 

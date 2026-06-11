@@ -59,6 +59,31 @@ except Exception:
     scrape_alta = None  # type: ignore[assignment]
 
 try:
+    from housing_list_search.adapters.charities_housing import scrape_charities_housing
+except Exception:
+    scrape_charities_housing = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.midpen import scrape_midpen
+except Exception:
+    scrape_midpen = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.eden import scrape_eden
+except Exception:
+    scrape_eden = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.eah import scrape_eah
+except Exception:
+    scrape_eah = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.first_housing import scrape_first_housing
+except Exception:
+    scrape_first_housing = None  # type: ignore[assignment]
+
+try:
     from housing_list_search.playwright_scraper import playwright_scrape
 except Exception:
     playwright_scrape = None  # type: ignore[assignment]
@@ -171,6 +196,51 @@ def run_target(target: dict[str, Any]) -> list[dict]:
         except Exception as exc:
             logger.warning("[runner] %s: civicplus failed: %s", authority, exc)
 
+    if "first_housing" in measures and scrape_first_housing is not None:
+        try:
+            recs = scrape_first_housing(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: first_housing → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: first_housing failed: %s", authority, exc)
+
+    if "eden" in measures and scrape_eden is not None:
+        try:
+            recs = scrape_eden(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: eden → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: eden failed: %s", authority, exc)
+
+    if "eah" in measures and scrape_eah is not None:
+        try:
+            recs = scrape_eah(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: eah → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: eah failed: %s", authority, exc)
+
+    if "midpen" in measures and scrape_midpen is not None:
+        try:
+            recs = scrape_midpen(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: midpen → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: midpen failed: %s", authority, exc)
+
+    if "charities_housing" in measures and scrape_charities_housing is not None:
+        try:
+            recs = scrape_charities_housing(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: charities_housing → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: charities_housing failed: %s", authority, exc)
+
     if "alta" in measures and scrape_alta is not None:
         try:
             recs = scrape_alta(authority, url)
@@ -183,6 +253,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
     # Log any measures we don't recognise so TARGETS.md typos surface immediately
     known = {
         "john_stewart", "gis", "housekeys", "civicplus", "cdn", "alta",
+        "charities_housing", "midpen", "eden", "eah", "first_housing",
         "waf_blocked", "no_public_list",
         # Informational / routing hints — not adapter triggers
         "native_requests", "js_heavy", "table_based", "html_cards",
