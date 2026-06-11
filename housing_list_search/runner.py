@@ -10,7 +10,7 @@ Design rules:
   authority name patterns. Add a measure to TARGETS.md; the code follows.
 - Every named measure maps to exactly one adapter call. Unknown measures are
   logged and skipped, never silently routed to generic scraping.
-- Multi-measure targets (e.g. housekeys,cdn) run every matching adapter.
+- Multi-measure targets (e.g. housekeys,civicplus) run every matching adapter.
   A measure that produces zero records does not suppress other measures.
 - Playwright and generic-scrape are fallbacks of last resort, activated only
   when no named measure fired AND the target is not waf_blocked.
@@ -49,7 +49,7 @@ except Exception:
     scrape_housekeys = None  # type: ignore[assignment]
 
 try:
-    from housing_list_search.adapters.cdn import extract_underlying_records
+    from housing_list_search.adapters.civicplus import extract_underlying_records
 except Exception:
     extract_underlying_records = None  # type: ignore[assignment]
 
@@ -105,7 +105,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
     # ----------------------------------------------------------------
     # 1. Extraction layer (Bloom Housing, etc.)
     #    Contributes to results but does NOT short-circuit named-measure
-    #    adapters. A row with both a Bloom URL and housekeys,cdn measures
+    #    adapters. A row with both a Bloom URL and housekeys,civicplus measures
     #    (e.g. a future city using both) will run all three sources.
     # ----------------------------------------------------------------
     results: list[dict] = []
@@ -144,8 +144,10 @@ def run_target(target: dict[str, Any]) -> list[dict]:
                 administrator_contact=admin_contact,
             )
             results.extend(recs)
-            if recs:
-                ran_any = True
+            # A named adapter that ran cleanly counts as fired even with zero
+            # records — generic fallback on these pages scrapes prose as
+            # listings, which is worse than an honest empty result.
+            ran_any = True
             logger.info("[runner] %s: gis → %d records", authority, len(recs))
         except Exception as exc:
             logger.warning("[runner] %s: gis failed: %s", authority, exc)
@@ -159,15 +161,15 @@ def run_target(target: dict[str, Any]) -> list[dict]:
         except Exception as exc:
             logger.warning("[runner] %s: housekeys failed: %s", authority, exc)
 
-    if "cdn" in measures and extract_underlying_records is not None:
+    # "cdn" is the legacy name for the civicplus measure — accepted for old TARGETS.md rows
+    if measures & {"civicplus", "cdn"} and extract_underlying_records is not None:
         try:
             recs = extract_underlying_records(url, authority)
             results.extend(recs)
-            if recs:
-                ran_any = True
-            logger.info("[runner] %s: cdn → %d records", authority, len(recs))
+            ran_any = True  # ran cleanly — zero records must not trigger generic fallback
+            logger.info("[runner] %s: civicplus → %d records", authority, len(recs))
         except Exception as exc:
-            logger.warning("[runner] %s: cdn failed: %s", authority, exc)
+            logger.warning("[runner] %s: civicplus failed: %s", authority, exc)
 
     if "alta" in measures and scrape_alta is not None:
         try:
@@ -180,7 +182,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
 
     # Log any measures we don't recognise so TARGETS.md typos surface immediately
     known = {
-        "john_stewart", "gis", "housekeys", "cdn", "alta",
+        "john_stewart", "gis", "housekeys", "civicplus", "cdn", "alta",
         "waf_blocked", "no_public_list",
         # Informational / routing hints — not adapter triggers
         "native_requests", "js_heavy", "table_based", "html_cards",

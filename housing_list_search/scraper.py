@@ -35,9 +35,27 @@ def is_allowed_by_robots(url: str) -> bool:
         base = f"{parsed.scheme}://{parsed.netloc}"
         robots_url = f"{base}/robots.txt"
 
+        # Fetch with our nonprofit UA — NOT RobotFileParser.read(), which uses
+        # Python-urllib's default bot string. Cloudflare (jscosccha.com, etc.)
+        # returns 403 for that default UA; urllib.robotparser then sets
+        # disallow_all=True and blocks every URL even when robots.txt allows /.
+        resp = requests.get(
+            robots_url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=15,
+        )
         rp = urllib.robotparser.RobotFileParser()
         rp.set_url(robots_url)
-        rp.read()
+        if resp.status_code in (401, 403):
+            logger.warning(
+                "robots.txt returned HTTP %d for %s — treating as unreachable (allowed). "
+                "If this is a WAF block on the robots fetch itself, document in TARGETS.md.",
+                resp.status_code, robots_url,
+            )
+            return True
+        if resp.status_code >= 400:
+            return True
+        rp.parse(resp.text.splitlines())
 
         allowed = rp.can_fetch(USER_AGENT, url)
         if not allowed:

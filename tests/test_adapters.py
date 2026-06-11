@@ -1,7 +1,7 @@
 """
 Fixture-based adapter smoke tests (no network, no Playwright).
 
-Locks parsing logic for John Stewart, GIS, and CDN helpers so regressions
+Locks parsing logic for John Stewart, GIS, and CivicPlus helpers so regressions
 are caught without live portal access.
 """
 
@@ -95,7 +95,7 @@ class TestGisExtractionAdapter:
 
 
 # ---------------------------------------------------------------------------
-# cdn.py — Froala availability list parser
+# civicplus.py — Froala availability list parser
 # ---------------------------------------------------------------------------
 
 FROALA_AVAILABILITY_HTML = """
@@ -113,7 +113,7 @@ FROALA_AVAILABILITY_HTML = """
 
 class TestCdnAdapter:
     def test_froala_availability_blocks_parser(self):
-        from housing_list_search.adapters.cdn import _parse_froala_availability_blocks
+        from housing_list_search.adapters.civicplus import _parse_froala_availability_blocks
 
         container = BeautifulSoup(FROALA_AVAILABILITY_HTML, "html.parser")
         records = _parse_froala_availability_blocks(container, "City of Gilroy")

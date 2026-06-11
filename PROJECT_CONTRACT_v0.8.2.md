@@ -43,7 +43,7 @@ As of v0.8.2 we have:
   - `john_stewart.py` — consolidated vendor + custom front-end properties
   - `gis_extraction.py` — municipal GIS + federated managers (Cupertino + Rise Housing reference)
   - `housekeys.py` — delegated registration / notification / lottery portals (Milpitas reference)
-  - `cdn.py` — CDN/WAF-protected document viewers (DocumentCenter, showdocument, docaccess) — primary path for Housing Group cities (Campbell, Los Altos, Menlo Park, Half Moon Bay)
+  - `cdn.py` — CDN/WAF-protected document viewers (DocumentCenter, showdocument, docaccess) — Housing Group cities (Campbell, Los Altos), Gilroy PDFs
   - `alta.py` — Alta Housing delegated administrator (Palo Alto reference)
 - Preferred high-quality `extraction/` layer (`extract_target`) with San José portal + PDF support
 - Full freshness / delta foundation on every record (`last_seen`, `first_seen`, `source`, `source_url`, `expires_at`)

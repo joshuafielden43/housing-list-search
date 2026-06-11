@@ -4,7 +4,7 @@
 
 Built for nonprofits that need a daily, structured picture of what low/no-income housing is open, closing, or on waitlist across a fragmented landscape of city portals, delegated administrators, and vendor platforms.
 
-Current scope: **17 Santa Clara County targets** across every city and the county housing authority.  
+Current scope: **15 Santa Clara County targets** across every city and the county housing authority.  
 Current version: **v0.8.6**
 
 ---
@@ -45,7 +45,7 @@ Adapters are named after the **platform or vendor**, never the city. The same ad
 | `john_stewart.py` | John Stewart Company portal | SCCHA-managed properties |
 | `gis_extraction.py` | Municipal GIS layers | Cupertino + Rise Housing |
 | `housekeys.py` | HouseKeys registration portal | Morgan Hill, Gilroy, Los Gatos, Mountain View, Milpitas, (Santa Clara transitional) |
-| `cdn.py` | CDN/WAF-protected document viewers | Campbell, Los Altos, Menlo Park, Half Moon Bay (Housing Group); Gilroy PDFs |
+| `civicplus.py` | CivicPlus municipal CMS (DocumentCenter, Froala) behind CDN/WAF | Campbell, Los Altos (Housing Group); Gilroy PDFs |
 | `alta.py` | Alta Housing portal | Palo Alto |
 
 Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit behind Akamai WAF and are documented as `waf_blocked` in `TARGETS.md`. Mountain View and Santa Clara have viable alternative entry points (HouseKeys subdomain and MTC Doorway respectively). Sunnyvale's document viewer also fetches from the blocked domain; documented with correct document IDs for when the block resolves.
@@ -54,7 +54,7 @@ Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit beh
 
 ## Adding a new city
 
-**If it uses an existing platform:** add a row to `TARGETS.md` with the platform's URL and the correct `scraping_measures` value (e.g. `housekeys`, `cdn`, `native_requests`). No code changes needed.
+**If it uses an existing platform:** add a row to `TARGETS.md` with the platform's URL and the correct `scraping_measures` value (e.g. `housekeys`, `civicplus`, `native_requests`). No code changes needed.
 
 **If it's a new Bloom Housing instance:** add the hostname to `_KNOWN_BLOOM_DOMAINS` in `extraction/__init__.py`. If it's a CSR/API instance, also add it to `_API_INSTANCES` in `extraction/bloom_housing.py`. No adapter code needed.
 
@@ -66,7 +66,7 @@ Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit beh
 
 ```
 housing_list_search/
-  adapters/          # First-class platform adapters (bloom_housing, housekeys, cdn, …)
+  adapters/          # First-class platform adapters (bloom_housing, housekeys, civicplus, …)
   extraction/        # Structured extraction layer (bloom_housing, pdf)
   runner.py          # Measure-driven target dispatcher (routes each TARGETS.md row)
   db.py              # DatabaseManager: upsert, export_csv, export_diff_csv, prune
