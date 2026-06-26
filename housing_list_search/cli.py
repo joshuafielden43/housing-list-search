@@ -6,10 +6,7 @@ import sys
 from datetime import datetime
 
 def main():
-    parser = argparse.ArgumentParser(description="Housing Waitlist Aggregator")
-    parser.add_argument("--discover", action="store_true", help="Interactive first-run discovery")
-    parser.add_argument("--refresh-targets", action="store_true", help="Reset TARGETS.md to defaults (destructive — requires --yes-i-know)")
-    parser.add_argument("--yes-i-know", action="store_true", help="Confirm destructive --refresh-targets overwrite")
+    parser = argparse.ArgumentParser(description="Housing Waitlist Aggregator (Santa Clara County)")
     parser.add_argument("--run", action="store_true", help="Normal daily scrape")
     parser.add_argument(
         "--target",
@@ -18,28 +15,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.discover or args.refresh_targets:
-        print("=== Housing List Aggregator Discovery ===")
-
-        if args.discover:
-            county = input("1. What county or city are we targeting?\n→ ").strip() or "Santa Clara County, California"
-            print("\n2. Any starter seed URLs? (blank line to finish)")
-            seeds = []
-            while True:
-                line = input("→ ").strip()
-                if line == "":
-                    break
-                seeds.append(line)
-        else:
-            county = "Santa Clara County, California"
-            seeds = []
-
-        mode = input("\n3. A) Full auto-discovery or B) Seed-only? [default A]\n→ ").strip().upper() or "A"
-
-        from housing_list_search.discovery import run_first_discovery
-        run_first_discovery(county, seeds, mode, confirmed=getattr(args, "yes_i_know", False))
-
-    elif args.run:
+    if args.run:
         print(f"=== Normal Run Started at {datetime.now()} ===")
 
         import csv
@@ -164,10 +140,9 @@ def main():
 
     else:
         print("Usage:")
-        print("  python main.py --discover")
-        print("  python main.py --refresh-targets")
         print("  python main.py --run")
         print("  python main.py --run --target \"San José\"")
+        print("\nTargets are hand-maintained in TARGETS.md.")
         sys.exit(0)
 
 

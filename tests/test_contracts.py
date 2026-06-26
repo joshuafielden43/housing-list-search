@@ -6,7 +6,7 @@ They lock in the behavior fixed in the v0.8.5 audit so regressions are caught
 before they reach the daily run.
 
 Coverage:
-- cli.py  multi-measure routing (housekeys+cdn both fire)
+- cli.py  multi-measure routing (housekeys+civicplus both fire)
 - bloom_housing.py  API pagination loop
 - bloom_housing.py  city_filter applied after Playwright fallback
 - bloom_housing.py  listing_status field set correctly on HousingRecord
@@ -357,6 +357,31 @@ class TestBloomAPIPagination:
         assert mock_post.call_count == 2
         assert len(open_items) == 101
 
+    def test_http_201_accepted(self):
+        import housing_list_search.extraction.bloom_housing as bh
+        orig = bh._API_INSTANCES
+        bh._API_INSTANCES = {
+            "housingbayarea.mtc.ca.gov": {
+                "jurisdictionname": "Bay Area",
+                "endpoint": "https://housingbayarea.mtc.ca.gov/api/adapter/listings/combined",
+            }
+        }
+        try:
+            with patch("requests.post", return_value=MagicMock(**{
+                "status_code": 201,
+                "json.return_value": {
+                    "items": [{"id": "1", "name": "Monroe Commons", "listingsBuildingAddress": {"city": "Santa Clara"}}],
+                    "meta": {"totalItems": 1},
+                },
+            })):
+                open_items, _ = bh._fetch_via_api(
+                    "https://housingbayarea.mtc.ca.gov/listings",
+                    city_filter="Santa Clara",
+                )
+        finally:
+            bh._API_INSTANCES = orig
+        assert len(open_items) == 1
+
     def test_city_filter_applied_after_all_pages(self):
         items_p1 = [
             {"id": "1", "name": "Monroe Commons", "listingsBuildingAddress": {"city": "Santa Clara"}},
@@ -407,7 +432,7 @@ class TestBloomPlaywrightCityFilter:
             patch.object(bh, "_fetch_via_playwright", return_value=(playwright_open, [])),
         ):
             records = bh.extract_bloom_housing_listings(
-                "https://housingbayarea.mtc.ca.gov/listings",
+                "https://unknown-bloom.example.gov/listings",
                 authority="City of Santa Clara",
                 city_filter="Santa Clara",
             )
@@ -490,7 +515,7 @@ class TestDailySummaryUrlFallback:
             "listing_status": "open",
             "status": "Open",
             "notes": "",
-            "source": "cdn:gilroy",
+            "source": "civicplus:gilroy",
             "source_url": "https://www.cityofgilroy.org/DocumentCenter/View/16932",
             "deadline": "",
             # intentionally no 'url' key
@@ -505,7 +530,7 @@ class TestDailySummaryUrlFallback:
             "listing_status": "open",
             "status": "Open",
             "notes": "",
-            "source": "cdn:test",
+            "source": "civicplus:test",
             "document_url": "https://example.com/cedar.pdf",
             "deadline": "",
         }
@@ -519,7 +544,7 @@ class TestDailySummaryUrlFallback:
             "listing_status": "open",
             "status": "Open",
             "notes": "",
-            "source": "cdn:test",
+            "source": "civicplus:test",
             "deadline": "",
         }
         md = self._run([listing])
@@ -549,23 +574,23 @@ class TestRunnerDispatch:
             "notes": "",
         }
 
-    def test_housekeys_and_cdn_both_called(self):
+    def test_housekeys_and_civicplus_both_called(self):
         hk_rec = {"property_name": "HK Prop", "authority": "City of Test", "url": "https://hk.example.com/"}
-        cdn_rec = {"property_name": "CDN Prop", "authority": "City of Test", "url": "https://example.com/doc.pdf"}
+        cp_rec = {"property_name": "CivicPlus Prop", "authority": "City of Test", "url": "https://example.com/doc.pdf"}
 
         with (
             patch("housing_list_search.runner.extract_target", return_value=[]),
             patch("housing_list_search.runner.scrape_housekeys", return_value=[hk_rec]) as mock_hk,
-            patch("housing_list_search.runner.extract_underlying_records", return_value=[cdn_rec]) as mock_cdn,
+            patch("housing_list_search.runner.extract_underlying_records", return_value=[cp_rec]) as mock_cp,
         ):
             from housing_list_search.runner import run_target
-            result = run_target(self._target("housekeys,cdn"))
+            result = run_target(self._target("housekeys,civicplus"))
 
         mock_hk.assert_called_once()
-        mock_cdn.assert_called_once()
+        mock_cp.assert_called_once()
         names = {r["property_name"] for r in result}
         assert "HK Prop" in names
-        assert "CDN Prop" in names
+        assert "CivicPlus Prop" in names
 
     def test_john_stewart_routed_by_measure_not_url(self):
         """john_stewart measure must trigger the adapter regardless of URL content."""
@@ -585,7 +610,7 @@ class TestRunnerDispatch:
     def test_waf_blocked_returns_empty_immediately(self):
         with patch("housing_list_search.runner.extract_target", return_value=[]) as mock_ext:
             from housing_list_search.runner import run_target
-            result = run_target(self._target("waf_blocked,cdn"))
+            result = run_target(self._target("waf_blocked,civicplus"))
         mock_ext.assert_not_called()
         assert result == []
 

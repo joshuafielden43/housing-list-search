@@ -598,9 +598,11 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
             logger.warning("[Bloom] API path: request to %s page %d failed: %s", endpoint, page, exc)
             break
 
-        if resp.status_code != 200:
+        if not (200 <= resp.status_code < 300):
             logger.warning("[Bloom] API path: HTTP %d from %s page %d", resp.status_code, endpoint, page)
             break
+        if resp.status_code != 200:
+            logger.info("[Bloom] API path: HTTP %d from %s page %d (accepted 2xx)", resp.status_code, endpoint, page)
 
         try:
             payload = resp.json()
@@ -719,17 +721,18 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
 
         # /listings is the SSR route; if we're here it may have changed to CSR,
         # so we load it and wait for the browser to fetch the data via XHR.
-        page.goto(listings_url, wait_until="networkidle", timeout=120_000)
-        page.wait_for_timeout(4_000)  # extra wait for lazy-loaded XHR
-
-        # Scroll to trigger any infinite-scroll or lazy-load mechanisms
         try:
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.wait_for_timeout(2_500)
-        except Exception:
-            pass
-
-        browser.close()
+            page.goto(listings_url, wait_until="domcontentloaded", timeout=45_000)
+            page.wait_for_timeout(3_000)  # allow XHR without networkidle (SPAs never settle)
+            try:
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                page.wait_for_timeout(1_500)
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning("[Bloom] Playwright fallback navigation failed for %s: %s", listings_url, exc)
+        finally:
+            browser.close()
 
     logger.info(
         "[Bloom] Playwright fallback: captured %d JSON responses for %s",
@@ -881,7 +884,10 @@ def extract_bloom_housing_listings(
     # Path 3: Playwright fallback — re-apply city_filter afterwards because the
     # Playwright heuristic captures all JSON on the page (potentially a full
     # regional feed) and does not know about our filter.
-    if not open_items and not closed_items:
+    # Skip for _API_INSTANCES hosts: API is the canonical CSR path; Playwright
+    # networkidle on MTC Doorway deadlocks daily runs when API returns non-200 2xx.
+    api_host = urlparse(url).netloc
+    if not open_items and not closed_items and api_host not in _API_INSTANCES:
         open_items, closed_items = _fetch_via_playwright(url)
         if city_filter and (open_items or closed_items):
             cf = city_filter.lower()

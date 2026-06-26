@@ -4,7 +4,7 @@
 
 Built for nonprofits that need a daily, structured picture of what low/no-income housing is open, closing, or on waitlist across a fragmented landscape of city portals, delegated administrators, and vendor platforms.
 
-Current scope: **17 Santa Clara County targets** across every city and the county housing authority.  
+Current scope: **15 Santa Clara County targets** across every city and the county housing authority.  
 Current version: **v0.8.6**
 
 ---
@@ -45,8 +45,13 @@ Adapters are named after the **platform or vendor**, never the city. The same ad
 | `john_stewart.py` | John Stewart Company portal | SCCHA-managed properties |
 | `gis_extraction.py` | Municipal GIS layers | Cupertino + Rise Housing |
 | `housekeys.py` | HouseKeys registration portal | Morgan Hill, Gilroy, Los Gatos, Mountain View, Milpitas, (Santa Clara transitional) |
-| `cdn.py` | CDN/WAF-protected document viewers | Campbell, Los Altos, Menlo Park, Half Moon Bay (Housing Group); Gilroy PDFs |
-| `alta.py` | Alta Housing portal | Palo Alto |
+| `civicplus.py` | CivicPlus municipal CMS (DocumentCenter, Froala) behind CDN/WAF | Campbell, Los Altos (Housing Group); Gilroy PDFs |
+| `alta.py` | Alta Housing portal + property directory | Palo Alto, Mountain View |
+| `charities_housing.py` | Charities Housing directory + REST API | Santa Clara County |
+| `midpen.py` | MidPen Housing county search (waitlist statuses) | Santa Clara County |
+| `eden.py` | Eden Housing county property grid | Santa Clara County |
+| `eah.py` | EAH Housing all-properties list | Santa Clara County |
+| `first_housing.py` | First Community Housing portfolio (contacts) | San José |
 
 Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit behind Akamai WAF and are documented as `waf_blocked` in `TARGETS.md`. Mountain View and Santa Clara have viable alternative entry points (HouseKeys subdomain and MTC Doorway respectively). Sunnyvale's document viewer also fetches from the blocked domain; documented with correct document IDs for when the block resolves.
 
@@ -54,7 +59,7 @@ Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit beh
 
 ## Adding a new city
 
-**If it uses an existing platform:** add a row to `TARGETS.md` with the platform's URL and the correct `scraping_measures` value (e.g. `housekeys`, `cdn`, `native_requests`). No code changes needed.
+**If it uses an existing platform:** add a row to `TARGETS.md` with the platform's URL and the correct `scraping_measures` value (e.g. `housekeys`, `civicplus`, `native_requests`). No code changes needed.
 
 **If it's a new Bloom Housing instance:** add the hostname to `_KNOWN_BLOOM_DOMAINS` in `extraction/__init__.py`. If it's a CSR/API instance, also add it to `_API_INSTANCES` in `extraction/bloom_housing.py`. No adapter code needed.
 
@@ -66,7 +71,7 @@ Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit beh
 
 ```
 housing_list_search/
-  adapters/          # First-class platform adapters (bloom_housing, housekeys, cdn, …)
+  adapters/          # First-class platform adapters (bloom_housing, housekeys, civicplus, …)
   extraction/        # Structured extraction layer (bloom_housing, pdf)
   runner.py          # Measure-driven target dispatcher (routes each TARGETS.md row)
   db.py              # DatabaseManager: upsert, export_csv, export_diff_csv, prune
@@ -85,7 +90,7 @@ PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibilit
 
 ## Branch / contribution discipline
 
-- `main` is protected: direct pushes are blocked; changes go through PRs.
+- `main` is protected: force-pushes and branch deletion are blocked (GitHub branch protection, enforced for admins too). Feature work happens on branches and lands via PR.
 - PR titles follow `type: short description` — `feat:`, `fix:`, `docs:`, `chore:`.
 - Commits in PRs should be atomic and have a subject line under 72 characters.
 - CI runs unit tests only (`pytest -m "not integration"`). Live portal tests are opt-in: `pytest -m integration`.

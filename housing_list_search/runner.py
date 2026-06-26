@@ -10,7 +10,7 @@ Design rules:
   authority name patterns. Add a measure to TARGETS.md; the code follows.
 - Every named measure maps to exactly one adapter call. Unknown measures are
   logged and skipped, never silently routed to generic scraping.
-- Multi-measure targets (e.g. housekeys,cdn) run every matching adapter.
+- Multi-measure targets (e.g. housekeys,civicplus) run every matching adapter.
   A measure that produces zero records does not suppress other measures.
 - Playwright and generic-scrape are fallbacks of last resort, activated only
   when no named measure fired AND the target is not waf_blocked.
@@ -49,7 +49,7 @@ except Exception:
     scrape_housekeys = None  # type: ignore[assignment]
 
 try:
-    from housing_list_search.adapters.cdn import extract_underlying_records
+    from housing_list_search.adapters.civicplus import extract_underlying_records
 except Exception:
     extract_underlying_records = None  # type: ignore[assignment]
 
@@ -57,6 +57,31 @@ try:
     from housing_list_search.adapters.alta import scrape_alta
 except Exception:
     scrape_alta = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.charities_housing import scrape_charities_housing
+except Exception:
+    scrape_charities_housing = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.midpen import scrape_midpen
+except Exception:
+    scrape_midpen = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.eden import scrape_eden
+except Exception:
+    scrape_eden = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.eah import scrape_eah
+except Exception:
+    scrape_eah = None  # type: ignore[assignment]
+
+try:
+    from housing_list_search.adapters.first_housing import scrape_first_housing
+except Exception:
+    scrape_first_housing = None  # type: ignore[assignment]
 
 try:
     from housing_list_search.playwright_scraper import playwright_scrape
@@ -105,7 +130,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
     # ----------------------------------------------------------------
     # 1. Extraction layer (Bloom Housing, etc.)
     #    Contributes to results but does NOT short-circuit named-measure
-    #    adapters. A row with both a Bloom URL and housekeys,cdn measures
+    #    adapters. A row with both a Bloom URL and housekeys,civicplus measures
     #    (e.g. a future city using both) will run all three sources.
     # ----------------------------------------------------------------
     results: list[dict] = []
@@ -144,8 +169,10 @@ def run_target(target: dict[str, Any]) -> list[dict]:
                 administrator_contact=admin_contact,
             )
             results.extend(recs)
-            if recs:
-                ran_any = True
+            # A named adapter that ran cleanly counts as fired even with zero
+            # records — generic fallback on these pages scrapes prose as
+            # listings, which is worse than an honest empty result.
+            ran_any = True
             logger.info("[runner] %s: gis → %d records", authority, len(recs))
         except Exception as exc:
             logger.warning("[runner] %s: gis failed: %s", authority, exc)
@@ -159,15 +186,60 @@ def run_target(target: dict[str, Any]) -> list[dict]:
         except Exception as exc:
             logger.warning("[runner] %s: housekeys failed: %s", authority, exc)
 
-    if "cdn" in measures and extract_underlying_records is not None:
+    # "cdn" is the legacy name for the civicplus measure — accepted for old TARGETS.md rows
+    if measures & {"civicplus", "cdn"} and extract_underlying_records is not None:
         try:
             recs = extract_underlying_records(url, authority)
             results.extend(recs)
-            if recs:
-                ran_any = True
-            logger.info("[runner] %s: cdn → %d records", authority, len(recs))
+            ran_any = True  # ran cleanly — zero records must not trigger generic fallback
+            logger.info("[runner] %s: civicplus → %d records", authority, len(recs))
         except Exception as exc:
-            logger.warning("[runner] %s: cdn failed: %s", authority, exc)
+            logger.warning("[runner] %s: civicplus failed: %s", authority, exc)
+
+    if "first_housing" in measures and scrape_first_housing is not None:
+        try:
+            recs = scrape_first_housing(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: first_housing → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: first_housing failed: %s", authority, exc)
+
+    if "eden" in measures and scrape_eden is not None:
+        try:
+            recs = scrape_eden(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: eden → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: eden failed: %s", authority, exc)
+
+    if "eah" in measures and scrape_eah is not None:
+        try:
+            recs = scrape_eah(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: eah → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: eah failed: %s", authority, exc)
+
+    if "midpen" in measures and scrape_midpen is not None:
+        try:
+            recs = scrape_midpen(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: midpen → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: midpen failed: %s", authority, exc)
+
+    if "charities_housing" in measures and scrape_charities_housing is not None:
+        try:
+            recs = scrape_charities_housing(authority, url)
+            results.extend(recs)
+            ran_any = True
+            logger.info("[runner] %s: charities_housing → %d records", authority, len(recs))
+        except Exception as exc:
+            logger.warning("[runner] %s: charities_housing failed: %s", authority, exc)
 
     if "alta" in measures and scrape_alta is not None:
         try:
@@ -180,7 +252,8 @@ def run_target(target: dict[str, Any]) -> list[dict]:
 
     # Log any measures we don't recognise so TARGETS.md typos surface immediately
     known = {
-        "john_stewart", "gis", "housekeys", "cdn", "alta",
+        "john_stewart", "gis", "housekeys", "civicplus", "cdn", "alta",
+        "charities_housing", "midpen", "eden", "eah", "first_housing",
         "waf_blocked", "no_public_list",
         # Informational / routing hints — not adapter triggers
         "native_requests", "js_heavy", "table_based", "html_cards",

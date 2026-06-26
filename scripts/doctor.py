@@ -87,7 +87,7 @@ def check_package_imports() -> bool:
         from housing_list_search.adapters.john_stewart import scrape_john_stewart
         from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
         from housing_list_search.adapters.housekeys import scrape_housekeys
-        from housing_list_search.adapters.cdn import extract_underlying_records
+        from housing_list_search.adapters.civicplus import extract_underlying_records
         from housing_list_search.adapters.alta import scrape_alta
         from housing_list_search.registry import get_active_targets, get_skipped_targets
         print("✅ housing_list_search package imports cleanly")
@@ -109,7 +109,7 @@ def check_package_imports() -> bool:
         from housing_list_search.adapters.john_stewart import scrape_john_stewart
         from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
         from housing_list_search.adapters.housekeys import scrape_housekeys
-        from housing_list_search.adapters.cdn import extract_underlying_records
+        from housing_list_search.adapters.civicplus import extract_underlying_records
         from housing_list_search.adapters.alta import scrape_alta
         from housing_list_search.registry import get_active_targets, get_skipped_targets
         print("✅ housing_list_search imports successfully (development mode)")
@@ -253,7 +253,7 @@ def main():
             else:
                 print("✅ HouseKeys adapter runs without crashing")
 
-            from housing_list_search.adapters.cdn import extract_underlying_records
+            from housing_list_search.adapters.civicplus import extract_underlying_records
             # Document IDs 364/366/368 confirmed current as of 2026-06-05.
             # sunnyvale.ca.gov is WAF-blocked so these return empty; smoke only validates no crash.
             recs = extract_underlying_records(
@@ -262,7 +262,7 @@ def main():
                 known_document_urls=["https://www.sunnyvale.ca.gov/home/showpublisheddocument/368"],
                 timeout=30000
             )
-            print("✅ cdn adapter smoke test ran (returned list, no crash)")
+            print("✅ civicplus adapter smoke test ran (returned list, no crash)")
 
             from housing_list_search.adapters.alta import scrape_alta
             recs = scrape_alta("City of Palo Alto (doctor smoke)", "https://www.paloalto.gov/Departments/Planning-Development-Services/Housing-Policies-Projects/Below-Market-Rate-Housing")

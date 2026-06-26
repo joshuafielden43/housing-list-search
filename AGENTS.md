@@ -14,6 +14,30 @@ Joshua dislikes constant permission approval prompts during active development.
 
 ---
 
+## Accuracy bar — United Effort Organization
+
+**Benchmark:** [The United Effort Organization — Affordable Housing](https://www.theunitedeffort.org/housing/affordable-housing/)
+
+UEO maintains an impressive volunteer-curated, county-wide database (**~560 properties** as of 2026-06) with per-property availability, unit types, contact info, and city filters — much of it published openly via their open-source `ueo-watch` list, which is the benchmark we measure coverage against. Because that curation is done by hand, entries can lag real-world availability (a property closes but hasn't been aged out yet). That lag is the inherent cost of manual upkeep — and the natural seam an automated tool complements.
+
+**Our goal:** Complement their work — match property coverage using only public, ethically accessible sources, and add automated daily freshness via `STALE` diff labelling and `db_manage.py prune`. The two approaches reinforce each other: their curation gives breadth and human judgement; automation keeps availability current.
+
+**Current gap (honest, 2026-06-07):** `run_prev.csv` holds **~113 records**, heavily weighted toward San José Bloom (~88). John Stewart / SCCHA directory records are absent from the latest baseline. UEO lists individual properties across Campbell, Cupertino, Gilroy, Los Altos, Los Gatos, Milpitas, Morgan Hill, Mountain View, Palo Alto, San José, Santa Clara, Saratoga, and Sunnyvale — we mostly capture portal-level or registration-level rows for several of those cities, not property inventories.
+
+**Do not close the gap by:**
+- Fabricating "delegate" or "See administrator" placeholder records when a portal has no listings
+- Bypassing documented WAF blocks (Sunnyvale city-site, etc.)
+- Inflating counts with navigation noise, lender pages, or program-overview PDFs
+
+**Do close the gap by:**
+- Extracting real property-level records from each city's actual public source (Bloom SSR, John Stewart, GIS, Alta property pages, Gilroy `/797` availability list, Housing Group rentals pages when units are posted, etc.)
+- Letting `no_public_list` and `waf_blocked` targets stay empty rather than faking coverage
+- Using UEO as a **coverage checklist** during validation ("does our San José count include properties UEO lists from jscosccha.com, midpen, alta, etc.?") — not as a scrape target
+
+Menlo Park and Half Moon Bay were removed from `TARGETS.md`; they are San Mateo County Housing Group clients, not Santa Clara County scope.
+
+---
+
 ## Current state (v0.8.6, 2026-06-05)
 
 Six first-class adapters, all named after the recurring **platform or vendor** (never the city):
@@ -24,8 +48,14 @@ Six first-class adapters, all named after the recurring **platform or vendor** (
 | `adapters/john_stewart.py` | Vendor portal, custom front-end | SCCHA properties |
 | `adapters/gis_extraction.py` | Municipal GIS layers + federated managers | Cupertino + Rise Housing |
 | `adapters/housekeys.py` | Registration/notification/lottery portal | Morgan Hill, Gilroy, Los Gatos, Mountain View, Milpitas |
-| `adapters/cdn.py` | CDN/WAF-protected document viewers | Housing Group cities (Campbell, Los Altos, Menlo Park, Half Moon Bay), Gilroy PDFs |
-| `adapters/alta.py` | Alta Housing delegated administrator | Palo Alto |
+| `adapters/civicplus.py` | CivicPlus municipal CMS (DocumentCenter viewers, Froala blocks) behind CDN/WAF | Gilroy, Campbell, Los Altos, Los Gatos |
+| `adapters/alta.py` | Alta Housing delegated administrator + property directory | Palo Alto, Mountain View |
+| `adapters/john_stewart.py` (jsco.net mode) | Corporate portfolio via WordPress REST API | 67 county properties |
+| `adapters/charities_housing.py` | Charities Housing find-a-home cards + WP REST API | ~48 county properties |
+| `adapters/midpen.py` | MidPen county-filtered search (leasing statuses) | ~46 county properties |
+| `adapters/eden.py` | Eden Housing county-filtered grid (statuses) | ~36 county properties |
+| `adapters/eah.py` | EAH all-properties list, county filter | ~27 county properties |
+| `adapters/first_housing.py` | First Community Housing Wix portfolio (contacts) | ~21 properties |
 
 High-quality structured extraction lives in `extraction/`. Adapters in `adapters/` handle messier or registration-only cases. Routing lives in `runner.py` (not `cli.py`), driven entirely by `scraping_measures`.
 
@@ -117,6 +147,10 @@ Three cities share an Akamai WAF configuration (customer hash `d7ce17`) that blo
 
 When you hit a WAF block: document it (what you tried, the specific block signature), find an alternative entry point if one exists, update TARGETS.md. Do not attempt to bypass.
 
+### robots.txt gotcha (John Stewart / Cloudflare)
+
+`scraper.is_allowed_by_robots()` must fetch `robots.txt` with our nonprofit `USER_AGENT` via `requests`, then `RobotFileParser.parse()` — **never** `RobotFileParser.read()`. The stdlib `read()` uses Python-urllib's default bot string; Cloudflare returns HTTP 403, which urllib interprets as `disallow_all=True` and blocks every URL on the host. John Stewart (`jscosccha.com`, `scchousingauthority.org`) looked WAF-blocked in runs while the actual pages are public and permissive. This regressed when robots enforcement landed in commit `725a87b`.
+
 ---
 
 ## Partial runs (--target)
@@ -124,7 +158,7 @@ When you hit a WAF block: document it (what you tried, the specific block signat
 `python main.py --run --target "Morgan Hill"` filters the active targets list to rows whose authority contains the needle (case-insensitive). All normal run outputs are produced for the matched targets only:
 
 - `diff.csv` and `run_prev.csv` reflect only the matched-target results for that invocation — they are **not** a global DB diff. If you run `--target` followed by a full `--run`, `diff.csv` will correctly reflect the full-run delta on the next full run.
-- Useful for rapid iteration on a single adapter without waiting for all 17 targets.
+- Useful for rapid iteration on a single adapter without waiting for all 15 targets.
 
 ---
 
@@ -133,7 +167,7 @@ When you hit a WAF block: document it (what you tried, the specific block signat
 `runner.run_target(target_row)` is the single dispatch function. It is driven entirely by `scraping_measures` — URL substrings and authority name patterns are explicitly not used. Order of operations:
 
 1. `extract_target()` — handles Bloom Housing domains and PDF/DocumentCenter links. Results are collected but do **not** suppress named-measure adapters (a row can produce records from both Bloom and HouseKeys).
-2. Named-measure adapters fire for every matching measure: `john_stewart`, `gis`, `housekeys`, `cdn`, `alta`. All matching adapters run; zero results from one does not suppress others.
+2. Named-measure adapters fire for every matching measure: `john_stewart`, `gis`, `housekeys`, `civicplus` (legacy alias: `cdn`), `alta`, `charities_housing`, `midpen`, `eden`, `eah`, `first_housing`. All matching adapters run; zero results from one does not suppress others.
 3. `waf_blocked` — immediate empty return before any adapter or network call.
 4. Playwright or generic-scrape fallback — only if no named measure fired.
 
