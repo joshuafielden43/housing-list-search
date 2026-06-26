@@ -90,7 +90,7 @@ PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibilit
 
 ## Branch / contribution discipline
 
-- `main` is protected: direct pushes are blocked; changes go through PRs.
+- `main` is protected: force-pushes and branch deletion are blocked (GitHub branch protection, enforced for admins too). Feature work happens on branches and lands via PR.
 - PR titles follow `type: short description` — `feat:`, `fix:`, `docs:`, `chore:`.
 - Commits in PRs should be atomic and have a subject line under 72 characters.
 - CI runs unit tests only (`pytest -m "not integration"`). Live portal tests are opt-in: `pytest -m integration`.

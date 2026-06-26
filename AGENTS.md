@@ -18,9 +18,9 @@ Joshua dislikes constant permission approval prompts during active development.
 
 **Benchmark:** [The United Effort Organization — Affordable Housing](https://www.theunitedeffort.org/housing/affordable-housing/)
 
-UEO maintains a volunteer-curated county-wide database (**~560 properties** as of 2026-06) with per-property availability, unit types, contact info, and city filters. They do it by hand. Their known weakness is **stale data** — properties that are no longer available but have not been aged out of their database.
+UEO maintains an impressive volunteer-curated, county-wide database (**~560 properties** as of 2026-06) with per-property availability, unit types, contact info, and city filters — much of it published openly via their open-source `ueo-watch` list, which is the benchmark we measure coverage against. Because that curation is done by hand, entries can lag real-world availability (a property closes but hasn't been aged out yet). That lag is the inherent cost of manual upkeep — and the natural seam an automated tool complements.
 
-**Our goal:** Match or exceed their property coverage using only public, ethically accessible sources — and **beat them on freshness** via automated daily runs, `STALE` diff labelling, and `db_manage.py prune`.
+**Our goal:** Complement their work — match property coverage using only public, ethically accessible sources, and add automated daily freshness via `STALE` diff labelling and `db_manage.py prune`. The two approaches reinforce each other: their curation gives breadth and human judgement; automation keeps availability current.
 
 **Current gap (honest, 2026-06-07):** `run_prev.csv` holds **~113 records**, heavily weighted toward San José Bloom (~88). John Stewart / SCCHA directory records are absent from the latest baseline. UEO lists individual properties across Campbell, Cupertino, Gilroy, Los Altos, Los Gatos, Milpitas, Morgan Hill, Mountain View, Palo Alto, San José, Santa Clara, Saratoga, and Sunnyvale — we mostly capture portal-level or registration-level rows for several of those cities, not property inventories.
 
