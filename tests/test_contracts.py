@@ -892,6 +892,7 @@ class TestDatabaseManager:
         assert db.diff_counts("partial", authorities=["City A"]) == {
             "NEW": 0,
             "UPDATED": 1,
+            "SCRAPE_FAILED": 0,
             "STALE": 0,
         }
 

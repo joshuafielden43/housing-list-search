@@ -70,6 +70,34 @@ def test_prune_not_seen_since(temp_db):
     assert result["deleted"] >= 1
 
 
+def test_export_diff_csv_marks_scrape_failed_separate_from_stale(temp_db):
+    mgr = temp_db
+    mgr.upsert_listings([
+        {"authority": "City A", "property_name": "A1", "url": "https://a/1"},
+        {"authority": "City B", "property_name": "B1", "url": "https://b/1"},
+    ], run_id="prior")
+
+    mgr.upsert_listings([
+        {"authority": "City A", "property_name": "A1", "url": "https://a/1"},
+    ], run_id="current")
+
+    out = Path(tempfile.gettempdir()) / "test_diff_scrape_failed.csv"
+    try:
+        mgr.export_diff_csv(
+            str(out),
+            run_id="current",
+            scrape_failed_authorities=["City B"],
+        )
+        import csv
+        rows = list(csv.DictReader(out.read_text(encoding="utf-8").splitlines()))
+        by_auth = {r["source_authority"]: r["change_type"] for r in rows}
+        assert by_auth["City A"] == "UPDATED"
+        assert by_auth["City B"] == "SCRAPE_FAILED"
+    finally:
+        if out.exists():
+            out.unlink()
+
+
 def test_export_csv_escapes_formula_injection(temp_db):
     mgr = temp_db
     mgr.upsert_listings([{

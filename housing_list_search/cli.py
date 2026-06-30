@@ -93,10 +93,25 @@ def main():
         # Export CSV outputs from DB. Partial --target runs scope diff.csv so
         # unrelated authorities are not reported as stale.
         n_full = db.export_csv("current_full.csv")
-        n_diff = db.export_diff_csv("diff.csv", run_id=run_id, authorities=target_authorities)
+        n_diff = db.export_diff_csv(
+            "diff.csv",
+            run_id=run_id,
+            authorities=target_authorities,
+            scrape_failed_authorities=failed_targets,
+        )
         print(f"   Exported current_full.csv ({n_full} rows), diff.csv ({n_diff} rows)")
 
-        diff_counts = db.diff_counts(run_id, authorities=target_authorities)
+        diff_counts = db.diff_counts(
+            run_id,
+            authorities=target_authorities,
+            scrape_failed_authorities=failed_targets,
+        )
+        scrape_failed_n = diff_counts.get("SCRAPE_FAILED", 0)
+        if scrape_failed_n:
+            logger.warning(
+                "%d SCRAPE_FAILED record(s) in diff.csv — scrape errors, not confirmed closures",
+                scrape_failed_n,
+            )
         stale_n = diff_counts.get("STALE", 0)
         if stale_n >= DEFAULT_STALE_WARN_THRESHOLD:
             logger.warning(
