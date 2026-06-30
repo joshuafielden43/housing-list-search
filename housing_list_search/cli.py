@@ -67,14 +67,17 @@ def main():
         else:
             print("\n🔄 Scraping all targets...")
         all_listings = []
+        failed_targets: list[str] = []
 
         for t in active:
             print(f"\n→ Processing: {t['authority']}")
             try:
-                recs = run_target(t)
+                recs = run_target(t, failures=failed_targets)
                 all_listings.extend(recs)
             except Exception as exc:
                 logger.error("Error on %s: %s", t["authority"], exc)
+                if t["authority"] not in failed_targets:
+                    failed_targets.append(t["authority"])
 
         # Deduplicate across sources
         all_listings = deduplicate_listings(all_listings)
@@ -140,6 +143,14 @@ def main():
         if partial_run:
             print("   Partial --target run: global changelog baseline was not updated")
         print("   Files: current_full.csv  diff.csv  daily_summary.md  changelog_diffs.md")
+
+        if failed_targets:
+            logger.error(
+                "%d active target(s) failed this run: %s",
+                len(failed_targets),
+                ", ".join(failed_targets),
+            )
+            sys.exit(1)
 
     else:
         print("Usage:")

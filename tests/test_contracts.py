@@ -675,6 +675,18 @@ class TestRunnerDispatch:
         assert "Bloom Prop" in names
         assert "HK Prop" in names
 
+    def test_adapter_error_appends_to_failures_list(self):
+        with (
+            patch("housing_list_search.runner.extract_target", return_value=[]),
+            patch("housing_list_search.runner.scrape_housekeys", side_effect=RuntimeError("boom")),
+        ):
+            from housing_list_search.runner import run_target
+            failures: list[str] = []
+            result = run_target(self._target("housekeys"), failures=failures)
+
+        assert result == []
+        assert failures == ["City of Test"]
+
 
 # ---------------------------------------------------------------------------
 # db.py — upsert_listings, export_csv, export_diff_csv, first_seen preservation
@@ -1059,5 +1071,37 @@ class TestCliTargetRun:
             assert not any(r["source_authority"] == "City B" for r in diff_rows)
             assert Path("run_prev.csv").read_text(encoding="utf-8") == run_prev
             assert changelog_rows[0]["change_type"] == "PARTIAL_RUN"
+        finally:
+            os.chdir(orig)
+
+    def test_run_exits_nonzero_when_target_fails(self, tmp_path):
+        import os
+        import sys
+        from pathlib import Path
+
+        from housing_list_search.db import DatabaseManager
+        from housing_list_search.cli import main
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+
+            targets = [
+                {"authority": "City A", "url": "https://a", "scraping_measures": "housekeys", "notes": ""},
+            ]
+
+            with (
+                patch.object(sys, "argv", ["main.py", "--run", "--target", "City A"]),
+                patch("housing_list_search.registry.load_targets_to_db", return_value=None),
+                patch("housing_list_search.registry.get_active_targets", return_value=targets),
+                patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
+                patch("housing_list_search.runner.run_target", side_effect=RuntimeError("adapter down")),
+                pytest.raises(SystemExit) as excinfo,
+            ):
+                main()
+
+            assert excinfo.value.code == 1
         finally:
             os.chdir(orig)
