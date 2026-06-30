@@ -24,6 +24,14 @@ def temp_db():
         mgr.close()
 
 
+def test_connect_enables_wal_and_busy_timeout(temp_db):
+    conn = temp_db.connect()
+    journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert journal_mode.lower() == "wal"
+    busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    assert busy_timeout == 5000
+
+
 def test_init_creates_tables(temp_db):
     mgr = temp_db
     count = mgr.get_record_count("housing_records")

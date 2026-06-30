@@ -12,12 +12,14 @@ import os
 import re
 import logging
 
+from housing_list_search.sqlite_config import connect_sqlite
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = "housing_registry.db"
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS targets (
         id INTEGER PRIMARY KEY,
@@ -174,7 +176,7 @@ def sanitize_target(raw: dict) -> dict:
 
 def load_targets_to_db():
     init_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     c = conn.cursor()
     
     # Clear and reload from markdown
@@ -236,7 +238,7 @@ def load_targets_to_db():
 
 def get_all_targets():
     """Return all targets as list of dicts (for inspection / reporting)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
@@ -252,7 +254,7 @@ def get_all_targets():
 
 def get_active_targets():
     """Targets that should be actively processed (excludes those marked no_public_list)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
@@ -270,7 +272,7 @@ def get_active_targets():
 
 def get_skipped_targets():
     """Targets intentionally marked no_public_list (for reporting only)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""

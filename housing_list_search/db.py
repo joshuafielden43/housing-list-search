@@ -20,6 +20,7 @@ from typing import Optional, Dict, Any, List
 import yaml
 
 from housing_list_search.csv_safety import sanitize_csv_row
+from housing_list_search.sqlite_config import connect_sqlite
 from housing_list_search.status_labels import resolve_status_label
 
 # Centralized paths
@@ -56,7 +57,7 @@ class DatabaseManager:
     def connect(self) -> sqlite3.Connection:
         """Get or create a connection to the database."""
         if self.conn is None:
-            self.conn = sqlite3.connect(self.db_path)
+            self.conn = connect_sqlite(self.db_path)
             self.conn.row_factory = sqlite3.Row
         return self.conn
 
@@ -466,13 +467,36 @@ class DatabaseManager:
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
 
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = _csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(sanitize_csv_row(dict(zip(fieldnames, row))))
-
+        self._write_csv_atomic(path, fieldnames, rows)
         return len(rows)
+
+    @staticmethod
+    def _write_csv_atomic(path: str, fieldnames: list[str], rows) -> None:
+        """Write CSV via a same-directory temp file, then atomic replace."""
+        import csv as _csv
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                newline="",
+                encoding="utf-8",
+                dir=target.parent,
+                prefix=f".{target.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                tmp_path = f.name
+                writer = _csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(sanitize_csv_row(dict(zip(fieldnames, row))))
+            os.replace(tmp_path, target)
+            tmp_path = None
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     def export_diff_csv(
         self,
@@ -586,12 +610,7 @@ class DatabaseManager:
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
 
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = _csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(sanitize_csv_row(dict(zip(fieldnames, row))))
-
+        self._write_csv_atomic(path, fieldnames, rows)
         return len(rows)
 
     def diff_counts(
