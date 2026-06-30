@@ -322,10 +322,14 @@ class TestHouseKeysFailedFetch:
 class TestBloomAPIPagination:
     """_fetch_via_api must loop through pages until meta.totalItems is satisfied."""
 
-    def _make_page(self, items, total):
+    def _make_page(self, items, total, status_code=200):
+        payload = {"items": items, "meta": {"totalItems": total}}
+        import json
+        content = json.dumps(payload).encode()
         return MagicMock(**{
-            "status_code": 200,
-            "json.return_value": {"items": items, "meta": {"totalItems": total}},
+            "status_code": status_code,
+            "content": content,
+            "json.return_value": payload,
         })
 
     def test_two_pages_fetched_when_first_page_full(self):
@@ -340,15 +344,15 @@ class TestBloomAPIPagination:
         import housing_list_search.extraction.bloom_housing as bh
         orig_api_instances = bh._API_INSTANCES
         bh._API_INSTANCES = {
-            "test.example.com": {
+            "housingbayarea.mtc.ca.gov": {
                 "jurisdictionname": "Test",
-                "endpoint": "https://test.example.com/api/adapter/listings/combined",
+                "endpoint": "https://housingbayarea.mtc.ca.gov/api/adapter/listings/combined",
             }
         }
         try:
             with patch("requests.post", side_effect=responses) as mock_post:
                 open_items, _ = bh._fetch_via_api(
-                    "https://test.example.com/listings",
+                    "https://housingbayarea.mtc.ca.gov/listings",
                     city_filter="",
                 )
         finally:
@@ -367,13 +371,11 @@ class TestBloomAPIPagination:
             }
         }
         try:
-            with patch("requests.post", return_value=MagicMock(**{
-                "status_code": 201,
-                "json.return_value": {
-                    "items": [{"id": "1", "name": "Monroe Commons", "listingsBuildingAddress": {"city": "Santa Clara"}}],
-                    "meta": {"totalItems": 1},
-                },
-            })):
+            with patch("requests.post", return_value=self._make_page(
+                [{"id": "1", "name": "Monroe Commons", "listingsBuildingAddress": {"city": "Santa Clara"}}],
+                1,
+                status_code=201,
+            )):
                 open_items, _ = bh._fetch_via_api(
                     "https://housingbayarea.mtc.ca.gov/listings",
                     city_filter="Santa Clara",
@@ -397,10 +399,7 @@ class TestBloomAPIPagination:
             }
         }
         try:
-            with patch("requests.post", return_value=MagicMock(**{
-                "status_code": 200,
-                "json.return_value": {"items": items_p1, "meta": {"totalItems": 2}},
-            })):
+            with patch("requests.post", return_value=self._make_page(items_p1, 2)):
                 open_items, _ = bh._fetch_via_api(
                     "https://housingbayarea.mtc.ca.gov/listings",
                     city_filter="Santa Clara",
@@ -410,6 +409,37 @@ class TestBloomAPIPagination:
 
         assert len(open_items) == 1
         assert open_items[0]["name"] == "Monroe Commons"
+
+    def test_partial_pagination_abort_discards_results(self):
+        """Mid-pagination HTTP failure must not return a partial item set."""
+        page1_items = [
+            {"id": str(i), "name": f"Prop {i}", "listingsBuildingAddress": {"city": "San Jose"}}
+            for i in range(100)
+        ]
+        responses = [
+            self._make_page(page1_items, 101),
+            self._make_page([], 101, status_code=500),
+        ]
+
+        import housing_list_search.extraction.bloom_housing as bh
+        orig = bh._API_INSTANCES
+        bh._API_INSTANCES = {
+            "housingbayarea.mtc.ca.gov": {
+                "jurisdictionname": "Bay Area",
+                "endpoint": "https://housingbayarea.mtc.ca.gov/api/adapter/listings/combined",
+            }
+        }
+        try:
+            with patch("requests.post", side_effect=responses):
+                open_items, closed_items = bh._fetch_via_api(
+                    "https://housingbayarea.mtc.ca.gov/listings",
+                    city_filter="",
+                )
+        finally:
+            bh._API_INSTANCES = orig
+
+        assert open_items == []
+        assert closed_items == []
 
 
 # ---------------------------------------------------------------------------

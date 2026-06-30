@@ -140,9 +140,28 @@ def sanitize_target(raw: dict) -> dict:
     out["last_seen"] = _clean_text(raw.get("last_seen", ""), 30)
 
     # Administrator fields (injected context — still sanitize)
-    for key in ("administrator", "administrator_url", "administrator_phone", "administrator_contact"):
+    for key in ("administrator", "administrator_phone", "administrator_contact"):
         val = _clean_text(raw.get(key, ""), MAX_ADMIN_LEN)
         out[key] = val
+
+    admin_url = _clean_text(raw.get("administrator_url", ""), MAX_URL_LEN)
+    if admin_url:
+        admin_url = CONTROL_CHARS_RE.sub("", admin_url.strip())
+        if not any(admin_url.startswith(s) for s in ALLOWED_URL_SCHEMES):
+            logger.warning(
+                "Sanitizer: administrator_url for '%s' has disallowed scheme — cleared: %s",
+                authority,
+                admin_url[:100],
+            )
+            admin_url = ""
+        elif len(admin_url) > MAX_URL_LEN:
+            logger.warning(
+                "Sanitizer: administrator_url for '%s' was truncated (was %d chars)",
+                authority,
+                len(admin_url),
+            )
+            admin_url = admin_url[:MAX_URL_LEN]
+    out["administrator_url"] = admin_url
 
     # Detect potential prompt-injection style content in notes (future-proofing)
     suspicious = any(phrase in notes.lower() for phrase in [

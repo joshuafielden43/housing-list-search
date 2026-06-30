@@ -19,6 +19,7 @@ from typing import Optional, Dict, Any, List
 
 import yaml
 
+from housing_list_search.csv_safety import sanitize_csv_row
 from housing_list_search.status_labels import resolve_status_label
 
 # Centralized paths
@@ -459,7 +460,7 @@ class DatabaseManager:
             writer = _csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             for row in rows:
-                writer.writerow(dict(zip(fieldnames, row)))
+                writer.writerow(sanitize_csv_row(dict(zip(fieldnames, row))))
 
         return len(rows)
 
@@ -571,7 +572,7 @@ class DatabaseManager:
             writer = _csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             for row in rows:
-                writer.writerow(dict(zip(fieldnames, row)))
+                writer.writerow(sanitize_csv_row(dict(zip(fieldnames, row))))
 
         return len(rows)
 

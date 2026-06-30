@@ -20,6 +20,7 @@ def main():
 
         import csv
         import logging
+        from housing_list_search.csv_safety import sanitize_csv_field
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(message)s",
@@ -120,9 +121,11 @@ def main():
                 writer = csv.writer(f)
                 writer.writerow(["change_type", "authority", "property_name", "details", "timestamp"])
                 writer.writerow([
-                    "PARTIAL_RUN", "target", args.target,
-                    "global changelog baseline not updated",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    sanitize_csv_field("PARTIAL_RUN"),
+                    sanitize_csv_field("target"),
+                    sanitize_csv_field(args.target),
+                    sanitize_csv_field("global changelog baseline not updated"),
+                    sanitize_csv_field(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
                 ])
             logger.info("Partial --target run: left global run_prev.csv changelog baseline unchanged")
             generate_daily_summary(all_listings, skipped_targets=[])

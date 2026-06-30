@@ -2,6 +2,7 @@
 import csv
 from datetime import datetime
 
+from housing_list_search.csv_safety import sanitize_csv_row
 from housing_list_search.status_labels import resolve_status_label
 
 
@@ -79,6 +80,6 @@ def save_current_full(listings: list):
             if isinstance(flags, str):
                 flags = [flags] if flags else []
             row["eligibility_flags"] = "|".join(flags)
-            writer.writerow(row)
+            writer.writerow(sanitize_csv_row(row))
     
     print(f"✅ Saved current_full.csv with {len(listings)} listings")

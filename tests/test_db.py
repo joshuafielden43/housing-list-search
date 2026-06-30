@@ -70,6 +70,26 @@ def test_prune_not_seen_since(temp_db):
     assert result["deleted"] >= 1
 
 
+def test_export_csv_escapes_formula_injection(temp_db):
+    mgr = temp_db
+    mgr.upsert_listings([{
+        "authority": "Test City",
+        "property_name": "=CMD|'/C calc'!A0",
+        "url": "https://example.gov/1",
+    }], run_id="testrun1")
+
+    out = Path(tempfile.gettempdir()) / "test_export_formula.csv"
+    try:
+        mgr.export_csv(str(out))
+        text = out.read_text(encoding="utf-8")
+        assert "'=CMD" in text or "'''=CMD" not in text
+        assert text.splitlines()[1].startswith("Test City,")
+        assert "'=CMD" in text.splitlines()[1]
+    finally:
+        if out.exists():
+            out.unlink()
+
+
 def test_prune_all_stale_combines_rules(temp_db):
     mgr = temp_db
     conn = mgr.connect()

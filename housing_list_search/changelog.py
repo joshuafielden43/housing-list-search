@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.status_labels import resolve_status_label
 
 
@@ -40,7 +41,12 @@ def _write_run_snapshot(current: list) -> None:
             name = item.get("property_name") or ""
             status = item.get("status") or ""
             ls = item.get("listing_status") or ""
-            writer.writerow([auth, name, status, ls])
+            writer.writerow([
+                sanitize_csv_field(auth),
+                sanitize_csv_field(name),
+                sanitize_csv_field(status),
+                sanitize_csv_field(ls),
+            ])
 
 
 def generate_changelog(current: list, skipped_targets=None):
@@ -139,7 +145,10 @@ def generate_changelog(current: list, skipped_targets=None):
     with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["change_type", "authority", "property_name", "details", "timestamp"])
-        writer.writerows(csv_rows)
+        writer.writerows([
+            tuple(sanitize_csv_field(cell) for cell in row)
+            for row in csv_rows
+        ])
 
     # Snapshot the current run's listing set as the baseline for next-run diffing.
     # We snapshot from `current` (what was seen this run), NOT from current_full.csv
