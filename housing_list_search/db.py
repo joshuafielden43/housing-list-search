@@ -19,6 +19,7 @@ from typing import Optional, Dict, Any, List
 
 import yaml
 
+from housing_list_search.coverage import classify_record_kind
 from housing_list_search.csv_safety import sanitize_csv_row
 from housing_list_search.schema import init_schema
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
@@ -452,9 +453,23 @@ class DatabaseManager:
         """)
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
+        fieldnames, rows = self._enrich_rows_with_record_kind(fieldnames, rows)
 
         self._write_csv_atomic(path, fieldnames, rows)
         return len(rows)
+
+    @staticmethod
+    def _enrich_rows_with_record_kind(fieldnames: list[str], rows) -> tuple[list[str], list[tuple]]:
+        """Append derived record_kind column for coverage-aware exports."""
+        out_fields = list(fieldnames)
+        if "record_kind" not in out_fields:
+            out_fields.append("record_kind")
+        enriched: list[tuple] = []
+        for row in rows:
+            data = dict(zip(fieldnames, row))
+            data["record_kind"] = classify_record_kind(data)
+            enriched.append(tuple(data[col] for col in out_fields))
+        return out_fields, enriched
 
     @staticmethod
     def _write_csv_atomic(path: str, fieldnames: list[str], rows) -> None:
@@ -595,6 +610,7 @@ class DatabaseManager:
             """.format(where=where), authority_params)
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
+        fieldnames, rows = self._enrich_rows_with_record_kind(fieldnames, rows)
 
         self._write_csv_atomic(path, fieldnames, rows)
         return len(rows)

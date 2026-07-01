@@ -106,6 +106,26 @@ def test_export_diff_csv_marks_scrape_failed_separate_from_stale(temp_db):
             out.unlink()
 
 
+def test_export_csv_includes_record_kind(temp_db):
+    mgr = temp_db
+    mgr.upsert_listings([
+        {"authority": "City A", "property_name": "Oak Manor", "url": "https://a/1", "source": "midpen:find_housing", "address": "1 Oak"},
+        {"authority": "City B", "property_name": "City B BMR (via HouseKeys)", "url": "https://hk.example/", "source": "housekeys:city_b", "administrator": "HouseKeys"},
+    ], run_id="run1")
+
+    out = Path(tempfile.gettempdir()) / "test_export_record_kind.csv"
+    try:
+        mgr.export_csv(str(out))
+        import csv
+        rows = list(csv.DictReader(out.read_text(encoding="utf-8").splitlines()))
+        kinds = {r["property_name"]: r["record_kind"] for r in rows}
+        assert kinds["Oak Manor"] == "property"
+        assert kinds["City B BMR (via HouseKeys)"] == "portal"
+    finally:
+        if out.exists():
+            out.unlink()
+
+
 def test_export_csv_escapes_formula_injection(temp_db):
     mgr = temp_db
     mgr.upsert_listings([{

@@ -1,6 +1,8 @@
 # outputs.py
 from datetime import datetime
 
+from housing_list_search.coverage import summarize_coverage
+
 PARTIAL_DAILY_SUMMARY_PATH = "daily_summary_partial.md"
 STAFF_DAILY_SUMMARY_PATH = "daily_summary.md"
 
@@ -55,6 +57,45 @@ def _format_run_status(run_stats: dict | None) -> str:
     return "".join(lines)
 
 
+def _format_coverage_summary(listings) -> str:
+    cov = summarize_coverage(listings)
+    if cov.total == 0:
+        return ""
+
+    lines = ["## Coverage breakdown\n\n"]
+    lines.append(
+        f"- **Property inventory:** {cov.property_count} "
+        f"(per-property or per-unit records)\n"
+    )
+    if cov.portal_count:
+        lines.append(
+            f"- **Portal pointers:** {cov.portal_count} "
+            f"(registration/notification entry points — not unit lists)\n"
+        )
+    if cov.program_count:
+        lines.append(
+            f"- **Program extracts:** {cov.program_count} "
+            f"(program-level PDF/page text — not named properties)\n"
+        )
+    lines.append(
+        f"- **UEO-style property count:** {cov.property_inventory_count} "
+        f"(excludes portals and program noise)\n\n"
+    )
+
+    if cov.portal_records:
+        lines.append("### Portal pointers (not property inventory)\n\n")
+        for rec in cov.portal_records:
+            auth = rec.get("authority") or "Unknown"
+            link = rec.get("url") or rec.get("administrator_url") or rec.get("source_url") or ""
+            lines.append(f"- **{auth}** — register via HouseKeys")
+            if link:
+                lines.append(f" ({link})")
+            lines.append("\n")
+        lines.append("\n")
+
+    return "".join(lines)
+
+
 def generate_daily_summary(
     listings,
     skipped_targets=None,
@@ -67,6 +108,7 @@ def generate_daily_summary(
         f.write("# 🏠 Santa Clara County Housing Waitlist Summary\n")
         f.write(f"**Run:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
         f.write(_format_run_status(run_stats))
+        f.write(_format_coverage_summary(listings))
 
         seen = {}
         unique_opens = []
@@ -83,8 +125,16 @@ def generate_daily_summary(
                 unique_opens.append(listing)
 
         open_count = len(unique_opens)
-        total_count = len(listings)
-        f.write(f"**Records this run:** {total_count} extracted")
+        cov = summarize_coverage(listings)
+        f.write(
+            f"**Records this run:** {cov.total} extracted "
+            f"({cov.property_inventory_count} property inventory"
+        )
+        if cov.portal_count:
+            f.write(f", {cov.portal_count} portal pointer{'s' if cov.portal_count != 1 else ''}")
+        if cov.program_count:
+            f.write(f", {cov.program_count} program extract{'s' if cov.program_count != 1 else ''}")
+        f.write(")")
         if open_count:
             f.write(f" · {open_count} open or accepting applications\n\n")
         else:
@@ -107,10 +157,10 @@ def generate_daily_summary(
                     or ""
                 )
                 f.write(f"Link: {link}\n\n")
-        elif total_count > 0:
+        elif cov.total > 0:
             f.write(
                 "**No open or accepting listings in this run.** "
-                f"The {total_count} record(s) extracted are closed, waitlist-only, "
+                f"The {cov.total} record(s) extracted are closed, waitlist-only, "
                 "registration portals, or otherwise not currently accepting applications.\n\n"
             )
         else:

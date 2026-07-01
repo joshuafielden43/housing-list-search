@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from housing_list_search.changelog import generate_changelog
+from housing_list_search.coverage import summarize_coverage
 from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
@@ -80,6 +81,15 @@ class RunPipeline:
 
         counts = db.upsert_listings(all_listings, run_id=run_id)
         logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
+
+        cov = summarize_coverage(all_listings)
+        logger.info(
+            "Coverage: %d property, %d portal, %d program (%d total)",
+            cov.property_count,
+            cov.portal_count,
+            cov.program_count,
+            cov.total,
+        )
 
         n_full = db.export_csv("current_full.csv")
         n_diff = db.export_diff_csv(

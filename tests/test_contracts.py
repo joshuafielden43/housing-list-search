@@ -106,6 +106,26 @@ class TestSummaryOpenDetection:
         md = self._run(listings)
         assert "## 🔥 CURRENTLY OPEN" not in md
 
+    def test_coverage_breakdown_shows_portal_vs_property(self):
+        listings = [
+            _listing("Oak Manor", source="midpen:find_housing", addr="1 Oak St"),
+            {
+                "property_name": "City of Morgan Hill BMR Homeownership Program (via HouseKeys)",
+                "authority": "City of Morgan Hill",
+                "source": "housekeys:city_of_morgan_hill",
+                "administrator": "HouseKeys",
+                "url": "https://www.housekeys1.com/",
+                "status": "Registration Required",
+                "notes": "",
+            },
+        ]
+        md = self._run(listings)
+        assert "Coverage breakdown" in md
+        assert "Property inventory:** 1" in md
+        assert "Portal pointers:** 1" in md
+        assert "UEO-style property count:** 1" in md
+        assert "Portal pointers (not property inventory)" in md
+
     def test_closed_records_without_opens_are_explained(self):
         listings = [
             _listing(f"Closed Property {i}", status="closed", notes="closed", source="bloom:x")
