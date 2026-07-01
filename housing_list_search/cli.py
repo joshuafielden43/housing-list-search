@@ -2,8 +2,10 @@
 # cli.py - Housing List Aggregator CLI (importable from the package)
 
 import argparse
+import logging
 import sys
 from datetime import datetime
+
 
 def main():
     parser = argparse.ArgumentParser(description="Housing Waitlist Aggregator (Santa Clara County)")
@@ -18,26 +20,20 @@ def main():
     if args.run:
         print(f"=== Normal Run Started at {datetime.now()} ===")
 
-        import csv
-        import logging
-        from housing_list_search.csv_safety import sanitize_csv_field
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(message)s",
-            handlers=[logging.StreamHandler(sys.stdout)]
+            handlers=[logging.StreamHandler(sys.stdout)],
         )
         logger = logging.getLogger("housing_list_search")
 
         from housing_list_search.registry import load_targets_to_db, get_active_targets, get_skipped_targets
         from housing_list_search.target_filter import filter_targets_by_authority
-        from housing_list_search.runner import run_target
-        from housing_list_search.dedupe import deduplicate_listings
-        from housing_list_search.db import get_manager, DEFAULT_STALE_WARN_THRESHOLD
-        from housing_list_search.changelog import generate_changelog
+        from housing_list_search.db import get_manager
+        from housing_list_search.pipeline import RunPipeline
         from housing_list_search.outputs import (
             PARTIAL_DAILY_SUMMARY_PATH,
             STAFF_DAILY_SUMMARY_PATH,
-            generate_daily_summary,
         )
 
         load_targets_to_db()
@@ -46,8 +42,7 @@ def main():
 
         partial_run = bool(args.target)
 
-        # Log intentionally skipped targets (no_public_list) only during full runs.
-        skipped_targets = []
+        skipped_targets: list[tuple[str, str]] = []
         if not partial_run:
             for t in get_skipped_targets():
                 authority = t["authority"]
@@ -60,123 +55,29 @@ def main():
                 skipped_targets.append((authority, notes[:200]))
 
         active = get_active_targets()
-        target_authorities = None
         if args.target:
             active = filter_targets_by_authority(active, args.target)
             if not active:
                 print(f"⚠️  No active targets match --target {args.target!r}")
                 sys.exit(1)
-            target_authorities = [t["authority"] for t in active]
             print(f"\n🔄 Scraping {len(active)} target(s) matching {args.target!r}...")
         else:
             print("\n🔄 Scraping all targets...")
-        all_listings = []
-        failed_targets: list[str] = []
 
         for t in active:
             print(f"\n→ Processing: {t['authority']}")
-            try:
-                recs = run_target(t, failures=failed_targets)
-                all_listings.extend(recs)
-            except Exception as exc:
-                logger.error("Error on %s: %s", t["authority"], exc)
-                if t["authority"] not in failed_targets:
-                    failed_targets.append(t["authority"])
 
-        # Deduplicate across sources
-        all_listings = deduplicate_listings(all_listings)
-
-        # Stable run identifier — shared between upsert and diff export so
-        # NEW/UPDATED labels in diff.csv are based on run membership, not timestamps.
-        run_id = datetime.now().strftime("%Y%m%dT%H%M%S")
-
-        # Write through to DB — this is now the source of truth
-        counts = db.upsert_listings(all_listings, run_id=run_id)
-        logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
-
-        # Export CSV outputs from DB. Partial --target runs scope diff.csv so
-        # unrelated authorities are not reported as stale.
-        n_full = db.export_csv("current_full.csv")
-        n_diff = db.export_diff_csv(
-            "diff.csv",
-            run_id=run_id,
-            authorities=target_authorities,
-            scrape_failed_authorities=failed_targets,
+        result = RunPipeline().run(
+            active,
+            db=db,
+            partial_run=partial_run,
+            target_filter=args.target,
+            skipped_targets=skipped_targets,
         )
-        print(f"   Exported current_full.csv ({n_full} rows), diff.csv ({n_diff} rows)")
 
-        diff_counts = db.diff_counts(
-            run_id,
-            authorities=target_authorities,
-            scrape_failed_authorities=failed_targets,
-        )
-        scrape_failed_n = diff_counts.get("SCRAPE_FAILED", 0)
-        if scrape_failed_n:
-            logger.warning(
-                "%d SCRAPE_FAILED record(s) in diff.csv — scrape errors, not confirmed closures",
-                scrape_failed_n,
-            )
-        stale_n = diff_counts.get("STALE", 0)
-        if stale_n >= DEFAULT_STALE_WARN_THRESHOLD:
-            logger.warning(
-                "%d STALE record(s) in diff.csv (not confirmed this run; threshold=%d). "
-                "Review diff.csv, then prune when appropriate: "
-                "python scripts/db_manage.py prune --not-seen-since 45",
-                stale_n,
-                DEFAULT_STALE_WARN_THRESHOLD,
-            )
-        elif stale_n > 0:
-            logger.info(
-                "%d STALE record(s) in diff.csv (below warn threshold of %d)",
-                stale_n,
-                DEFAULT_STALE_WARN_THRESHOLD,
-            )
-
-        run_stats = {
-            "targets_attempted": len(active),
-            "targets_succeeded": len(active) - len(failed_targets),
-            "failed_authorities": failed_targets,
-        }
-
-        if partial_run:
-            with open("changelog_diffs.md", "w", encoding="utf-8") as f:
-                f.write("# Housing List Changelog\n\n")
-                f.write(
-                    f"Partial --target run for {args.target!r}; "
-                    "global run_prev.csv baseline was not updated.\n"
-                )
-            with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["change_type", "authority", "property_name", "details", "timestamp"])
-                writer.writerow([
-                    sanitize_csv_field("PARTIAL_RUN"),
-                    sanitize_csv_field("target"),
-                    sanitize_csv_field(args.target),
-                    sanitize_csv_field("global changelog baseline not updated"),
-                    sanitize_csv_field(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-                ])
-            logger.info("Partial --target run: left global run_prev.csv changelog baseline unchanged")
-            generate_daily_summary(
-                all_listings,
-                skipped_targets=[],
-                output_path=PARTIAL_DAILY_SUMMARY_PATH,
-                run_stats=run_stats,
-            )
-            logger.info(
-                "Partial --target run: wrote %s; left staff-facing %s unchanged",
-                PARTIAL_DAILY_SUMMARY_PATH,
-                STAFF_DAILY_SUMMARY_PATH,
-            )
-        else:
-            generate_changelog(all_listings, skipped_targets=skipped_targets)
-            generate_daily_summary(
-                all_listings,
-                skipped_targets=skipped_targets,
-                run_stats=run_stats,
-            )
-
-        print(f"\n✅ Run complete! {len(all_listings)} listings this run "
-              f"({counts['inserted']} new, {counts['updated']} updated).")
+        print(f"   Exported current_full.csv ({result.n_full} rows), diff.csv ({result.n_diff} rows)")
+        print(f"\n✅ Run complete! {len(result.listings)} listings this run "
+              f"({result.inserted} new, {result.updated} updated).")
         if skipped_targets:
             print(f"   ⚠️  Skipped {len(skipped_targets)} targets marked no_public_list")
         if partial_run:
@@ -191,12 +92,7 @@ def main():
                 "changelog_diffs.md"
             )
 
-        if failed_targets:
-            logger.error(
-                "%d active target(s) failed this run: %s",
-                len(failed_targets),
-                ", ".join(failed_targets),
-            )
+        if result.failed_targets:
             sys.exit(1)
 
     else:
