@@ -6,6 +6,10 @@ on:
     - cron: "0 14 * * 1"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   integration:
     runs-on: ubuntu-latest
@@ -29,3 +33,83 @@ jobs:
 
       - name: Run integration + ground-truth tests
         run: python -m pytest tests/ -m integration -q --tb=short
+
+  alert-on-failure:
+    runs-on: ubuntu-latest
+    needs: integration
+    if: failure()
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const ISSUE_TITLE = "Weekly integration tests failed";
+            const LABEL = "integration-failure";
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              "The **Integration (weekly)** workflow failed.",
+              "",
+              `- **Run:** ${runUrl}`,
+              `- **Triggered by:** ${context.eventName}`,
+              `- **Commit:** \`${context.sha.slice(0, 7)}\``,
+              "",
+              "Reproduce locally:",
+              "```bash",
+              "playwright install chromium",
+              "pytest tests/ -m integration -q --tb=short",
+              "```",
+              "",
+              "If this is a portal outage or WAF change, document it in `TARGETS.md`.",
+              "If it is an adapter regression, fix before the next full `python main.py --run`.",
+            ].join("\n");
+
+            async function ensureLabel(name) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                });
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color: "d73a4a",
+                  description: "Weekly live-portal integration test failure",
+                });
+              }
+            }
+
+            await ensureLabel(LABEL);
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: LABEL,
+              per_page: 5,
+            });
+
+            if (issues.length > 0) {
+              const issue = issues[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Another integration failure (${new Date().toISOString()}).\n\n${body}`,
+              });
+              core.info(`Commented on existing issue #${issue.number}`);
+              return;
+            }
+
+            const { data: created } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: ISSUE_TITLE,
+              body,
+              labels: [LABEL],
+            });
+            core.info(`Created issue #${created.number}`);
