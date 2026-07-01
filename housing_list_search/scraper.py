@@ -1,33 +1,19 @@
 # scraper.py
-import requests
-import time
-import urllib.robotparser
 import logging
-from datetime import datetime
+from urllib.parse import urlparse
 
+import requests
+
+from housing_list_search.host_throttle import mark_host_fetched, wait_for_host
+from housing_list_search.http_limits import (
+    DEFAULT_MAX_RESPONSE_BYTES,
+    USER_AGENT,
+    read_bounded_content as _read_bounded_content,
+)
+from housing_list_search.robots_cache import clear_robots_cache, get_robots_entry
 from housing_list_search.url_policy import URLPolicyError, validate_http_url
 
 logger = logging.getLogger(__name__)
-
-USER_AGENT = "HousingListAggregator-Nonprofit-SantaClara-v1 (contact: joshua@fielden.org)"
-
-# Cap response bodies to limit memory exhaustion and unbounded downloads.
-DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024  # 20 MiB
-
-
-def _read_bounded_content(resp: requests.Response, max_bytes: int) -> bytes | None:
-    """Read response body up to max_bytes. Returns None if the cap is exceeded."""
-    chunks: list[bytes] = []
-    total = 0
-    for chunk in resp.iter_content(chunk_size=65536):
-        if not chunk:
-            continue
-        total += len(chunk)
-        if total > max_bytes:
-            resp.close()
-            return None
-        chunks.append(chunk)
-    return b"".join(chunks)
 
 
 def is_allowed_by_robots(url: str) -> bool:
@@ -50,45 +36,17 @@ def is_allowed_by_robots(url: str) -> bool:
     under our own nonprofit User-Agent string.
     """
     try:
-        from urllib.parse import urlparse
         validate_http_url(url)
         parsed = urlparse(url)
         base = f"{parsed.scheme}://{parsed.netloc}"
         robots_url = f"{base}/robots.txt"
         validate_http_url(robots_url)
 
-        # Fetch with our nonprofit UA — NOT RobotFileParser.read(), which uses
-        # Python-urllib's default bot string. Cloudflare (jscosccha.com, etc.)
-        # returns 403 for that default UA; urllib.robotparser then sets
-        # disallow_all=True and blocks every URL even when robots.txt allows /.
-        resp = requests.get(
-            robots_url,
-            headers={"User-Agent": USER_AGENT},
-            timeout=15,
-            stream=True,
-        )
-        content = _read_bounded_content(resp, 256 * 1024)
-        if content is None:
-            logger.warning(
-                "robots.txt response exceeded size cap for %s — treating as unreachable (allowed)",
-                robots_url,
-            )
+        entry = get_robots_entry(base, robots_url)
+        if entry.treat_as_allowed or entry.parser is None:
             return True
 
-        rp = urllib.robotparser.RobotFileParser()
-        rp.set_url(robots_url)
-        if resp.status_code in (401, 403):
-            logger.warning(
-                "robots.txt returned HTTP %d for %s — treating as unreachable (allowed). "
-                "If this is a WAF block on the robots fetch itself, document in TARGETS.md.",
-                resp.status_code, robots_url,
-            )
-            return True
-        if resp.status_code >= 400:
-            return True
-        rp.parse(content.decode("utf-8", errors="replace").splitlines())
-
-        allowed = rp.can_fetch(USER_AGENT, url)
+        allowed = entry.parser.can_fetch(USER_AGENT, url)
         if not allowed:
             logger.warning(
                 "robots.txt Disallows %s for %s — skipping this URL. "
@@ -132,9 +90,9 @@ def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_B
 
     headers = {"User-Agent": USER_AGENT}
     try:
+        wait_for_host(url, delay)
         logger.debug("Fetching: %s", url)
         resp = requests.get(url, headers=headers, timeout=15, stream=True)
-        time.sleep(delay)
 
         if resp.status_code == 404:
             logger.warning(
@@ -171,3 +129,5 @@ def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_B
     except Exception as exc:
         logger.warning("Request failed for %s: %s", url, exc)
         return None
+    finally:
+        mark_host_fetched(url)

@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import csv
 import logging
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable
@@ -28,6 +31,19 @@ import housing_list_search.runner as runner_module
 logger = logging.getLogger("housing_list_search")
 
 TargetFn = Callable[..., list[dict]]
+
+_DEFAULT_MAX_TARGET_WORKERS = 3
+_MAX_TARGET_WORKERS_CAP = 8
+
+
+def max_target_workers() -> int:
+    """Bounded parallelism for independent target scrapes (env: HLS_MAX_TARGET_WORKERS)."""
+    raw = os.environ.get("HLS_MAX_TARGET_WORKERS", str(_DEFAULT_MAX_TARGET_WORKERS))
+    try:
+        n = int(raw)
+    except ValueError:
+        n = _DEFAULT_MAX_TARGET_WORKERS
+    return max(1, min(n, _MAX_TARGET_WORKERS_CAP))
 
 
 @dataclass
@@ -64,17 +80,7 @@ class RunPipeline:
         skipped = skipped_targets or []
         target_authorities = [t["authority"] for t in targets] if partial_run else None
 
-        all_listings: list[dict] = []
-        failed_targets: list[str] = []
-
-        for t in targets:
-            try:
-                recs = scrape(t, failures=failed_targets)
-                all_listings.extend(recs)
-            except Exception as exc:
-                logger.error("Error on %s: %s", t["authority"], exc)
-                if t["authority"] not in failed_targets:
-                    failed_targets.append(t["authority"])
+        all_listings, failed_targets = self._scrape_targets(targets, scrape)
 
         all_listings = deduplicate_listings(all_listings)
         run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -176,6 +182,47 @@ class RunPipeline:
             scrape_failed_n=scrape_failed_n,
             stale_n=stale_n,
         )
+
+    @staticmethod
+    def _scrape_targets(
+        targets: list[dict[str, Any]],
+        scrape: TargetFn,
+    ) -> tuple[list[dict], list[str]]:
+        all_listings: list[dict] = []
+        failed_targets: list[str] = []
+        failures_lock = threading.Lock()
+        listings_lock = threading.Lock()
+        workers = max_target_workers()
+        if workers > 1 and len(targets) > 1:
+            logger.info("Scraping %d targets with up to %d parallel workers", len(targets), workers)
+
+        def _run_one(target: dict[str, Any]) -> None:
+            authority = target.get("authority", "")
+            local_failures: list[str] = []
+            try:
+                recs = scrape(target, failures=local_failures)
+                with listings_lock:
+                    all_listings.extend(recs)
+            except Exception as exc:
+                logger.error("Error on %s: %s", authority, exc)
+                local_failures.append(authority)
+            if local_failures:
+                with failures_lock:
+                    for name in local_failures:
+                        if name not in failed_targets:
+                            failed_targets.append(name)
+
+        if workers == 1 or len(targets) <= 1:
+            for t in targets:
+                _run_one(t)
+            return all_listings, failed_targets
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_run_one, t) for t in targets]
+            for fut in as_completed(futures):
+                fut.result()
+
+        return all_listings, failed_targets
 
     @staticmethod
     def _write_partial_changelog(target_filter: str) -> None:

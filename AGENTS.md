@@ -232,6 +232,8 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 | `housing_list_search/changelog.py` | Staff-facing changelog; reads STALE from diff.csv |
 | `housing_list_search/registry.py` | TARGETS.md → SQLite `targets` ingest + sanitization |
 | `housing_list_search/scraper.py` | `polite_get()` — the only approved HTTP entry point |
+| `housing_list_search/robots_cache.py` | Per-host robots.txt cache (one fetch per origin per run) |
+| `housing_list_search/host_throttle.py` | Per-host rate limiter (safe with parallel target workers) |
 | `housing_list_search/extraction/bloom_housing.py` | Bloom Housing platform adapter (`BLOOM_DOMAINS`) |
 | `housing_list_search/extraction/pdf.py` | PDF extraction (tables, flyers, marker fallback) |
 | `housing_list_search/extraction/__init__.py` | Public `extract_target()` API (delegates to dispatch) |
