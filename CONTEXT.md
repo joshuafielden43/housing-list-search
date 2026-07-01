@@ -9,7 +9,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Target** | One row from `TARGETS.md` → SQLite `targets`: authority, URL, `scraping_measures`, administrator fields |
 | **Listing** | One property or registration opportunity. Canonical shape via `listing_to_row()` in `listing.py` |
 | **Run** | One `python main.py --run` invocation; identified by `run_id` (`YYYYMMDDTHHMMSS`) |
-| **Measure** | Token in `scraping_measures` routing to an adapter (`housekeys`, `civicplus`, `waf_blocked`, …) |
+| **Measure** | Token in `scraping_measures` routing to an adapter (`bloom`, `housekeys`, `civicplus`, `waf_blocked`, …) |
+| **DispatchRegistry** | `dispatch.py` — measures → adapter handlers; URL predicates → extraction handlers |
 | **Adapter** | Platform-scoped scraper in `adapters/` or `extraction/` — named after vendor, never city |
 | **marker fallback** | Optional `marker-pdf` path in `extraction/marker_pdf.py` when table/flyer/line extractors yield zero |
 

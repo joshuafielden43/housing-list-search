@@ -75,7 +75,7 @@ PATH 3 — Playwright fallback (last resort):
 === ADDING A NEW BLOOM HOUSING INSTANCE ===
 
 1. Add a row to TARGETS.md with the /listings URL and authority name.
-2. Add the domain to _KNOWN_BLOOM_DOMAINS in extraction/__init__.py so the
+2. Add the domain to BLOOM_DOMAINS in bloom_housing.py so the
    dispatcher routes it here.
 3. If the instance is SSR: no code changes needed, Path 1 handles it.
 4. If the instance is CSR (API): add it to _API_INSTANCES with the correct
@@ -138,12 +138,32 @@ logger = logging.getLogger(__name__)
 # To add a new API instance: add its hostname here with the jurisdictionname
 # (from the Bloom admin config) and the county filter name.
 # The endpoint path (/api/adapter/listings/combined) is the same for all instances.
+BLOOM_DOMAINS = frozenset({
+    "housing.sanjoseca.gov",
+    "housingbayarea.mtc.ca.gov",
+})
+
 _API_INSTANCES: dict[str, dict] = {
     "housingbayarea.mtc.ca.gov": {
         "jurisdictionname": "Bay Area",
         "endpoint": "https://housingbayarea.mtc.ca.gov/api/adapter/listings/combined",
     },
 }
+
+
+def is_bloom_url(url: str) -> bool:
+    from urllib.parse import urlparse
+    return urlparse(url).netloc.lower() in BLOOM_DOMAINS
+
+
+def extract_bloom_for_target(url: str, authority: str = "") -> list[HousingRecord]:
+    """Bloom extraction with MTC Doorway city_filter derived from authority."""
+    u = (url or "").lower()
+    city_filter = ""
+    if "housingbayarea.mtc.ca.gov" in u and authority:
+        city_filter = authority.replace("City of ", "").replace("Town of ", "")
+        city_filter = re.sub(r"\s*\(.*\)\s*$", "", city_filter).strip()
+    return extract_bloom_housing_listings(url, authority=authority, city_filter=city_filter)
 
 def _listing_detail_url(listings_url: str, listing_id: str, slug: str) -> str:
     """Build the detail URL for a listing given the instance's base URL."""
