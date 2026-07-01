@@ -34,7 +34,7 @@ Epic **#389** (portable routing + record identity) — **complete** as of 2026-0
 | Commit | Work | Vikunja |
 |--------|------|---------|
 | `7346c40` | `persistence_url()` surrogate keys; `JOHN_STEWART_AUTHORITY` | #417, #419 |
-| *(pending)* | `schema.py` — unified DDL; `DEFAULT_DB_PATH` | #432 |
+| `29874c3` | `schema.py` — unified DDL; `DEFAULT_DB_PATH` | #432 |
 
 ---
 
