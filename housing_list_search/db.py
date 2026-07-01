@@ -249,15 +249,17 @@ class DatabaseManager:
         archive_name = f"{safe_name}_{timestamp}.tgz"
         archive_path = SNAPSHOTS_DIR / archive_name
 
-        # For now, we snapshot the CSV if it exists + manifest
-        # In a full system we would also export housing_records
         csv_path = Path("current_full.csv")
+        includes_db = self.db_path.exists()
+        includes_csv = csv_path.exists()
         manifest = {
             "name": name,
             "created_at": datetime.now().isoformat(),
             "db_path": str(self.db_path),
             "record_count": self.get_record_count(),
             "git_commit": _git_short_commit(),
+            "includes_db": includes_db,
+            "includes_csv": includes_csv,
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -268,8 +270,10 @@ class DatabaseManager:
 
             with tarfile.open(archive_path, "w:gz") as tar:
                 tar.add(manifest_path, arcname="manifest.json")
-                if csv_path.exists():
+                if includes_csv:
                     tar.add(csv_path, arcname="current_full.csv")
+                if includes_db:
+                    tar.add(self.db_path, arcname="housing_registry.db")
 
         self._log_run("snapshot", "", 0, 0, f"name={name}")
         return archive_path
