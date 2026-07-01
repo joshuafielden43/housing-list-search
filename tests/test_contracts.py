@@ -54,7 +54,7 @@ def _listing(name, status="active", notes="accepting applications", source="bloo
 class TestSummaryOpenDetection:
     """generate_daily_summary must surface realistic open listings."""
 
-    def _run(self, listings):
+    def _run(self, listings, **kwargs):
         """Run generate_daily_summary and return the written markdown."""
         import tempfile, os
         from housing_list_search.outputs import generate_daily_summary
@@ -63,7 +63,7 @@ class TestSummaryOpenDetection:
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
             try:
-                generate_daily_summary(listings)
+                generate_daily_summary(listings, **kwargs)
                 with open("daily_summary.md", encoding="utf-8") as f:
                     return f.read()
             finally:
@@ -105,6 +105,44 @@ class TestSummaryOpenDetection:
         listings = [_listing("BMR", status="Open", notes="", source="generic_scrape")]
         md = self._run(listings)
         assert "## 🔥 CURRENTLY OPEN" not in md
+
+    def test_closed_records_without_opens_are_explained(self):
+        listings = [
+            _listing(f"Closed Property {i}", status="closed", notes="closed", source="bloom:x")
+            for i in range(11)
+        ]
+        md = self._run(listings)
+        assert "11 extracted" in md
+        assert "No open or accepting listings" in md
+        assert "registration portals" in md
+        assert "No currently open lists detected" not in md
+        assert "This run produced **11 listings**" not in md
+
+    def test_run_status_shows_target_failures(self):
+        md = self._run(
+            [_listing("Open Homes", status="Open", source="bloom:x")],
+            run_stats={
+                "targets_attempted": 15,
+                "targets_succeeded": 12,
+                "failed_authorities": ["City A", "City B", "City C"],
+            },
+        )
+        assert "## Run Status" in md
+        assert "12 succeeded, 3 failed (of 15 attempted)" in md
+        assert "City A, City B, City C" in md
+        assert "SCRAPE_FAILED" in md
+
+    def test_run_status_shows_clean_run(self):
+        md = self._run(
+            [_listing("Open Homes", status="Open", source="bloom:x")],
+            run_stats={
+                "targets_attempted": 18,
+                "targets_succeeded": 18,
+                "failed_authorities": [],
+            },
+        )
+        assert "18 succeeded (of 18 attempted)" in md
+        assert "failed" not in md.lower().split("run status", 1)[-1][:120]
 
 
 # ---------------------------------------------------------------------------
