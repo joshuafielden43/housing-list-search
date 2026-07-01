@@ -24,7 +24,7 @@ UEO maintains an impressive volunteer-curated, county-wide database (**~560 prop
 
 **Our goal:** Complement their work — match property coverage using only public, ethically accessible sources, and add automated daily freshness via `STALE` diff labelling and `db_manage.py prune`. The two approaches reinforce each other: their curation gives breadth and human judgement; automation keeps availability current.
 
-**Current gap (honest, 2026-06-07):** `run_prev.csv` holds **~113 records**, heavily weighted toward San José Bloom (~88). John Stewart / SCCHA directory records are absent from the latest baseline. UEO lists individual properties across Campbell, Cupertino, Gilroy, Los Altos, Los Gatos, Milpitas, Morgan Hill, Mountain View, Palo Alto, San José, Santa Clara, Saratoga, and Sunnyvale — we mostly capture portal-level or registration-level rows for several of those cities, not property inventories.
+**Current gap (honest, 2026-07-01):** Full `--run` yields **~437 deduped listings** (`run_prev.csv`); `current_full.csv` holds **~547 rows** including legacy keys pending prune. Vendor portfolios (jsco.net 67, charities 48, midpen 46, San José Bloom 97, Sunnyvale GIS 40, …) close much of the breadth gap vs UEO (~560). Remaining gaps: HouseKeys cities still emit registration pointers not unit inventories; some civicplus PDF paths return program docs not property rows; per-property availability freshness still lags hand-curated UEO on edge cases. First full run after identity fixes (#417/#419) produced a large one-time STALE/REMOVED churn — prune after review.
 
 **Do not close the gap by:**
 - Fabricating "delegate" or "See administrator" placeholder records when a portal has no listings

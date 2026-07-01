@@ -4,8 +4,8 @@
 
 Built for nonprofits that need a daily, structured picture of what low/no-income housing is open, closing, or on waitlist across a fragmented landscape of city portals, delegated administrators, and vendor platforms.
 
-Current scope: **15 Santa Clara County targets** across every city and the county housing authority.  
-Current version: **v0.8.6**
+Current scope: **24 Santa Clara County targets** in `TARGETS.md` (20 active scrape targets; 4 `no_public_list` monitors).  
+Current version: **v0.8.7**
 
 ---
 
@@ -13,8 +13,8 @@ Current version: **v0.8.6**
 
 - Runs a daily scrape against every target in `TARGETS.md`
 - Produces `current_full.csv` (full DB snapshot), `diff.csv` (NEW/UPDATED/STALE delta for importers), `daily_summary.md` (human-readable open listings), and `changelog_diffs.csv` (run-to-run change log)
-- Handles six distinct backend patterns with purpose-built adapters (see [Adapter Map](#adapter-map))
-- Skips WAF-blocked and no-public-list cities cleanly with documented rationale instead of crashing or returning junk
+- Routes **12 platform adapters** via measure-driven dispatch (`dispatch.py`) plus URL extractors for Bloom and PDF (see [Adapter Map](#adapter-map))
+- Skips `no_public_list` monitors and documented WAF blocks cleanly; uses alternative entry points where available (HouseKeys, MTC Doorway, Sunnyvale GIS)
 - Deduplicates across overlapping sources (e.g. San José portal + SCCHA directory)
 
 ---
@@ -41,19 +41,20 @@ Adapters are named after the **platform or vendor**, never the city. The same ad
 
 | Adapter | Platform | Cities / Use cases |
 |---|---|---|
-| `bloom_housing.py` | Bloom Housing (Next.js) | San José (SSR), MTC Doorway/Bay Area (REST API) |
-| `john_stewart.py` | John Stewart Company portal | SCCHA-managed properties |
-| `gis_extraction.py` | Municipal GIS layers | Cupertino + Rise Housing |
-| `housekeys.py` | HouseKeys registration portal | Morgan Hill, Gilroy, Los Gatos, Mountain View, Milpitas, (Santa Clara transitional) |
-| `civicplus.py` | CivicPlus municipal CMS (DocumentCenter, Froala) behind CDN/WAF | Campbell, Los Altos (Housing Group); Gilroy PDFs |
-| `alta.py` | Alta Housing portal + property directory | Palo Alto, Mountain View |
-| `charities_housing.py` | Charities Housing directory + REST API | Santa Clara County |
-| `midpen.py` | MidPen Housing county search (waitlist statuses) | Santa Clara County |
-| `eden.py` | Eden Housing county property grid | Santa Clara County |
-| `eah.py` | EAH Housing all-properties list | Santa Clara County |
-| `first_housing.py` | First Community Housing portfolio (contacts) | San José |
+| `extraction/bloom_housing.py` | Bloom Housing (Next.js) | San José (SSR), MTC Doorway/Bay Area (REST API) |
+| `adapters/john_stewart.py` | John Stewart Company portal + jsco.net API | SCCHA directory, jscosccha.com, county portfolio |
+| `adapters/gis_extraction.py` | Municipal GIS layers | Cupertino (Rise Housing), Sunnyvale affordable-housing layer |
+| `adapters/housekeys.py` | HouseKeys registration portal | Morgan Hill, Gilroy, Los Gatos, Mountain View, Milpitas |
+| `adapters/civicplus.py` | CivicPlus municipal CMS (DocumentCenter, Froala) | Campbell, Los Altos (Housing Group); Gilroy PDFs |
+| `adapters/alta.py` | Alta Housing portal + property directory | Palo Alto, Mountain View |
+| `adapters/charities_housing.py` | Charities Housing directory + REST API | Santa Clara County |
+| `adapters/midpen.py` | MidPen Housing county search (waitlist statuses) | Santa Clara County |
+| `adapters/eden.py` | Eden Housing county property grid | Santa Clara County |
+| `adapters/eah.py` | EAH Housing all-properties list | Santa Clara County |
+| `adapters/first_housing.py` | First Community Housing portfolio (contacts) | San José |
+| `extraction/pdf.py` | PDF extraction (tables, flyers, optional marker fallback) | Gilroy rental lists, Los Gatos guide |
 
-Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit behind Akamai WAF and are documented as `waf_blocked` in `TARGETS.md`. Mountain View and Santa Clara have viable alternative entry points (HouseKeys subdomain and MTC Doorway respectively). Sunnyvale's document viewer also fetches from the blocked domain; documented with correct document IDs for when the block resolves.
+**WAF note:** Mountain View and Santa Clara **city websites** sit behind Akamai WAF (`d7ce17`). Scraping uses HouseKeys13 and MTC Doorway instead. Sunnyvale's main site is also WAF-blocked, but its **ArcGIS REST layer** (`gis.sunnyvale.ca.gov`) is publicly queryable — handled by `gis_extraction`.
 
 ---
 
@@ -61,9 +62,9 @@ Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit beh
 
 **If it uses an existing platform:** add a row to `TARGETS.md` with the platform's URL and the correct `scraping_measures` value (e.g. `housekeys`, `civicplus`, `native_requests`). No code changes needed.
 
-**If it's a new Bloom Housing instance:** add the hostname to `_KNOWN_BLOOM_DOMAINS` in `extraction/__init__.py`. If it's a CSR/API instance, also add it to `_API_INSTANCES` in `extraction/bloom_housing.py`. No adapter code needed.
+**If it's a new Bloom Housing instance:** add the hostname to `BLOOM_DOMAINS` in `extraction/bloom_housing.py` and the `bloom` measure to the TARGETS.md row. For CSR/API instances, also add to `_API_INSTANCES`.
 
-**If it's a genuinely new platform:** create a new adapter in `housing_list_search/adapters/`, name it after the platform, follow the module docstring and Scope & Guardrails pattern in any existing adapter, and add routing in `runner.py`. Document the pattern in `AGENTS.md`.
+**If it's a genuinely new platform:** create `housing_list_search/adapters/{platform}.py`, register the measure in `dispatch.py`, and add a TARGETS.md row. See `AGENTS.md` for the full extension pattern.
 
 ---
 
@@ -71,18 +72,23 @@ Three cities (Mountain View city-site, Santa Clara city-site, Sunnyvale) sit beh
 
 ```
 housing_list_search/
-  adapters/          # First-class platform adapters (bloom_housing, housekeys, civicplus, …)
-  extraction/        # Structured extraction layer (bloom_housing, pdf)
-  runner.py          # Measure-driven target dispatcher (routes each TARGETS.md row)
+  adapters/          # Platform adapters (housekeys, civicplus, john_stewart, …)
+  extraction/        # Structured extraction (bloom_housing, pdf, marker_pdf)
+  dispatch.py        # Measure registry + URL extractors (bloom, pdf)
+  pipeline.py        # Run orchestration: scrape → dedupe → persist → export
+  runner.py          # Thin wrapper: run_target() → dispatch
+  listing.py         # Canonical listing_to_row() at persistence seam
+  freshness.py       # Unified diff.csv ↔ changelog identity
   db.py              # DatabaseManager: upsert, export_csv, export_diff_csv, prune
   scraper.py         # polite_get() — rate-limited, robots.txt-respecting HTTP
   registry.py        # TARGETS.md → SQLite targets table with sanitization nanny
-  cli.py             # Main run loop: load → runner → dedupe → DB → CSV export
+  cli.py             # Argparse + RunPipeline entry point
 scripts/
   doctor.py          # Environment health check + --fix + --dry-run (CI)
 TARGETS.md           # Source of truth: all targets, measures, admin contacts
 SOUL.md              # Mission and guardrails
 AGENTS.md            # Notes for AI contributors and future maintainers
+.agents/MEMORY.md    # Repo-local agent memory (Vikunja project #9, sprint notes)
 PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibility split)
 ```
 

@@ -59,6 +59,19 @@ Epic **#389** (portable routing + record identity) — **#417**, **#419** done 2
 
 ---
 
+## Coverage baseline (2026-07-01 full `--run`)
+
+| Metric | Value |
+|--------|-------|
+| Deduped listings this run | 437 |
+| `current_full.csv` rows | 547 |
+| Targets in TARGETS.md | 24 (20 active, 4 `no_public_list`) |
+| One-time STALE churn | ~112 (authority + surrogate-url migration) |
+
+Post-run: review `diff.csv`, then `python scripts/db_manage.py prune --not-seen-since 45` when satisfied.
+
+---
+
 ## Dev shortcuts
 
 - Unit tests: `HLS_DISABLE_MARKER_PDF=1 .venv/bin/python -m pytest tests/ -m "not integration"`
