@@ -16,6 +16,11 @@ import pytest
 
 class TestRobotsRespect:
 
+    @pytest.fixture(autouse=True)
+    def _allow_test_urls(self):
+        with patch("housing_list_search.scraper.validate_http_url", side_effect=lambda url, **_: url):
+            yield
+
     def _make_rp(self, allowed: bool):
         rp = MagicMock()
         rp.can_fetch.return_value = allowed
@@ -25,6 +30,7 @@ class TestRobotsRespect:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.text = text
+        mock_resp.iter_content.return_value = [text.encode()]
         return mock_resp
 
     def test_disallowed_url_returns_false(self):
@@ -88,6 +94,11 @@ class TestRobotsRespect:
 
 class TestPoliteGet:
 
+    @pytest.fixture(autouse=True)
+    def _allow_test_urls(self):
+        with patch("housing_list_search.scraper.validate_http_url", side_effect=lambda url, **_: url):
+            yield
+
     def test_disallowed_url_never_fetched(self):
         """polite_get must not issue an HTTP request when robots.txt Disallows."""
         from housing_list_search.scraper import polite_get
@@ -103,8 +114,7 @@ class TestPoliteGet:
         from housing_list_search.scraper import polite_get
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.content = b"ok"
-        mock_resp.text = "ok"
+        mock_resp.iter_content.return_value = [b"ok"]
         with (
             patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
             patch("housing_list_search.scraper.requests.get", return_value=mock_resp),
@@ -112,6 +122,7 @@ class TestPoliteGet:
         ):
             result = polite_get("https://allowed.gov/page")
         assert result is mock_resp
+        assert result._content == b"ok"
 
     def test_404_returns_none(self):
         from housing_list_search.scraper import polite_get
@@ -146,4 +157,28 @@ class TestPoliteGet:
             patch("housing_list_search.scraper.time.sleep"),
         ):
             result = polite_get("https://example.gov/unreachable")
+        assert result is None
+
+    def test_private_ip_blocked_without_fetch(self):
+        from housing_list_search.scraper import polite_get
+        from housing_list_search.url_policy import validate_http_url as real_validate
+        with (
+            patch("housing_list_search.scraper.validate_http_url", real_validate),
+            patch("housing_list_search.scraper.requests.get") as mock_get,
+        ):
+            result = polite_get("http://192.168.0.1/internal")
+        assert result is None
+        mock_get.assert_not_called()
+
+    def test_oversized_response_returns_none(self):
+        from housing_list_search.scraper import polite_get, DEFAULT_MAX_RESPONSE_BYTES
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.iter_content.return_value = [b"x" * (DEFAULT_MAX_RESPONSE_BYTES + 1)]
+        with (
+            patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
+            patch("housing_list_search.scraper.requests.get", return_value=mock_resp),
+            patch("housing_list_search.scraper.time.sleep"),
+        ):
+            result = polite_get("https://example.gov/huge")
         assert result is None

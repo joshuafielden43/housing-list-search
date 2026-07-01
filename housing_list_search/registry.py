@@ -12,12 +12,14 @@ import os
 import re
 import logging
 
+from housing_list_search.sqlite_config import connect_sqlite
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = "housing_registry.db"
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS targets (
         id INTEGER PRIMARY KEY,
@@ -140,9 +142,28 @@ def sanitize_target(raw: dict) -> dict:
     out["last_seen"] = _clean_text(raw.get("last_seen", ""), 30)
 
     # Administrator fields (injected context — still sanitize)
-    for key in ("administrator", "administrator_url", "administrator_phone", "administrator_contact"):
+    for key in ("administrator", "administrator_phone", "administrator_contact"):
         val = _clean_text(raw.get(key, ""), MAX_ADMIN_LEN)
         out[key] = val
+
+    admin_url = _clean_text(raw.get("administrator_url", ""), MAX_URL_LEN)
+    if admin_url:
+        admin_url = CONTROL_CHARS_RE.sub("", admin_url.strip())
+        if not any(admin_url.startswith(s) for s in ALLOWED_URL_SCHEMES):
+            logger.warning(
+                "Sanitizer: administrator_url for '%s' has disallowed scheme — cleared: %s",
+                authority,
+                admin_url[:100],
+            )
+            admin_url = ""
+        elif len(admin_url) > MAX_URL_LEN:
+            logger.warning(
+                "Sanitizer: administrator_url for '%s' was truncated (was %d chars)",
+                authority,
+                len(admin_url),
+            )
+            admin_url = admin_url[:MAX_URL_LEN]
+    out["administrator_url"] = admin_url
 
     # Detect potential prompt-injection style content in notes (future-proofing)
     suspicious = any(phrase in notes.lower() for phrase in [
@@ -155,7 +176,7 @@ def sanitize_target(raw: dict) -> dict:
 
 def load_targets_to_db():
     init_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     c = conn.cursor()
     
     # Clear and reload from markdown
@@ -217,7 +238,7 @@ def load_targets_to_db():
 
 def get_all_targets():
     """Return all targets as list of dicts (for inspection / reporting)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
@@ -233,7 +254,7 @@ def get_all_targets():
 
 def get_active_targets():
     """Targets that should be actively processed (excludes those marked no_public_list)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
@@ -251,7 +272,7 @@ def get_active_targets():
 
 def get_skipped_targets():
     """Targets intentionally marked no_public_list (for reporting only)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_sqlite(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""

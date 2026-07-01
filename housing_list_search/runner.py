@@ -96,7 +96,7 @@ except Exception:
     generic_scrape = None  # type: ignore[assignment]
 
 
-def run_target(target: dict[str, Any]) -> list[dict]:
+def run_target(target: dict[str, Any], *, failures: list[str] | None = None) -> list[dict]:
     """
     Dispatch one TARGETS.md row to the appropriate adapter(s).
 
@@ -135,6 +135,11 @@ def run_target(target: dict[str, Any]) -> list[dict]:
     # ----------------------------------------------------------------
     results: list[dict] = []
     ran_any = False
+    had_error = False
+
+    def _note_error() -> None:
+        nonlocal had_error
+        had_error = True
 
     if extract_target is not None:
         try:
@@ -144,6 +149,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
                 results.extend(r.to_dict() if hasattr(r, "to_dict") else r for r in ext_records)
                 ran_any = True
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: extraction layer failed (%s) — falling through to adapters", authority, exc)
 
     # ----------------------------------------------------------------
@@ -157,6 +163,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: john_stewart → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: john_stewart failed: %s", authority, exc)
 
     if "gis" in measures and extract_gis_portfolio is not None:
@@ -175,6 +182,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: gis → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: gis failed: %s", authority, exc)
 
     if "housekeys" in measures and scrape_housekeys is not None:
@@ -184,6 +192,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: housekeys → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: housekeys failed: %s", authority, exc)
 
     # "cdn" is the legacy name for the civicplus measure — accepted for old TARGETS.md rows
@@ -194,6 +203,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True  # ran cleanly — zero records must not trigger generic fallback
             logger.info("[runner] %s: civicplus → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: civicplus failed: %s", authority, exc)
 
     if "first_housing" in measures and scrape_first_housing is not None:
@@ -203,6 +213,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: first_housing → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: first_housing failed: %s", authority, exc)
 
     if "eden" in measures and scrape_eden is not None:
@@ -212,6 +223,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: eden → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: eden failed: %s", authority, exc)
 
     if "eah" in measures and scrape_eah is not None:
@@ -221,6 +233,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: eah → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: eah failed: %s", authority, exc)
 
     if "midpen" in measures and scrape_midpen is not None:
@@ -230,6 +243,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: midpen → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: midpen failed: %s", authority, exc)
 
     if "charities_housing" in measures and scrape_charities_housing is not None:
@@ -239,6 +253,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: charities_housing → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: charities_housing failed: %s", authority, exc)
 
     if "alta" in measures and scrape_alta is not None:
@@ -248,6 +263,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
             ran_any = True
             logger.info("[runner] %s: alta → %d records", authority, len(recs))
         except Exception as exc:
+            _note_error()
             logger.warning("[runner] %s: alta failed: %s", authority, exc)
 
     # Log any measures we don't recognise so TARGETS.md typos surface immediately
@@ -275,6 +291,7 @@ def run_target(target: dict[str, Any]) -> list[dict]:
                     results.extend(recs)
                     logger.info("[runner] %s: playwright fallback → %d records", authority, len(recs))
                 except Exception as exc:
+                    _note_error()
                     logger.warning("[runner] %s: playwright failed: %s", authority, exc)
         elif polite_get is not None and generic_scrape is not None:
             try:
@@ -284,6 +301,10 @@ def run_target(target: dict[str, Any]) -> list[dict]:
                     results.extend(recs)
                     logger.info("[runner] %s: generic fallback → %d records", authority, len(recs))
             except Exception as exc:
+                _note_error()
                 logger.warning("[runner] %s: generic fallback failed: %s", authority, exc)
+
+    if had_error and failures is not None and authority not in failures:
+        failures.append(authority)
 
     return results

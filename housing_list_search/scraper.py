@@ -5,9 +5,29 @@ import urllib.robotparser
 import logging
 from datetime import datetime
 
+from housing_list_search.url_policy import URLPolicyError, validate_http_url
+
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "HousingListAggregator-Nonprofit-SantaClara-v1 (contact: joshua@fielden.org)"
+
+# Cap response bodies to limit memory exhaustion and unbounded downloads.
+DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024  # 20 MiB
+
+
+def _read_bounded_content(resp: requests.Response, max_bytes: int) -> bytes | None:
+    """Read response body up to max_bytes. Returns None if the cap is exceeded."""
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in resp.iter_content(chunk_size=65536):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > max_bytes:
+            resp.close()
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def is_allowed_by_robots(url: str) -> bool:
@@ -31,9 +51,11 @@ def is_allowed_by_robots(url: str) -> bool:
     """
     try:
         from urllib.parse import urlparse
+        validate_http_url(url)
         parsed = urlparse(url)
         base = f"{parsed.scheme}://{parsed.netloc}"
         robots_url = f"{base}/robots.txt"
+        validate_http_url(robots_url)
 
         # Fetch with our nonprofit UA — NOT RobotFileParser.read(), which uses
         # Python-urllib's default bot string. Cloudflare (jscosccha.com, etc.)
@@ -43,7 +65,16 @@ def is_allowed_by_robots(url: str) -> bool:
             robots_url,
             headers={"User-Agent": USER_AGENT},
             timeout=15,
+            stream=True,
         )
+        content = _read_bounded_content(resp, 256 * 1024)
+        if content is None:
+            logger.warning(
+                "robots.txt response exceeded size cap for %s — treating as unreachable (allowed)",
+                robots_url,
+            )
+            return True
+
         rp = urllib.robotparser.RobotFileParser()
         rp.set_url(robots_url)
         if resp.status_code in (401, 403):
@@ -55,7 +86,7 @@ def is_allowed_by_robots(url: str) -> bool:
             return True
         if resp.status_code >= 400:
             return True
-        rp.parse(resp.text.splitlines())
+        rp.parse(content.decode("utf-8", errors="replace").splitlines())
 
         allowed = rp.can_fetch(USER_AGENT, url)
         if not allowed:
@@ -68,6 +99,9 @@ def is_allowed_by_robots(url: str) -> bool:
             return False
         return True
 
+    except URLPolicyError as exc:
+        logger.warning("URL policy blocked robots check for %s: %s", url, exc)
+        return False
     except Exception as exc:
         # robots.txt unreachable (timeout, WAF block, DNS failure, etc.)
         # Treat as allowed per RFC; log at DEBUG so WAF investigation has a trace.
@@ -75,23 +109,31 @@ def is_allowed_by_robots(url: str) -> bool:
         return True
 
 
-def polite_get(url: str, delay: int = 3):
+def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_BYTES):
     """
-    Polite HTTP GET with robots.txt check and rate limiting.
+    Polite HTTP GET with URL policy, robots.txt check, rate limiting, and
+    bounded response size.
 
     Returns the Response on success, None on any failure (404, 403, network
-    error). All failures are logged as warnings with actionable guidance.
+    error, policy violation, oversize body). All failures are logged as
+    warnings with actionable guidance.
 
     robots.txt is checked first. If the URL is explicitly Disallowed, returns
     None immediately without making the request.
     """
+    try:
+        validate_http_url(url)
+    except URLPolicyError as exc:
+        logger.warning("URL policy blocked fetch for %s: %s", url, exc)
+        return None
+
     if not is_allowed_by_robots(url):
         return None
 
     headers = {"User-Agent": USER_AGENT}
     try:
         logger.debug("Fetching: %s", url)
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, headers=headers, timeout=15, stream=True)
         time.sleep(delay)
 
         if resp.status_code == 404:
@@ -110,7 +152,17 @@ def polite_get(url: str, delay: int = 3):
             return None
 
         resp.raise_for_status()
-        logger.debug("Success: %s (%d bytes)", url, len(resp.content))
+        content = _read_bounded_content(resp, max_bytes)
+        if content is None:
+            logger.warning(
+                "Response body exceeded %d-byte cap for %s — discarding",
+                max_bytes,
+                url,
+            )
+            return None
+
+        resp._content = content
+        logger.debug("Success: %s (%d bytes)", url, len(content))
         return resp
 
     except requests.exceptions.HTTPError as exc:

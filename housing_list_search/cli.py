@@ -20,6 +20,7 @@ def main():
 
         import csv
         import logging
+        from housing_list_search.csv_safety import sanitize_csv_field
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(message)s",
@@ -66,14 +67,17 @@ def main():
         else:
             print("\n🔄 Scraping all targets...")
         all_listings = []
+        failed_targets: list[str] = []
 
         for t in active:
             print(f"\n→ Processing: {t['authority']}")
             try:
-                recs = run_target(t)
+                recs = run_target(t, failures=failed_targets)
                 all_listings.extend(recs)
             except Exception as exc:
                 logger.error("Error on %s: %s", t["authority"], exc)
+                if t["authority"] not in failed_targets:
+                    failed_targets.append(t["authority"])
 
         # Deduplicate across sources
         all_listings = deduplicate_listings(all_listings)
@@ -89,10 +93,25 @@ def main():
         # Export CSV outputs from DB. Partial --target runs scope diff.csv so
         # unrelated authorities are not reported as stale.
         n_full = db.export_csv("current_full.csv")
-        n_diff = db.export_diff_csv("diff.csv", run_id=run_id, authorities=target_authorities)
+        n_diff = db.export_diff_csv(
+            "diff.csv",
+            run_id=run_id,
+            authorities=target_authorities,
+            scrape_failed_authorities=failed_targets,
+        )
         print(f"   Exported current_full.csv ({n_full} rows), diff.csv ({n_diff} rows)")
 
-        diff_counts = db.diff_counts(run_id, authorities=target_authorities)
+        diff_counts = db.diff_counts(
+            run_id,
+            authorities=target_authorities,
+            scrape_failed_authorities=failed_targets,
+        )
+        scrape_failed_n = diff_counts.get("SCRAPE_FAILED", 0)
+        if scrape_failed_n:
+            logger.warning(
+                "%d SCRAPE_FAILED record(s) in diff.csv — scrape errors, not confirmed closures",
+                scrape_failed_n,
+            )
         stale_n = diff_counts.get("STALE", 0)
         if stale_n >= DEFAULT_STALE_WARN_THRESHOLD:
             logger.warning(
@@ -120,9 +139,11 @@ def main():
                 writer = csv.writer(f)
                 writer.writerow(["change_type", "authority", "property_name", "details", "timestamp"])
                 writer.writerow([
-                    "PARTIAL_RUN", "target", args.target,
-                    "global changelog baseline not updated",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    sanitize_csv_field("PARTIAL_RUN"),
+                    sanitize_csv_field("target"),
+                    sanitize_csv_field(args.target),
+                    sanitize_csv_field("global changelog baseline not updated"),
+                    sanitize_csv_field(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
                 ])
             logger.info("Partial --target run: left global run_prev.csv changelog baseline unchanged")
             generate_daily_summary(all_listings, skipped_targets=[])
@@ -137,6 +158,14 @@ def main():
         if partial_run:
             print("   Partial --target run: global changelog baseline was not updated")
         print("   Files: current_full.csv  diff.csv  daily_summary.md  changelog_diffs.md")
+
+        if failed_targets:
+            logger.error(
+                "%d active target(s) failed this run: %s",
+                len(failed_targets),
+                ", ".join(failed_targets),
+            )
+            sys.exit(1)
 
     else:
         print("Usage:")

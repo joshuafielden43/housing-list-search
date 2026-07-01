@@ -19,6 +19,8 @@ from typing import Optional, Dict, Any, List
 
 import yaml
 
+from housing_list_search.csv_safety import sanitize_csv_row
+from housing_list_search.sqlite_config import connect_sqlite
 from housing_list_search.status_labels import resolve_status_label
 
 # Centralized paths
@@ -55,7 +57,7 @@ class DatabaseManager:
     def connect(self) -> sqlite3.Connection:
         """Get or create a connection to the database."""
         if self.conn is None:
-            self.conn = sqlite3.connect(self.db_path)
+            self.conn = connect_sqlite(self.db_path)
             self.conn.row_factory = sqlite3.Row
         return self.conn
 
@@ -411,6 +413,16 @@ class DatabaseManager:
                       f"inserted={inserted} updated={updated}")
         return {"inserted": inserted, "updated": updated}
 
+    @staticmethod
+    def _diff_case_sql(scrape_failed_authorities: Optional[list[str]] = None) -> tuple[str, list[str]]:
+        """Build the SCRAPE_FAILED CASE branch and its bind parameters."""
+        failed = [a for a in (scrape_failed_authorities or []) if a]
+        if not failed:
+            return "", []
+        placeholders = ",".join("?" for _ in failed)
+        branch = f"WHEN authority IN ({placeholders}) THEN 'SCRAPE_FAILED'\n                        "
+        return branch, failed
+
     def export_csv(self, path: str = "current_full.csv") -> int:
         """
         Export housing_records to a CSV file. Returns row count written.
@@ -455,27 +467,52 @@ class DatabaseManager:
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
 
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = _csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(dict(zip(fieldnames, row)))
-
+        self._write_csv_atomic(path, fieldnames, rows)
         return len(rows)
+
+    @staticmethod
+    def _write_csv_atomic(path: str, fieldnames: list[str], rows) -> None:
+        """Write CSV via a same-directory temp file, then atomic replace."""
+        import csv as _csv
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                newline="",
+                encoding="utf-8",
+                dir=target.parent,
+                prefix=f".{target.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                tmp_path = f.name
+                writer = _csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(sanitize_csv_row(dict(zip(fieldnames, row))))
+            os.replace(tmp_path, target)
+            tmp_path = None
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     def export_diff_csv(
         self,
         path: str = "diff.csv",
         run_id: str = "",
         authorities: Optional[list[str]] = None,
+        scrape_failed_authorities: Optional[list[str]] = None,
     ) -> int:
         """
         Export a diff CSV: every housing_record row tagged with its change type.
 
         change_type values:
-          NEW     — last_run_id matches the current run_id (first time seen this run)
-          UPDATED — confirmed this run but existed before (last_run_id == run_id, first_seen earlier)
-          STALE   — not confirmed in the current run (last_run_id != run_id or no run_id given)
+          NEW            — last_run_id matches the current run_id (first time seen this run)
+          UPDATED        — confirmed this run but existed before (last_run_id == run_id, first_seen earlier)
+          SCRAPE_FAILED  — authority's scrape failed this run; record not confirmed (not a closure)
+          STALE          — not confirmed in the current run (last_run_id != run_id or no run_id given)
 
         run_id: the same run_id passed to upsert_listings(). When omitted,
             falls back to timestamp comparison (less reliable but still useful).
@@ -483,6 +520,9 @@ class DatabaseManager:
         authorities: optional source-authority scope for partial diagnostic runs.
             When provided, non-selected authorities are omitted instead of being
             reported as STALE.
+
+        scrape_failed_authorities: authorities whose adapters raised this run.
+            Their unconfirmed records are labelled SCRAPE_FAILED instead of STALE.
 
         The intent is that any competent DBA or AI can ingest this CSV and drive
         upserts into their own schema without knowing anything about this tool.
@@ -499,13 +539,15 @@ class DatabaseManager:
             where = f" WHERE authority IN ({placeholders})"
             authority_params = authorities
 
+        scrape_failed_branch, scrape_failed_params = self._diff_case_sql(scrape_failed_authorities)
+
         if run_id:
             c.execute("""
                 SELECT
                     CASE
                         WHEN last_run_id = ? AND (first_run_id = ? OR (first_run_id IS NULL AND first_seen = last_seen)) THEN 'NEW'
                         WHEN last_run_id = ? THEN 'UPDATED'
-                        ELSE 'STALE'
+                        {scrape_failed_branch}ELSE 'STALE'
                     END                 AS change_type,
                     authority           AS source_authority,
                     property_name,
@@ -530,7 +572,8 @@ class DatabaseManager:
                 FROM housing_records
                 {where}
                 ORDER BY change_type, authority, property_name
-            """.format(where=where), [run_id, run_id, run_id, *authority_params])
+            """.format(where=where, scrape_failed_branch=scrape_failed_branch),
+                [run_id, run_id, run_id, *scrape_failed_params, *authority_params])
         else:
             # Fallback when no run_id: STALE = not seen in 7 days
             c.execute("""
@@ -567,19 +610,19 @@ class DatabaseManager:
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
 
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = _csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(dict(zip(fieldnames, row)))
-
+        self._write_csv_atomic(path, fieldnames, rows)
         return len(rows)
 
-    def diff_counts(self, run_id: str, authorities: Optional[list[str]] = None) -> dict[str, int]:
+    def diff_counts(
+        self,
+        run_id: str,
+        authorities: Optional[list[str]] = None,
+        scrape_failed_authorities: Optional[list[str]] = None,
+    ) -> dict[str, int]:
         """
-        Count NEW / UPDATED / STALE rows using the same rules as export_diff_csv().
+        Count NEW / UPDATED / SCRAPE_FAILED / STALE rows using export_diff_csv() rules.
 
-        Returns e.g. {"NEW": 3, "UPDATED": 40, "STALE": 12}.
+        Returns e.g. {"NEW": 3, "UPDATED": 40, "SCRAPE_FAILED": 2, "STALE": 12}.
         authorities scopes partial diagnostic runs so unrelated records are not
         counted as STALE.
         """
@@ -587,8 +630,9 @@ class DatabaseManager:
         conn = self.connect()
         c = conn.cursor()
         authorities = [a for a in (authorities or []) if a]
+        scrape_failed_branch, scrape_failed_params = self._diff_case_sql(scrape_failed_authorities)
         where = ""
-        params: list[str] = [run_id, run_id, run_id]
+        params: list[str] = [run_id, run_id, run_id, *scrape_failed_params]
         if authorities:
             placeholders = ",".join("?" for _ in authorities)
             where = f" WHERE authority IN ({placeholders})"
@@ -598,15 +642,15 @@ class DatabaseManager:
                 CASE
                     WHEN last_run_id = ? AND (first_run_id = ? OR (first_run_id IS NULL AND first_seen = last_seen)) THEN 'NEW'
                     WHEN last_run_id = ? THEN 'UPDATED'
-                    ELSE 'STALE'
+                    {scrape_failed_branch}ELSE 'STALE'
                 END AS change_type,
                 COUNT(*) AS n
             FROM housing_records
             {where}
             GROUP BY change_type
-        """.format(where=where), params)
+        """.format(where=where, scrape_failed_branch=scrape_failed_branch), params)
         counts = {row[0]: row[1] for row in c.fetchall()}
-        for key in ("NEW", "UPDATED", "STALE"):
+        for key in ("NEW", "UPDATED", "SCRAPE_FAILED", "STALE"):
             counts.setdefault(key, 0)
         return counts
 
