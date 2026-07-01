@@ -4,6 +4,8 @@ This file is the handoff document for AI systems (and humans) picking up this pr
 
 Read this before writing any code. Read `SOUL.md` for the mission guardrails.
 
+**Tracker & session memory:** Vikunja project **#9** (“Housing Search”) is the canonical task board. Repo-local agent notes (project ID, sprint crosswalks, housekeeping) live in `.agents/MEMORY.md` — read it when filing or closing work.
+
 ---
 
 ## Session friction note
@@ -234,6 +236,7 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 | `housing_list_search/adapters/` | Platform adapters |
 | `scripts/doctor.py` | Environment health check + --fix (re-ingests TARGETS.md) + --dry-run (CI) |
 | `SOUL.md` | Mission and ethical guardrails |
+| `.agents/MEMORY.md` | Repo-local agent memory: Vikunja #9, sprint crosswalks, dev shortcuts |
 
 ## Output files (every --run)
 

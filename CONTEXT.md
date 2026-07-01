@@ -2,6 +2,8 @@
 
 Ubiquitous language for housing-list-search. Architecture reviews and adapter work should use these terms at seams.
 
+**Task tracking:** Vikunja project **#9** (see `.agents/MEMORY.md`).
+
 ## Core concepts
 
 | Term | Meaning |
