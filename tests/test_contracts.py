@@ -1075,6 +1075,54 @@ class TestCliTargetRun:
         finally:
             os.chdir(orig)
 
+    def test_target_run_preserves_staff_daily_summary(self, tmp_path):
+        import os
+        import sys
+        from pathlib import Path
+
+        from housing_list_search.db import DatabaseManager
+        from housing_list_search.cli import main
+        from housing_list_search.outputs import (
+            PARTIAL_DAILY_SUMMARY_PATH,
+            STAFF_DAILY_SUMMARY_PATH,
+        )
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+
+            staff_summary = "# Staff summary from last full run\n"
+            Path(STAFF_DAILY_SUMMARY_PATH).write_text(staff_summary, encoding="utf-8")
+
+            targets = [
+                {"authority": "City A", "url": "https://a", "scraping_measures": "", "notes": ""},
+            ]
+
+            with (
+                patch.object(sys, "argv", ["main.py", "--run", "--target", "City A"]),
+                patch("housing_list_search.registry.load_targets_to_db", return_value=None),
+                patch("housing_list_search.registry.get_active_targets", return_value=targets),
+                patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
+                patch("housing_list_search.runner.run_target", return_value=[
+                    {
+                        "authority": "City A",
+                        "property_name": "A Prop",
+                        "url": "https://a",
+                        "listing_status": "open",
+                        "status": "Open",
+                    }
+                ]),
+            ):
+                main()
+
+            assert Path(STAFF_DAILY_SUMMARY_PATH).read_text(encoding="utf-8") == staff_summary
+            partial_md = Path(PARTIAL_DAILY_SUMMARY_PATH).read_text(encoding="utf-8")
+            assert "A Prop" in partial_md
+        finally:
+            os.chdir(orig)
+
     def test_run_exits_nonzero_when_target_fails(self, tmp_path):
         import os
         import sys

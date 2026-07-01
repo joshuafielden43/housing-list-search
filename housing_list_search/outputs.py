@@ -1,9 +1,13 @@
 # outputs.py
 from datetime import datetime
 
-def generate_daily_summary(listings, skipped_targets=None):
+PARTIAL_DAILY_SUMMARY_PATH = "daily_summary_partial.md"
+STAFF_DAILY_SUMMARY_PATH = "daily_summary.md"
+
+
+def generate_daily_summary(listings, skipped_targets=None, *, output_path=STAFF_DAILY_SUMMARY_PATH):
     skipped_targets = skipped_targets or []
-    with open("daily_summary.md", "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(f"# 🏠 Santa Clara County Housing Waitlist Summary\n")
         f.write(f"**Run:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
         f.write(f"**Total listings extracted:** {len(listings)}\n\n")
@@ -94,4 +98,4 @@ def generate_daily_summary(listings, skipped_targets=None):
                     f.write(f"  Notes: {note}\n")
                 f.write("\n")
 
-    print("✅ Generated clean, deduplicated daily_summary.md")
+    print(f"✅ Generated clean, deduplicated {output_path}")

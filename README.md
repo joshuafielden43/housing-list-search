@@ -95,7 +95,7 @@ PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibilit
 - Commits in PRs should be atomic and have a subject line under 72 characters.
 - CI runs unit tests only (`pytest -m "not integration"`). Live portal tests are opt-in: `pytest -m integration`.
 - After each `--run`, check `diff.csv` for `STALE` rows; when the count is high, prune with `scripts/db_manage.py prune`.
-- `python main.py --run --target "City Name"` is a partial diagnostic run: `diff.csv` is scoped to the selected authority, `run_prev.csv` is not updated, and `daily_summary.md` intentionally contains only that subset.
+- `python main.py --run --target "City Name"` is a partial diagnostic run: `diff.csv` is scoped to the selected authority, `run_prev.csv` is not updated, staff-facing `daily_summary.md` is preserved, and a diagnostic `daily_summary_partial.md` is written instead.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
 
 ---
