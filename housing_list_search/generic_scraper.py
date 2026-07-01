@@ -69,10 +69,10 @@ def generic_scrape(authority: str, url: str, html: str):
             listings.append(listing)
 
     # Extract from PDF flyers
-    from housing_list_search.pdf_scraper import extract_from_pdf
+    from housing_list_search.extraction.pdf import extract_records_from_pdf
     for pdf_url in pdf_links[:12]:
-        pdf_listings = extract_from_pdf(pdf_url, authority)
-        listings.extend(pdf_listings)
+        for rec in extract_records_from_pdf(pdf_url, authority):
+            listings.append(rec.to_dict())
 
     print(f"   → Generic scraper found {len(listings)} cleaned listings (including PDFs)")
     return listings

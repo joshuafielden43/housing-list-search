@@ -385,6 +385,145 @@ def parse_housing_line(line: str, document_url: str = "", page_number: int = 0) 
     return record
 
 
+def normalize_docaccess_url(url: str) -> tuple[str, str]:
+    """Unwrap docaccess.com viewer URLs; returns (real_url, wrapper_url)."""
+    parsed = urlparse(url)
+    if parsed.hostname in {"docaccess.com", "www.docaccess.com"} and "docviewer" in parsed.path:
+        query = parse_qs(parsed.query)
+        wrapped = query.get("url", [""])[0]
+        if wrapped:
+            return unquote(wrapped), url
+    return url, ""
+
+
+def _extract_flyer_page(
+    authority: str,
+    document_url: str,
+    page_number: int,
+    full_text: str,
+) -> List[HousingRecord]:
+    """Extractor for single-page Gilroy / Eden Housing style flyers."""
+    t = full_text
+    t_lower = t.lower()
+    records: List[HousingRecord] = []
+
+    if "apartments" not in t_lower and "manor" not in t_lower:
+        return []
+
+    property_name = ""
+    m = re.search(r"([A-Z][A-Za-z][A-Za-z ]{2,30}?)\s*\n\s*Apartments", t)
+    if m:
+        property_name = (m.group(1) + " Apartments").strip()
+    else:
+        m = re.search(r"^([A-Z][A-Za-z][A-Za-z ]{4,40})", t)
+        if m:
+            property_name = m.group(1).strip()
+
+    if len(property_name) < 5 or property_name.lower() in ("apartments", "manor"):
+        slug = ""
+        if "/DocumentCenter/View/" in document_url:
+            m = re.search(r"/DocumentCenter/View/\d+/([A-Za-z0-9_-]+)", document_url)
+            if m:
+                slug = m.group(1)
+        if slug:
+            slug = slug.replace("-", " ").replace("_", " ")
+            slug = re.sub(r"\s*(Flyer|Event|Calendar|50AMI|60AMI|50%|60%)\s*", " ", slug, flags=re.I).strip()
+            if len(slug) > 4:
+                property_name = slug
+
+    address = ""
+    m = re.search(r"(\d+[^,\n]{4,40}St\.?|Ave\.?)\s*\n\s*([A-Za-z ,]+CA\s*\d{5})", t)
+    if m:
+        address = (m.group(1) + ", " + m.group(2)).strip()
+    else:
+        m = re.search(r"(\d+[^,\n]+,\s*CA\s*\d{5})", t)
+        if m:
+            address = m.group(1).strip()
+
+    phone = ""
+    m = re.search(r"\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}", t)
+    if m:
+        phone = m.group(0)
+
+    ami = ""
+    if "50ami" in document_url.lower():
+        ami = "50% AMI"
+    elif "60ami" in document_url.lower():
+        ami = "60% AMI"
+
+    bedrooms = ""
+    rent = ""
+    m = re.search(r"(\d+)\s*(?:Bedroom|BR)[^$]*?Rent\s*\$?\s*([\d,]+)", t, re.IGNORECASE)
+    if m:
+        bedrooms = f"{m.group(1)} Bedroom"
+        rent = m.group(2).replace(",", "")
+
+    available = ""
+    if re.search(r"available\s*now|available!!!", t, re.I):
+        available = "Available Now"
+    elif re.search(r"(\d+)\s*(?:unit|units)\s*(?:available|avail)", t, re.I):
+        available = "Some units available"
+
+    manager = "Eden Housing" if "eden housing" in t_lower else ""
+
+    income: dict[str, str] = {}
+    for m in re.finditer(r"(\d+)\s*(Person|People)\s*\$?\s*([\d,]+)", t, re.IGNORECASE):
+        income[m.group(1) + " Person"] = m.group(3).replace(",", "")
+
+    notes: list[str] = []
+    if "62 or older" in t_lower:
+        notes.append("Age restricted (62+)")
+    if "pet friendly" in t_lower:
+        notes.append("Pet friendly")
+    if ami:
+        notes.append(ami)
+    if rent:
+        notes.append(f"Rent ${rent}")
+    if available:
+        notes.append(available)
+    if income:
+        notes.append("Income: " + ", ".join(f"{k}: ${v}" for k, v in income.items()))
+
+    records.append(HousingRecord(
+        authority=authority,
+        property_name=property_name or "Unknown Property",
+        address=address,
+        phone=phone,
+        email="",
+        property_manager=manager,
+        community_type="Senior" if "senior" in t_lower or "62" in t_lower else "",
+        bedrooms=bedrooms,
+        supportive_services="",
+        confidence="medium",
+        notes="; ".join(notes),
+        document_url=document_url,
+        page_number=page_number,
+    ))
+    return records
+
+
+def _extract_flyer_pages_from_pdf(
+    pdf_bytes: bytes,
+    authority: str,
+    document_url: str,
+) -> List[HousingRecord]:
+    """Try whole-page flyer extraction for each page."""
+    if not fitz:
+        return []
+
+    records: List[HousingRecord] = []
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            for page_idx, page in enumerate(doc, start=1):
+                text = page.get_text("text") or ""
+                page_records = _extract_flyer_page(authority, document_url, page_idx, text)
+                if page_records:
+                    records.extend(page_records)
+    except Exception as exc:
+        logger.warning("[pdf] Flyer extraction failed for %s: %s", document_url, exc)
+    return records
+
+
 def extract_records_from_pdf(
     pdf_url: str,
     authority: str = "City of Gilroy",
@@ -392,33 +531,52 @@ def extract_records_from_pdf(
 ) -> List[HousingRecord]:
     """
     High-level entry point.
-    Tries table extraction first (better for structured lists), then falls back
-    to line-by-line parsing.
+    Tries table extraction first, then flyer pages, then line-by-line parsing,
+    then marker-pdf (optional, when installed).
     """
-    # Try table extraction first (preferred for the kind of PDFs we care about)
-    table_records = extract_records_from_pdf_tables(pdf_url, authority=authority)
+    real_url, _wrapper = normalize_docaccess_url(pdf_url)
+    logger.info("[pdf] Extracting: %s", real_url)
+
+    table_records = extract_records_from_pdf_tables(real_url, authority=authority)
     if table_records:
         if not include_low_confidence:
             table_records = [r for r in table_records if r.confidence != "low"]
+        logger.info("[pdf] Table extraction produced %d records from %s", len(table_records), real_url)
         return table_records
 
-    # Fallback to line-based parsing
     try:
-        pdf_bytes = _fetch_pdf(pdf_url)
-        text_lines = extract_text_lines_from_pdf(pdf_bytes)
+        pdf_bytes = _fetch_pdf(real_url)
     except Exception as e:
-        print(f"   [pdf] Failed to process {pdf_url}: {e}")
+        logger.warning("[pdf] Failed to fetch %s: %s", real_url, e)
         return []
 
+    flyer_records = _extract_flyer_pages_from_pdf(pdf_bytes, authority, real_url)
+    if flyer_records:
+        logger.info("[pdf] Flyer extraction produced %d records from %s", len(flyer_records), real_url)
+        return flyer_records
+
+    text_lines = extract_text_lines_from_pdf(pdf_bytes)
     records: List[HousingRecord] = []
     for page_number, line in text_lines:
-        rec = parse_housing_line(line, document_url=pdf_url, page_number=page_number)
+        rec = parse_housing_line(line, document_url=real_url, page_number=page_number)
         if rec:
             rec.authority = authority
             if include_low_confidence or rec.confidence != "low":
                 records.append(rec)
 
-    return records
+    if records:
+        logger.info("[pdf] Line extraction produced %d records from %s", len(records), real_url)
+        return records
+
+    from housing_list_search.extraction.marker_pdf import extract_records_via_marker
+
+    marker_records = extract_records_via_marker(pdf_bytes, authority, real_url)
+    if marker_records:
+        if not include_low_confidence:
+            marker_records = [r for r in marker_records if r.confidence != "low"]
+        return marker_records
+
+    return []
 
 
 # ------------------------------------------------------------------
@@ -435,6 +593,8 @@ def extract_records_from_pdf_tables(
     """
     if pdfplumber is None:
         return []
+
+    pdf_url, _wrapper = normalize_docaccess_url(pdf_url)
 
     try:
         pdf_bytes = _fetch_pdf(pdf_url)

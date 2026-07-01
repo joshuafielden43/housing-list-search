@@ -274,14 +274,14 @@ def _looks_like_flyer(url: str) -> bool:
 
 def _process_pdfs(pdf_urls: list[str], authority: str) -> list[dict]:
     """Run discovered PDF flyers through the PDF extraction layer."""
-    from housing_list_search.pdf_scraper import extract_from_pdf
+    from housing_list_search.extraction.pdf import extract_records_from_pdf
 
     records: list[dict] = []
     for pdf_url in pdf_urls:
         try:
             logger.info("[civicplus] Extracting PDF: %s", pdf_url)
-            for rec in extract_from_pdf(pdf_url, authority):
-                r = dict(rec.__dict__) if hasattr(rec, "__dict__") else dict(rec)
+            for rec in extract_records_from_pdf(pdf_url, authority):
+                r = rec.to_dict()
                 base = _base_record(authority, r.get("extraction_method", "pdf_flyer"), pdf_url)
                 for k, v in base.items():
                     r.setdefault(k, v)

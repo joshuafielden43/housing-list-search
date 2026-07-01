@@ -21,7 +21,7 @@ import yaml
 
 from housing_list_search.csv_safety import sanitize_csv_row
 from housing_list_search.sqlite_config import connect_sqlite
-from housing_list_search.status_labels import resolve_status_label
+
 
 # Centralized paths
 DB_PATH = Path("housing_registry.db")
@@ -324,44 +324,41 @@ class DatabaseManager:
             run_id = now
         inserted = updated = 0
 
-        for item in listings:
-            if not isinstance(item, dict):
-                item = item.to_dict() if hasattr(item, "to_dict") else vars(item)
+        from housing_list_search.listing import coerce_listing, listing_to_row
 
-            authority = (item.get("authority") or item.get("source_authority") or "").strip()
-            property_name = (item.get("property_name") or "").strip()
-            url = (item.get("url") or item.get("document_url") or "").strip()
+        for item in listings:
+            raw = coerce_listing(item)
+            row = listing_to_row(raw, now=now)
+
+            authority = row["authority"]
+            property_name = row["property_name"]
+            url = row["url"]
 
             if not (authority and property_name):
                 continue
 
-            raw_json = json.dumps(item, default=str)
-            last_seen = item.get("last_seen") or now
-            first_seen_val = item.get("first_seen") or now
-            listing_status = (item.get("listing_status") or "").strip()
-            status = resolve_status_label(item)
-            notes = (item.get("notes") or "").strip()
-            source = (item.get("source") or "").strip()
-            source_url = (item.get("source_url") or item.get("document_url") or "").strip()
-            expires_at = (item.get("expires_at") or "").strip()
-            address = (item.get("address") or "").strip()
-            phone = (item.get("phone") or "").strip()
-            email = (item.get("email") or "").strip()
-            deadline = (item.get("deadline") or "").strip()
-            bedrooms = str(item.get("bedrooms") or "").strip()
-            income_limits = str(item.get("income_limits") or "").strip()
-            unit_types = str(item.get("unit_types") or "").strip()
-            # eligibility_flags may be a list; store as pipe-joined string
-            flags = item.get("eligibility_flags") or []
-            if isinstance(flags, list):
-                eligibility_flags = "|".join(str(f) for f in flags)
-            else:
-                eligibility_flags = str(flags)
-            confidence = str(item.get("confidence") or "").strip()
-            administrator = str(item.get("administrator") or "").strip()
-            administrator_url = str(item.get("administrator_url") or "").strip()
-            administrator_phone = str(item.get("administrator_phone") or "").strip()
-            administrator_contact = str(item.get("administrator_contact") or "").strip()
+            raw_json = json.dumps(raw, default=str)
+            last_seen = row["last_seen"]
+            first_seen_val = row["first_seen"]
+            listing_status = row["listing_status"]
+            status = row["status"]
+            notes = row["notes"]
+            source = row["source"]
+            source_url = row["source_url"]
+            expires_at = row["expires_at"]
+            address = row["address"]
+            phone = row["phone"]
+            email = row["email"]
+            deadline = row["deadline"]
+            bedrooms = row["bedrooms"]
+            income_limits = row["income_limits"]
+            unit_types = row["unit_types"]
+            eligibility_flags = row["eligibility_flags"]
+            confidence = row["confidence"]
+            administrator = row["administrator"]
+            administrator_url = row["administrator_url"]
+            administrator_phone = row["administrator_phone"]
+            administrator_contact = row["administrator_contact"]
 
             # Check if record exists
             c.execute(

@@ -252,7 +252,7 @@ class TestDedupeSharedURL:
         assert result[0]["authority"] == "SCCHA"  # higher confidence kept
 
     def test_housing_record_dataclass_does_not_crash_dedupe(self):
-        """HousingRecord objects from pdf_scraper must not cause AttributeError in dedupe."""
+        """HousingRecord objects from extraction layer must not cause AttributeError in dedupe."""
         from housing_list_search.dedupe import deduplicate_listings
         from housing_list_search.extraction.pdf import HousingRecord
         rec = HousingRecord(
