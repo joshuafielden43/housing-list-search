@@ -33,7 +33,7 @@ Epic **#389** (portable routing + record identity) — **#417**, **#419** done 2
 
 | Commit | Work | Vikunja |
 |--------|------|---------|
-| *(pending)* | `persistence_url()` surrogate keys; `JOHN_STEWART_AUTHORITY` | #417, #419 |
+| `7346c40` | `persistence_url()` surrogate keys; `JOHN_STEWART_AUTHORITY` | #417, #419 |
 
 ---
 
