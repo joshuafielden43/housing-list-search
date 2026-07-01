@@ -1,7 +1,7 @@
 """Tests for the canonical Listing persistence seam."""
 
 from housing_list_search.extraction.pdf import HousingRecord
-from housing_list_search.listing import coerce_listing, listing_to_row
+from housing_list_search.listing import coerce_listing, listing_to_row, persistence_url
 
 
 class TestCoerceListing:
@@ -21,6 +21,40 @@ class TestListingToRow:
     def test_authority_from_source_authority(self):
         row = listing_to_row({"source_authority": "SCCHA", "property_name": "X", "url": "https://a"})
         assert row["authority"] == "SCCHA"
+
+    def test_empty_url_uses_address_surrogate(self):
+        row = listing_to_row({
+            "authority": "Morgan Hill",
+            "property_name": "Fiesta Gardens",
+            "url": "",
+            "address": "123 Main St, Morgan Hill, CA 95037",
+        })
+        assert row["url"].startswith("hls:addr:")
+
+    def test_distinct_empty_url_records_do_not_collide(self):
+        from housing_list_search.db import DatabaseManager
+        import os
+        import tempfile
+
+        listings = [
+            {
+                "authority": "Morgan Hill",
+                "property_name": "Fiesta Gardens",
+                "url": "",
+                "address": "",
+            },
+            {
+                "authority": "Morgan Hill",
+                "property_name": "De Rose Manor",
+                "url": "",
+                "address": "",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager(os.path.join(tmp, "test.db"))
+            result = db.upsert_listings(listings, run_id="run1")
+            assert result["inserted"] == 2
+            assert db.get_record_count() == 2
 
     def test_url_from_document_url(self):
         row = listing_to_row({

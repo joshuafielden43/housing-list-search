@@ -104,6 +104,10 @@ import re
 from housing_list_search.scraper import polite_get
 from datetime import datetime as _dt
 
+# Single authority for all John Stewart sources — avoids STALE churn when the
+# same property is seen via SCCHA directory, jscosccha.com, or jsco.net.
+JOHN_STEWART_AUTHORITY = "John Stewart Company"
+
 
 def _normalize(text: str) -> str:
     """Collapse whitespace and normalize a text blob."""
@@ -190,7 +194,7 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
 
         now_iso = _dt.now().isoformat()
         listing = {
-            "authority": "Santa Clara County Housing Authority (SCCHA directory - John Stewart properties)",
+            "authority": JOHN_STEWART_AUTHORITY,
             "property_name": name or address.split(",")[0].strip(),
             "address": address,
             "url": detail_url or url,
@@ -332,7 +336,7 @@ def _scrape_direct_john_stewart(url: str) -> List[Dict[str, Any]]:
 
     if name or address:
         rec = {
-            "authority": "John Stewart Company (SCCHA-affiliated properties)",
+            "authority": JOHN_STEWART_AUTHORITY,
             "property_name": name or address.split(',')[0].strip(),
             "address": address,
             "phone": phone,
@@ -422,7 +426,7 @@ def _scrape_jsco_portfolio(url: str) -> List[Dict[str, Any]]:
             modified = (item.get("modified") or "")[:10]
 
             listings.append({
-                "authority": "John Stewart Company (jsco.net portfolio)",
+                "authority": JOHN_STEWART_AUTHORITY,
                 "property_name": name,
                 "address": f"{city}, CA" if city else "",
                 "url": item.get("link") or "",

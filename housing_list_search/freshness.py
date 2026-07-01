@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from housing_list_search.listing import coerce_listing, persistence_url
 from housing_list_search.status_labels import resolve_status_label
 
 ListingKey = tuple[str, str, str]
@@ -26,9 +27,14 @@ ListingKey = tuple[str, str, str]
 
 def listing_identity(item: dict[str, Any]) -> ListingKey:
     """Canonical (authority, property_name, url) for a listing dict or snapshot row."""
-    auth = (item.get("authority") or item.get("source_authority") or "").strip()
-    name = (item.get("property_name") or "").strip()
-    url = (item.get("url") or item.get("document_url") or "").strip()
+    raw = coerce_listing(item)
+    auth = (raw.get("authority") or raw.get("source_authority") or "").strip()
+    name = (raw.get("property_name") or "").strip()
+    stored = (item.get("url") or "").strip()
+    if stored.startswith("hls:") or "://" in stored:
+        url = stored
+    else:
+        url = persistence_url(raw)
     return auth, name, url
 
 
@@ -81,11 +87,11 @@ def stale_from_db_rows(
     for row in diff_rows:
         if row.get("change_type") != "STALE":
             continue
-        key = (
-            (row.get("source_authority") or row.get("authority") or "").strip(),
-            (row.get("property_name") or "").strip(),
-            (row.get("url") or "").strip(),
-        )
+        key = listing_identity({
+            "authority": row.get("source_authority") or row.get("authority") or "",
+            "property_name": row.get("property_name") or "",
+            "url": row.get("url") or "",
+        })
         if key not in removed_keys:
             stale.append(key)
     return stale

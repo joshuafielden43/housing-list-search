@@ -22,8 +22,8 @@ class TestComputeRunDiff:
         prev = [{"authority": "C", "property_name": "Old", "url": ""}]
         curr = [{"authority": "C", "property_name": "New", "url": ""}]
         diff = compute_run_diff(prev, curr)
-        assert ("C", "Old", "") in diff.removed
-        assert ("C", "New", "") in diff.added
+        assert diff.removed[0][1] == "Old"
+        assert diff.added[0][1] == "New"
 
     def test_same_name_different_url_not_deduped(self):
         prev = [{"authority": "C", "property_name": "Oak", "url": "https://a"}]
@@ -41,4 +41,4 @@ class TestStaleFromDbRows:
             {"change_type": "STALE", "source_authority": "City", "property_name": "Maybe", "url": ""},
         ]
         stale = stale_from_db_rows(diff_rows, removed_keys=removed)
-        assert stale == [("City", "Maybe", "")]
+        assert stale[0][:2] == ("City", "Maybe")

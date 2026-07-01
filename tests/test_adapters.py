@@ -48,10 +48,13 @@ class TestJohnStewartAdapter:
                 "for-new-applicants/properties-list/"
             )
 
+        from housing_list_search.adapters.john_stewart import JOHN_STEWART_AUTHORITY
+
         names = {r["property_name"] for r in records}
         assert "Oak Creek Apartments" in names
         assert "De Rose Manor" in names
         assert any("95112" in (r.get("address") or "") for r in records)
+        assert all(r["authority"] == JOHN_STEWART_AUTHORITY for r in records)
 
 
 # ---------------------------------------------------------------------------

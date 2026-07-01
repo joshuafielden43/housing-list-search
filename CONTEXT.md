@@ -9,7 +9,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | Term | Meaning |
 |------|---------|
 | **Target** | One row from `TARGETS.md` → SQLite `targets`: authority, URL, `scraping_measures`, administrator fields |
-| **Listing** | One property or registration opportunity. Canonical shape via `listing_to_row()` in `listing.py` |
+| **Listing** | One property or registration opportunity. Canonical shape via `listing_to_row()` in `listing.py`. Empty URLs get `hls:` surrogate keys via `persistence_url()` |
 | **Run** | One `python main.py --run` invocation; identified by `run_id` (`YYYYMMDDTHHMMSS`) |
 | **RunPipeline** | `pipeline.py` — scrape → dedupe → persist → export; `cli.py` delegates here |
 | **Measure** | Token in `scraping_measures` routing to an adapter (`bloom`, `housekeys`, `civicplus`, `waf_blocked`, …) |

@@ -11,7 +11,35 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from housing_list_search.dedupe import _norm_address
 from housing_list_search.status_labels import resolve_status_label
+
+_SURROGATE_PREFIX = "hls:"
+
+
+def persistence_url(raw: dict[str, Any]) -> str:
+    """
+    URL used for listing identity (DB unique key, changelog, freshness).
+
+    When adapters have no per-property link, derive a stable surrogate so
+    distinct records do not collide on empty url.
+    """
+    url = (raw.get("url") or raw.get("document_url") or "").strip()
+    if url:
+        return url
+
+    address = (raw.get("address") or "").strip()
+    addr_key = _norm_address(address)
+    if addr_key and len(addr_key) >= 6 and any(c.isdigit() for c in addr_key):
+        return f"{_SURROGATE_PREFIX}addr:{addr_key}"
+
+    source_url = (raw.get("source_url") or "").strip()
+    name = (raw.get("property_name") or "").strip()
+    if source_url and name:
+        return f"{_SURROGATE_PREFIX}src:{source_url}#{name}"
+    if name:
+        return f"{_SURROGATE_PREFIX}prop:{name}"
+    return ""
 
 
 def coerce_listing(item: Any) -> dict[str, Any]:
@@ -54,7 +82,7 @@ def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
 
     authority = (raw.get("authority") or raw.get("source_authority") or "").strip()
     property_name = (raw.get("property_name") or "").strip()
-    url = (raw.get("url") or raw.get("document_url") or "").strip()
+    url = persistence_url(raw)
 
     return {
         "authority": authority,
