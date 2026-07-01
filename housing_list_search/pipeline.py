@@ -177,11 +177,11 @@ class RunPipeline:
             )
         with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["change_type", "authority", "property_name", "details", "timestamp"])
+            writer.writerow(["change_type", "authority", "property_name", "url", "details"])
             writer.writerow([
                 sanitize_csv_field("PARTIAL_RUN"),
                 sanitize_csv_field("target"),
                 sanitize_csv_field(target_filter),
+                sanitize_csv_field(""),
                 sanitize_csv_field("global changelog baseline not updated"),
-                sanitize_csv_field(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             ])

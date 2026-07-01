@@ -22,6 +22,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **STALE** | DB record not confirmed in current `run_id` |
 | **Partial run** | `--target "City"` — scopes `diff.csv` STALE; preserves global `run_prev.csv` |
 | **diff.csv** | DB-backed delta (`NEW` / `UPDATED` / `STALE` / `SCRAPE_FAILED`) |
+| **Freshness** | `freshness.py` — listing identity `(authority, property_name, url)`; changelog reads STALE from diff.csv |
 | **current_full.csv** | Full `housing_records` export |
 
 ## Ethics & access
