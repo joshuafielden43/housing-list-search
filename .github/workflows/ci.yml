@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      HLS_DISABLE_MARKER_PDF: "1"  # optional OCR dep; see requirements-ocr.txt
 
     steps:
       - uses: actions/checkout@v4

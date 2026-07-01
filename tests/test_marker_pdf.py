@@ -1,7 +1,7 @@
 """Unit tests for marker-pdf fallback (no model load)."""
 
-import os
-from unittest.mock import MagicMock, patch
+import pytest
+from unittest.mock import patch
 
 from housing_list_search.extraction.marker_pdf import (
     marker_available,
@@ -9,18 +9,24 @@ from housing_list_search.extraction.marker_pdf import (
 )
 
 
+def _reset_marker_cache() -> None:
+    import housing_list_search.extraction.marker_pdf as mp
+
+    mp._MARKER_CHECKED = False
+    mp._MARKER_AVAILABLE = False
+
+
 class TestMarkerAvailable:
     def test_disabled_by_env(self, monkeypatch):
         monkeypatch.setenv("HLS_DISABLE_MARKER_PDF", "1")
-        # Reset module cache
-        import housing_list_search.extraction.marker_pdf as mp
-        mp._MARKER_CHECKED = False
+        _reset_marker_cache()
         assert marker_available() is False
 
     def test_available_when_installed(self, monkeypatch):
+        """Skipped on CI — marker-pdf is optional (requirements-ocr.txt only)."""
+        pytest.importorskip("marker.converters.pdf")
         monkeypatch.delenv("HLS_DISABLE_MARKER_PDF", raising=False)
-        import housing_list_search.extraction.marker_pdf as mp
-        mp._MARKER_CHECKED = False
+        _reset_marker_cache()
         assert marker_available() is True
 
 
