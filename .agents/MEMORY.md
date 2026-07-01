@@ -29,11 +29,12 @@ GitHub issues **#8–#14** (architecture review, Jul 2026) were filed by mistake
 | `9b066b5` | `freshness.py`, changelog ↔ diff alignment | #415, #626 |
 | `a26efa1` | `AGENTS.md` v0.8.7 | #409 |
 
-Epic **#389** (portable routing + record identity) — **#417**, **#419** done 2026-07-01; still open: **#432**.
+Epic **#389** (portable routing + record identity) — **complete** as of 2026-07-01 (#432 schema consolidation).
 
 | Commit | Work | Vikunja |
 |--------|------|---------|
 | `7346c40` | `persistence_url()` surrogate keys; `JOHN_STEWART_AUTHORITY` | #417, #419 |
+| *(pending)* | `schema.py` — unified DDL; `DEFAULT_DB_PATH` | #432 |
 
 ---
 

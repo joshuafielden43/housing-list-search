@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+DEFAULT_DB_PATH = Path("housing_registry.db")
 SQLITE_BUSY_TIMEOUT_MS = 5000
 
 

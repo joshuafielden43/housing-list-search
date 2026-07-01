@@ -20,11 +20,12 @@ from typing import Optional, Dict, Any, List
 import yaml
 
 from housing_list_search.csv_safety import sanitize_csv_row
-from housing_list_search.sqlite_config import connect_sqlite
+from housing_list_search.schema import init_schema
+from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
 
 
 # Centralized paths
-DB_PATH = Path("housing_registry.db")
+DB_PATH = DEFAULT_DB_PATH
 SNAPSHOTS_DIR = Path("snapshots")
 DEFAULT_SETTINGS_PATH = Path.home() / ".housing-list-search" / "settings.yaml"
 
@@ -85,81 +86,8 @@ class DatabaseManager:
             return {"database": {"prune": {"default_not_seen_days": default_prune_days}}}
 
     def init_db(self, force: bool = False) -> bool:
-        """Initialize the database schema if needed."""
-        conn = self.connect()
-        c = conn.cursor()
-
-        # Targets live in registry.py (TARGETS.md → targets table). This module
-        # owns housing_records and run_history only — see PROJECT_CONTRACT_v0.8.6.md.
-
-        # housing_records table - the main data store for listings + freshness
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS housing_records (
-                id INTEGER PRIMARY KEY,
-                authority TEXT,
-                property_name TEXT,
-                address TEXT,
-                phone TEXT,
-                email TEXT,
-                url TEXT,
-                status TEXT,
-                listing_status TEXT,
-                deadline TEXT,
-                notes TEXT,
-                bedrooms TEXT,
-                income_limits TEXT,
-                unit_types TEXT,
-                eligibility_flags TEXT,
-                confidence TEXT,
-                administrator TEXT,
-                administrator_url TEXT,
-                administrator_phone TEXT,
-                administrator_contact TEXT,
-                last_seen TEXT,
-                first_seen TEXT,
-                last_run_id TEXT,
-                first_run_id TEXT,
-                source TEXT,
-                source_url TEXT,
-                expires_at TEXT,
-                raw_data TEXT,
-                UNIQUE(authority, property_name, url)
-            )
-        """)
-
-        # Lightweight migration: add columns for DBs created before v0.8.6
-        existing_cols = {row[1] for row in c.execute("PRAGMA table_info(housing_records)").fetchall()}
-        for col, coltype in [
-            ("listing_status", "TEXT"),
-            ("bedrooms", "TEXT"),
-            ("income_limits", "TEXT"),
-            ("unit_types", "TEXT"),
-            ("eligibility_flags", "TEXT"),
-            ("confidence", "TEXT"),
-            ("administrator", "TEXT"),
-            ("administrator_url", "TEXT"),
-            ("administrator_phone", "TEXT"),
-            ("administrator_contact", "TEXT"),
-            ("last_run_id", "TEXT"),
-            ("first_run_id", "TEXT"),
-        ]:
-            if col not in existing_cols:
-                c.execute(f"ALTER TABLE housing_records ADD COLUMN {col} {coltype}")
-
-        # run_history for audit
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS run_history (
-                id INTEGER PRIMARY KEY,
-                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-                command TEXT,
-                authority_filter TEXT,
-                rows_before INTEGER,
-                rows_after INTEGER,
-                notes TEXT
-            )
-        """)
-
-        conn.commit()
+        """Initialize all housing_registry.db tables (see schema.py)."""
+        init_schema(self.connect())
         return True
 
     def drop_db(self, confirm: str = "") -> bool:

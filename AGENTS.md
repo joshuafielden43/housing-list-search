@@ -226,9 +226,11 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Canonical `listing_to_row()` at persistence seam |
 | `housing_list_search/freshness.py` | Unified change semantics (diff.csv ↔ changelog) |
+| `housing_list_search/schema.py` | Sole owner of `housing_registry.db` DDL (`targets`, `housing_records`, `run_history`) |
+| `housing_list_search/sqlite_config.py` | `DEFAULT_DB_PATH`, WAL + busy-timeout connection helper |
 | `housing_list_search/db.py` | DatabaseManager: upsert_listings, export_csv, export_diff_csv, prune |
 | `housing_list_search/changelog.py` | Staff-facing changelog; reads STALE from diff.csv |
-| `housing_list_search/registry.py` | TARGETS.md → SQLite `targets` table (sole owner of that schema) |
+| `housing_list_search/registry.py` | TARGETS.md → SQLite `targets` ingest + sanitization |
 | `housing_list_search/scraper.py` | `polite_get()` — the only approved HTTP entry point |
 | `housing_list_search/extraction/bloom_housing.py` | Bloom Housing platform adapter (`BLOOM_DOMAINS`) |
 | `housing_list_search/extraction/pdf.py` | PDF extraction (tables, flyers, marker fallback) |

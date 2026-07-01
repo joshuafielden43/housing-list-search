@@ -2,54 +2,26 @@
 """
 TARGETS.md → SQLite targets table.
 
-This module is the sole owner of the `targets` schema in housing_registry.db.
-Listing persistence (housing_records, run_history) lives in db.py.
+Ingestion and sanitization for the `targets` table. DDL lives in schema.py.
 """
 import sqlite3
-import csv
-from datetime import datetime
-import os
 import re
 import logging
 
-from housing_list_search.sqlite_config import connect_sqlite
+from housing_list_search.schema import init_schema
+from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "housing_registry.db"
+# Module-level path for tests that monkeypatch; defaults to shared constant.
+DB_PATH = str(DEFAULT_DB_PATH)
 
-def init_db():
-    conn = connect_sqlite(DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS targets (
-        id INTEGER PRIMARY KEY,
-        authority TEXT,
-        url TEXT,
-        notes TEXT,
-        scraping_measures TEXT,
-        priority TEXT,
-        last_seen TEXT,
-        last_successful_scrape TEXT,
-        confidence_score REAL DEFAULT 0.0,
-        administrator TEXT,
-        administrator_url TEXT,
-        administrator_phone TEXT,
-        administrator_contact TEXT
-    )''')
 
-    # Lightweight migration for existing databases
-    existing_cols = [row[1] for row in c.execute("PRAGMA table_info(targets)").fetchall()]
-    new_cols = {
-        "administrator": "TEXT",
-        "administrator_url": "TEXT",
-        "administrator_phone": "TEXT",
-        "administrator_contact": "TEXT"
-    }
-    for col, col_type in new_cols.items():
-        if col not in existing_cols:
-            c.execute(f"ALTER TABLE targets ADD COLUMN {col} {col_type}")
-
-    conn.commit()
+def init_db(db_path: str | None = None) -> None:
+    """Ensure housing_registry.db schema exists (delegates to schema.py)."""
+    path = db_path or DB_PATH
+    conn = connect_sqlite(path)
+    init_schema(conn)
     conn.close()
     print("✅ SQLite registry initialized")
 

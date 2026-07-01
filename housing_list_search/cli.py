@@ -36,9 +36,9 @@ def main():
             STAFF_DAILY_SUMMARY_PATH,
         )
 
-        load_targets_to_db()
         db = get_manager()
         db.init_db()
+        load_targets_to_db()
 
         partial_run = bool(args.target)
 
