@@ -142,18 +142,39 @@ def test_prune_all_stale_combines_rules(temp_db):
 
 
 def test_snapshot_creates_archive(temp_db, tmp_path):
-    mgr = temp_db
-    # Create a fake current_full.csv for snapshot test
-    csv = Path("current_full.csv")
-    csv.write_text("test,data\n1,2\n")
+    import json
+    import os
+    import tarfile
 
+    mgr = temp_db
+    orig = os.getcwd()
+    os.chdir(tmp_path)
     try:
+        Path("current_full.csv").write_text("test,data\n1,2\n", encoding="utf-8")
+
+        conn = mgr.connect()
+        conn.execute(
+            "INSERT INTO housing_records (authority, property_name, last_seen) VALUES (?, ?, ?)",
+            ("Snapshot City", "Snapshot Prop", "2026-06-01"),
+        )
+        conn.commit()
+
         path = mgr.snapshot("test-snapshot")
         assert path.exists()
         assert path.suffix == ".tgz"
+
+        with tarfile.open(path, "r:gz") as tar:
+            names = tar.getnames()
+            assert "manifest.json" in names
+            assert "current_full.csv" in names
+            assert "housing_registry.db" in names
+
+            manifest = json.loads(tar.extractfile("manifest.json").read().decode("utf-8"))
+            assert manifest["includes_db"] is True
+            assert manifest["includes_csv"] is True
+            assert manifest["record_count"] == 1
     finally:
-        if csv.exists():
-            csv.unlink()
+        os.chdir(orig)
 
 
 def test_settings_default_when_no_file(temp_db):
