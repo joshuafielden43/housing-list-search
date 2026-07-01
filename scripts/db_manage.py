@@ -11,6 +11,7 @@ Usage examples:
     python scripts/db_manage.py drop --confirm DROP
     python scripts/db_manage.py prune --all-stale --dry-run
     python scripts/db_manage.py prune --not-seen-since 30
+    python scripts/db_manage.py prune --from-diff --dry-run
     python scripts/db_manage.py snapshot --name validation-gilroy
     python scripts/db_manage.py info
 """
@@ -45,6 +46,8 @@ def main():
     prune_p.add_argument("--dry-run", action="store_true", help="Show what would be deleted")
     prune_p.add_argument("--authority", help="Limit to a specific authority")
     prune_p.add_argument("--expires-at-past", action="store_true", help="Prune records past expires_at")
+    prune_p.add_argument("--from-diff", action="store_true", help="Delete rows matching STALE entries in diff.csv")
+    prune_p.add_argument("--diff-path", default="diff.csv", help="Path to diff.csv for --from-diff")
 
     # snapshot
     snap_p = subparsers.add_parser("snapshot", help="Create a named snapshot")
@@ -73,13 +76,16 @@ def main():
             print("💥 Database dropped")
 
         elif args.command == "prune":
-            result = mgr.prune(
-                not_seen_since_days=args.not_seen_since,
-                authority=args.authority,
-                dry_run=args.dry_run,
-                all_stale=args.all_stale,
-                expires_at_past=args.expires_at_past,
-            )
+            if args.from_diff:
+                result = mgr.prune_from_diff(args.diff_path, dry_run=args.dry_run)
+            else:
+                result = mgr.prune(
+                    not_seen_since_days=args.not_seen_since,
+                    authority=args.authority,
+                    dry_run=args.dry_run,
+                    all_stale=args.all_stale,
+                    expires_at_past=args.expires_at_past,
+                )
             if args.dry_run:
                 print(f"Would delete {result.get('would_delete', 0)} records (dry run)")
             else:

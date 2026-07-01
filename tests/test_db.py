@@ -183,6 +183,27 @@ def test_settings_default_when_no_file(temp_db):
     assert settings["database"]["prune"]["default_not_seen_days"] == 45
 
 
+def test_prune_from_diff_deletes_stale_rows(temp_db):
+    mgr = temp_db
+    mgr.upsert_listings([
+        {"authority": "Old Auth", "property_name": "Gone", "url": "https://old.example/1"},
+        {"authority": "Live Auth", "property_name": "Stays", "url": "https://live.example/1"},
+    ], run_id="prior")
+
+    diff_path = Path(tempfile.gettempdir()) / "test_prune_diff.csv"
+    diff_path.write_text(
+        "change_type,source_authority,property_name,url\n"
+        "STALE,Old Auth,Gone,https://old.example/1\n",
+        encoding="utf-8",
+    )
+    try:
+        result = mgr.prune_from_diff(str(diff_path))
+        assert result["deleted"] == 1
+        assert mgr.get_record_count() == 1
+    finally:
+        diff_path.unlink(missing_ok=True)
+
+
 def test_run_history_is_populated(temp_db):
     mgr = temp_db
     mgr.prune(all_stale=True)  # should log

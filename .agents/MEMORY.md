@@ -69,7 +69,7 @@ Epic **#389** (portable routing + record identity) — **complete** as of 2026-0
 | Targets in TARGETS.md | 24 (20 active, 4 `no_public_list`) |
 | One-time STALE churn | ~112 (authority + surrogate-url migration) |
 
-Post-run: review `diff.csv`, then `python scripts/db_manage.py prune --not-seen-since 45` when satisfied.
+**Pruned 2026-07-01:** 112 migration STALE rows via `python scripts/db_manage.py prune --from-diff`. DB now **435 rows** (matches ~437 run_prev). Do **not** use `--not-seen-since 45` for migration churn (last_seen still recent); do **not** use `--all-stale` (deletes everything).
 
 ---
 

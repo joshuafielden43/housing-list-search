@@ -168,6 +168,63 @@ class DatabaseManager:
 
         return {"deleted": before - after, "before": before, "after": after}
 
+    def prune_from_diff(
+        self,
+        diff_path: str = "diff.csv",
+        *,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Delete housing_records matching STALE rows in diff.csv.
+
+        Uses the same identity key as upsert: (authority, property_name, url).
+        Intended for post-migration cleanup when diff.csv shows paired NEW/STALE churn.
+        """
+        import csv as _csv
+
+        stale_keys: list[tuple[str, str, str]] = []
+        try:
+            with open(diff_path, newline="", encoding="utf-8") as f:
+                for row in _csv.DictReader(f):
+                    if row.get("change_type") != "STALE":
+                        continue
+                    stale_keys.append((
+                        (row.get("source_authority") or row.get("authority") or "").strip(),
+                        (row.get("property_name") or "").strip(),
+                        (row.get("url") or "").strip(),
+                    ))
+        except FileNotFoundError:
+            return {"deleted": 0, "before": self.get_record_count(), "after": self.get_record_count(), "stale_keys": 0}
+
+        before = self.get_record_count()
+        if not stale_keys:
+            return {"deleted": 0, "before": before, "after": before, "stale_keys": 0}
+
+        conn = self.connect()
+        c = conn.cursor()
+        if dry_run:
+            found = 0
+            for auth, name, url in stale_keys:
+                c.execute(
+                    "SELECT 1 FROM housing_records WHERE authority=? AND property_name=? AND url=?",
+                    (auth, name, url),
+                )
+                if c.fetchone():
+                    found += 1
+            return {"dry_run": True, "would_delete": found, "before": before, "stale_keys": len(stale_keys)}
+
+        deleted = 0
+        for auth, name, url in stale_keys:
+            c.execute(
+                "DELETE FROM housing_records WHERE authority=? AND property_name=? AND url=?",
+                (auth, name, url),
+            )
+            deleted += c.rowcount
+        conn.commit()
+        after = self.get_record_count()
+        self._log_run("prune", "", before, after, f"from_diff stale_keys={len(stale_keys)} deleted={deleted}")
+        return {"deleted": deleted, "before": before, "after": after, "stale_keys": len(stale_keys)}
+
     def snapshot(self, name: str) -> Path:
         """Create a snapshot .tgz of current state."""
         SNAPSHOTS_DIR.mkdir(exist_ok=True)
