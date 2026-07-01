@@ -34,7 +34,11 @@ def main():
         from housing_list_search.dedupe import deduplicate_listings
         from housing_list_search.db import get_manager, DEFAULT_STALE_WARN_THRESHOLD
         from housing_list_search.changelog import generate_changelog
-        from housing_list_search.outputs import generate_daily_summary
+        from housing_list_search.outputs import (
+            PARTIAL_DAILY_SUMMARY_PATH,
+            STAFF_DAILY_SUMMARY_PATH,
+            generate_daily_summary,
+        )
 
         load_targets_to_db()
         db = get_manager()
@@ -128,6 +132,12 @@ def main():
                 DEFAULT_STALE_WARN_THRESHOLD,
             )
 
+        run_stats = {
+            "targets_attempted": len(active),
+            "targets_succeeded": len(active) - len(failed_targets),
+            "failed_authorities": failed_targets,
+        }
+
         if partial_run:
             with open("changelog_diffs.md", "w", encoding="utf-8") as f:
                 f.write("# Housing List Changelog\n\n")
@@ -146,10 +156,24 @@ def main():
                     sanitize_csv_field(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
                 ])
             logger.info("Partial --target run: left global run_prev.csv changelog baseline unchanged")
-            generate_daily_summary(all_listings, skipped_targets=[])
+            generate_daily_summary(
+                all_listings,
+                skipped_targets=[],
+                output_path=PARTIAL_DAILY_SUMMARY_PATH,
+                run_stats=run_stats,
+            )
+            logger.info(
+                "Partial --target run: wrote %s; left staff-facing %s unchanged",
+                PARTIAL_DAILY_SUMMARY_PATH,
+                STAFF_DAILY_SUMMARY_PATH,
+            )
         else:
             generate_changelog(all_listings, skipped_targets=skipped_targets)
-            generate_daily_summary(all_listings, skipped_targets=skipped_targets)
+            generate_daily_summary(
+                all_listings,
+                skipped_targets=skipped_targets,
+                run_stats=run_stats,
+            )
 
         print(f"\n✅ Run complete! {len(all_listings)} listings this run "
               f"({counts['inserted']} new, {counts['updated']} updated).")
@@ -157,7 +181,15 @@ def main():
             print(f"   ⚠️  Skipped {len(skipped_targets)} targets marked no_public_list")
         if partial_run:
             print("   Partial --target run: global changelog baseline was not updated")
-        print("   Files: current_full.csv  diff.csv  daily_summary.md  changelog_diffs.md")
+            print(
+                f"   Files: current_full.csv  diff.csv  {PARTIAL_DAILY_SUMMARY_PATH}  "
+                f"changelog_diffs.md  ({STAFF_DAILY_SUMMARY_PATH} preserved)"
+            )
+        else:
+            print(
+                f"   Files: current_full.csv  diff.csv  {STAFF_DAILY_SUMMARY_PATH}  "
+                "changelog_diffs.md"
+            )
 
         if failed_targets:
             logger.error(

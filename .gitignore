@@ -32,6 +32,7 @@ current_full.csv
 diff.csv
 run_prev.csv
 daily_summary.md
+daily_summary_partial.md
 changelog_diffs.*
 housing_registry.db
 gilroy_*.csv

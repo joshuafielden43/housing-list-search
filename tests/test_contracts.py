@@ -54,7 +54,7 @@ def _listing(name, status="active", notes="accepting applications", source="bloo
 class TestSummaryOpenDetection:
     """generate_daily_summary must surface realistic open listings."""
 
-    def _run(self, listings):
+    def _run(self, listings, **kwargs):
         """Run generate_daily_summary and return the written markdown."""
         import tempfile, os
         from housing_list_search.outputs import generate_daily_summary
@@ -63,7 +63,7 @@ class TestSummaryOpenDetection:
         with tempfile.TemporaryDirectory() as tmpdir:
             os.chdir(tmpdir)
             try:
-                generate_daily_summary(listings)
+                generate_daily_summary(listings, **kwargs)
                 with open("daily_summary.md", encoding="utf-8") as f:
                     return f.read()
             finally:
@@ -105,6 +105,44 @@ class TestSummaryOpenDetection:
         listings = [_listing("BMR", status="Open", notes="", source="generic_scrape")]
         md = self._run(listings)
         assert "## 🔥 CURRENTLY OPEN" not in md
+
+    def test_closed_records_without_opens_are_explained(self):
+        listings = [
+            _listing(f"Closed Property {i}", status="closed", notes="closed", source="bloom:x")
+            for i in range(11)
+        ]
+        md = self._run(listings)
+        assert "11 extracted" in md
+        assert "No open or accepting listings" in md
+        assert "registration portals" in md
+        assert "No currently open lists detected" not in md
+        assert "This run produced **11 listings**" not in md
+
+    def test_run_status_shows_target_failures(self):
+        md = self._run(
+            [_listing("Open Homes", status="Open", source="bloom:x")],
+            run_stats={
+                "targets_attempted": 15,
+                "targets_succeeded": 12,
+                "failed_authorities": ["City A", "City B", "City C"],
+            },
+        )
+        assert "## Run Status" in md
+        assert "12 succeeded, 3 failed (of 15 attempted)" in md
+        assert "City A, City B, City C" in md
+        assert "SCRAPE_FAILED" in md
+
+    def test_run_status_shows_clean_run(self):
+        md = self._run(
+            [_listing("Open Homes", status="Open", source="bloom:x")],
+            run_stats={
+                "targets_attempted": 18,
+                "targets_succeeded": 18,
+                "failed_authorities": [],
+            },
+        )
+        assert "18 succeeded (of 18 attempted)" in md
+        assert "failed" not in md.lower().split("run status", 1)[-1][:120]
 
 
 # ---------------------------------------------------------------------------
@@ -1072,6 +1110,54 @@ class TestCliTargetRun:
             assert not any(r["source_authority"] == "City B" for r in diff_rows)
             assert Path("run_prev.csv").read_text(encoding="utf-8") == run_prev
             assert changelog_rows[0]["change_type"] == "PARTIAL_RUN"
+        finally:
+            os.chdir(orig)
+
+    def test_target_run_preserves_staff_daily_summary(self, tmp_path):
+        import os
+        import sys
+        from pathlib import Path
+
+        from housing_list_search.db import DatabaseManager
+        from housing_list_search.cli import main
+        from housing_list_search.outputs import (
+            PARTIAL_DAILY_SUMMARY_PATH,
+            STAFF_DAILY_SUMMARY_PATH,
+        )
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+
+            staff_summary = "# Staff summary from last full run\n"
+            Path(STAFF_DAILY_SUMMARY_PATH).write_text(staff_summary, encoding="utf-8")
+
+            targets = [
+                {"authority": "City A", "url": "https://a", "scraping_measures": "", "notes": ""},
+            ]
+
+            with (
+                patch.object(sys, "argv", ["main.py", "--run", "--target", "City A"]),
+                patch("housing_list_search.registry.load_targets_to_db", return_value=None),
+                patch("housing_list_search.registry.get_active_targets", return_value=targets),
+                patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
+                patch("housing_list_search.runner.run_target", return_value=[
+                    {
+                        "authority": "City A",
+                        "property_name": "A Prop",
+                        "url": "https://a",
+                        "listing_status": "open",
+                        "status": "Open",
+                    }
+                ]),
+            ):
+                main()
+
+            assert Path(STAFF_DAILY_SUMMARY_PATH).read_text(encoding="utf-8") == staff_summary
+            partial_md = Path(PARTIAL_DAILY_SUMMARY_PATH).read_text(encoding="utf-8")
+            assert "A Prop" in partial_md
         finally:
             os.chdir(orig)
 
