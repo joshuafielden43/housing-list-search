@@ -97,12 +97,13 @@ centralized logging is adopted.
 
 from __future__ import annotations
 
-from bs4 import BeautifulSoup
-from typing import List, Dict, Any
 import re
+from datetime import datetime as _dt
+from typing import Any
+
+from bs4 import BeautifulSoup
 
 from housing_list_search.scraper import polite_get
-from datetime import datetime as _dt
 
 # Single authority for all John Stewart sources — avoids STALE churn when the
 # same property is seen via SCCHA directory, jscosccha.com, or jsco.net.
@@ -125,7 +126,8 @@ def _normalize(text: str) -> str:
 # This is the preferred path when the input URL is the SCCHA custom front-end.
 # =============================================================================
 
-def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
+
+def _scrape_sccha_directory(url: str) -> list[dict[str, Any]]:
     """
     Parse SCCHA's custom WordPress properties grid.
 
@@ -140,7 +142,7 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
-    listings: List[Dict[str, Any]] = []
+    listings: list[dict[str, Any]] = []
     seen: set = set()
 
     boxes = soup.select("div.property-box, div.box.property-box")
@@ -155,7 +157,8 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
         # Address is the most reliable anchor
         addr_match = re.search(
             r"(\d{1,5}\s+[A-Za-z0-9\s\.\,\-]+(?:Ave|St|Street|Rd|Road|Dr|Drive|Blvd|Way|Ln|Lane|Ct|Court|Pl|Place|Circle)[^,]*,\s*(?:San Jose|San José|Santa Clara|Campbell|Cupertino|Sunnyvale|Milpitas|Los Gatos|Morgan Hill|Gilroy|Mountain View|Palo Alto|Los Altos)[^0-9]{0,10}\d{5})",
-            text, re.I
+            text,
+            re.I,
         )
         address = addr_match.group(1).strip() if addr_match else ""
 
@@ -171,7 +174,15 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
         units = units_match.group(1) if units_match else ""
 
         tags = []
-        for kw in ["senior", "family", "tax credit", "section 8", "veteran", "disabled", "workforce"]:
+        for kw in [
+            "senior",
+            "family",
+            "tax credit",
+            "section 8",
+            "veteran",
+            "disabled",
+            "workforce",
+        ]:
             if re.search(r"\b" + kw + r"\b", text, re.I):
                 tags.append(kw.title())
 
@@ -179,10 +190,16 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
         detail_url = ""
         if learn_more and learn_more.get("href"):
             href = learn_more["href"]
-            detail_url = href if href.startswith("http") else "https://www.scchousingauthority.org" + href
+            detail_url = (
+                href if href.startswith("http") else "https://www.scchousingauthority.org" + href
+            )
 
         box_classes = " ".join(box.get("class", []))
-        status = "Open" if "open" in box_classes.lower() or "accepting" in text.lower() else "Check with owner"
+        status = (
+            "Open"
+            if "open" in box_classes.lower() or "accepting" in text.lower()
+            else "Check with owner"
+        )
 
         if not address and not name:
             continue
@@ -202,8 +219,10 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
             "deadline": "",
             "income_limits": "Section 8 / Tax Credit (varies by property)",
             "unit_types": f"{units} units" if units else "Varies",
-            "eligibility_flags": ["section_8"] + (["senior"] if "senior" in " ".join(tags).lower() else []),
-            "notes": " | ".join(tags) + (f" | flyer: {detail_url}" if detail_url and detail_url.endswith(".pdf") else ""),
+            "eligibility_flags": ["section_8"]
+            + (["senior"] if "senior" in " ".join(tags).lower() else []),
+            "notes": " | ".join(tags)
+            + (f" | flyer: {detail_url}" if detail_url and detail_url.endswith(".pdf") else ""),
             "confidence": 0.80,
             # Freshness metadata (0.8.2+)
             "last_seen": now_iso,
@@ -230,7 +249,8 @@ def _scrape_sccha_directory(url: str) -> List[Dict[str, Any]]:
 # the custom front-end parser so each can evolve independently.
 # =============================================================================
 
-def _scrape_direct_john_stewart(url: str) -> List[Dict[str, Any]]:
+
+def _scrape_direct_john_stewart(url: str) -> list[dict[str, Any]]:
     """
     Robust parser for individual property pages on the John Stewart platform
     (jscosccha.com/property/...).
@@ -248,80 +268,89 @@ def _scrape_direct_john_stewart(url: str) -> List[Dict[str, Any]]:
     if not resp:
         return []
 
-    soup = BeautifulSoup(resp.text, 'html.parser')
-    listings: List[Dict[str, Any]] = []
+    soup = BeautifulSoup(resp.text, "html.parser")
+    listings: list[dict[str, Any]] = []
 
     # Prefer the main content area
-    main = soup.find('main') or soup.find('article') or soup.find(class_=lambda c: c and any(x in str(c).lower() for x in ['content', 'entry', 'property']))
-    text = main.get_text(' ', strip=True) if main else soup.get_text(' ', strip=True)
+    main = (
+        soup.find("main")
+        or soup.find("article")
+        or soup.find(
+            class_=lambda c: c
+            and any(x in str(c).lower() for x in ["content", "entry", "property"])
+        )
+    )
+    text = main.get_text(" ", strip=True) if main else soup.get_text(" ", strip=True)
 
     # Property name from title or first strong heading
     title = soup.title.string if soup.title else ""
-    name = title.split(' - ')[0].strip() if ' - ' in title else title.strip()
+    name = title.split(" - ")[0].strip() if " - " in title else title.strip()
 
     # Address
-    addr_match = re.search(
-        r'Address:\s*([^<]+?)(?:Phone|Email|previous|\n|$)',
-        text, re.I
-    )
+    addr_match = re.search(r"Address:\s*([^<]+?)(?:Phone|Email|previous|\n|$)", text, re.I)
     if not addr_match:
         addr_match = re.search(
-            r'(\d{1,5}\s+[A-Za-z][A-Za-z0-9\s\.,\-]+(?:St|Street|Rd|Road|Dr|Drive|Way|Ln|Blvd|Ave|Court|Place)[^,]*,\s*[^,]+,\s*CA\s*\d{5})',
-            text, re.I
+            r"(\d{1,5}\s+[A-Za-z][A-Za-z0-9\s\.,\-]+(?:St|Street|Rd|Road|Dr|Drive|Way|Ln|Blvd|Ave|Court|Place)[^,]*,\s*[^,]+,\s*CA\s*\d{5})",
+            text,
+            re.I,
         )
     address = addr_match.group(1).strip() if addr_match else ""
 
     # Phone & Email
     phone = ""
-    pm = re.search(r'Phone:\s*([\d\s\-\(\)]+)', text, re.I)
+    pm = re.search(r"Phone:\s*([\d\s\-\(\)]+)", text, re.I)
     if pm:
         phone = pm.group(1).strip()
 
     email = ""
-    em = re.search(r'Email:\s*([^\s<>\"]+@[^\s<>\"]+)', text, re.I)
+    em = re.search(r"Email:\s*([^\s<>\"]+@[^\s<>\"]+)", text, re.I)
     if not em:
-        em = re.search(r'([a-z0-9\.\-_+]+@jsco\.net)', text, re.I)
+        em = re.search(r"([a-z0-9\.\-_+]+@jsco\.net)", text, re.I)
     if em:
         email = em.group(1).strip()
 
     # Status
     status = "Unknown"
-    if re.search(r'Waitlist (is )?(currently )?open', text, re.I):
+    if re.search(r"Waitlist (is )?(currently )?open", text, re.I):
         status = "Waitlist Open"
-    elif re.search(r'Waitlist (is )?closed', text, re.I):
+    elif re.search(r"Waitlist (is )?closed", text, re.I):
         status = "Waitlist Closed"
-    elif re.search(r'Application Status:\s*([^<\n]+)', text, re.I):
-        status = re.search(r'Application Status:\s*([^<\n]+)', text, re.I).group(1).strip()
+    elif re.search(r"Application Status:\s*([^<\n]+)", text, re.I):
+        status = re.search(r"Application Status:\s*([^<\n]+)", text, re.I).group(1).strip()
 
     # Housing type & income
     htype = ""
-    tm = re.search(r'Housing Type:\s*([^<\n]+)', text, re.I)
+    tm = re.search(r"Housing Type:\s*([^<\n]+)", text, re.I)
     if tm:
         htype = tm.group(1).strip()
 
     income = ""
-    im = re.search(r'Income Requirements:\s*([^<\n]+)', text, re.I)
+    im = re.search(r"Income Requirements:\s*([^<\n]+)", text, re.I)
     if im:
         income = im.group(1).strip()[:200]
 
     # Unit mix
     units = ""
-    um = re.search(r'Unit Mix:\s*([^<\n]+)', text, re.I)
+    um = re.search(r"Unit Mix:\s*([^<\n]+)", text, re.I)
     if um:
         units = um.group(1).strip()
     else:
-        um2 = re.search(r'(\d+)[ -]*(?:unit|bedroom|br)', text, re.I)
+        um2 = re.search(r"(\d+)[ -]*(?:unit|bedroom|br)", text, re.I)
         if um2:
             units = f"{um2.group(1)} units"
 
     # Collect PDF links
     pdf_links = []
-    for a in soup.find_all('a', href=True):
-        href = a['href']
-        if href.lower().endswith('.pdf'):
-            if not href.startswith('http'):
-                href = 'https://jscosccha.com' + href if href.startswith('/') else url.rsplit('/', 1)[0] + '/' + href
-            label = a.get_text(strip=True) or 'PDF'
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.lower().endswith(".pdf"):
+            if not href.startswith("http"):
+                href = (
+                    "https://jscosccha.com" + href
+                    if href.startswith("/")
+                    else url.rsplit("/", 1)[0] + "/" + href
+                )
+            label = a.get_text(strip=True) or "PDF"
             pdf_links.append(f"{label}: {href}")
 
     notes_parts = []
@@ -337,7 +366,7 @@ def _scrape_direct_john_stewart(url: str) -> List[Dict[str, Any]]:
     if name or address:
         rec = {
             "authority": JOHN_STEWART_AUTHORITY,
-            "property_name": name or address.split(',')[0].strip(),
+            "property_name": name or address.split(",")[0].strip(),
             "address": address,
             "phone": phone,
             "email": email,
@@ -388,7 +417,7 @@ _JSCO_SCC_CITIES = {
 }
 
 
-def _scrape_jsco_portfolio(url: str) -> List[Dict[str, Any]]:
+def _scrape_jsco_portfolio(url: str) -> list[dict[str, Any]]:
     """Fetch all Santa Clara County properties from the jsco.net REST API.
 
     Single paginated query filtered by city taxonomy; returns one record per
@@ -397,10 +426,10 @@ def _scrape_jsco_portfolio(url: str) -> List[Dict[str, Any]]:
     """
     import html as _html
 
-    print(f"🧩 Running John Stewart adapter (jsco.net corporate portfolio mode)")
+    print("🧩 Running John Stewart adapter (jsco.net corporate portfolio mode)")
 
     city_filter = ",".join(str(i) for i in _JSCO_SCC_CITIES)
-    listings: List[Dict[str, Any]] = []
+    listings: list[dict[str, Any]] = []
     page_num = 1
 
     while page_num <= 3:  # 67 properties fit in one page of 100; cap defensively
@@ -425,24 +454,26 @@ def _scrape_jsco_portfolio(url: str) -> List[Dict[str, Any]]:
             city = next((_JSCO_SCC_CITIES[i] for i in city_ids if i in _JSCO_SCC_CITIES), "")
             modified = (item.get("modified") or "")[:10]
 
-            listings.append({
-                "authority": JOHN_STEWART_AUTHORITY,
-                "property_name": name,
-                "address": f"{city}, CA" if city else "",
-                "url": item.get("link") or "",
-                "status": "Check with property",
-                "notes": (
-                    f"John Stewart managed property in {city or 'Santa Clara County'}"
-                    + (f" | vendor page last updated {modified}" if modified else "")
-                ),
-                "unit_types": "Varies",
-                "confidence": "high",
-                "last_seen": now_iso,
-                "first_seen": now_iso,
-                "source": "john_stewart:jsco_portfolio",
-                "source_url": api_url.split("&page=")[0],
-                "expires_at": "",
-            })
+            listings.append(
+                {
+                    "authority": JOHN_STEWART_AUTHORITY,
+                    "property_name": name,
+                    "address": f"{city}, CA" if city else "",
+                    "url": item.get("link") or "",
+                    "status": "Check with property",
+                    "notes": (
+                        f"John Stewart managed property in {city or 'Santa Clara County'}"
+                        + (f" | vendor page last updated {modified}" if modified else "")
+                    ),
+                    "unit_types": "Varies",
+                    "confidence": "high",
+                    "last_seen": now_iso,
+                    "first_seen": now_iso,
+                    "source": "john_stewart:jsco_portfolio",
+                    "source_url": api_url.split("&page=")[0],
+                    "expires_at": "",
+                }
+            )
 
         if len(items) < 100:
             break
@@ -456,7 +487,8 @@ def _scrape_jsco_portfolio(url: str) -> List[Dict[str, Any]]:
 # PUBLIC API
 # =============================================================================
 
-def scrape_john_stewart(url: str) -> List[Dict[str, Any]]:
+
+def scrape_john_stewart(url: str) -> list[dict[str, Any]]:
     """
     Primary entry point for the John Stewart Company adapter.
 

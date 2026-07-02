@@ -1,8 +1,6 @@
 # changelog.py
 import csv
-import os
 from datetime import datetime
-from pathlib import Path
 
 from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.freshness import (
@@ -20,13 +18,15 @@ def _load_run_prev(path: str) -> list[dict]:
     try:
         with open(path, newline="", encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                rows.append({
-                    "authority": row.get("source_authority", ""),
-                    "property_name": row.get("property_name", ""),
-                    "url": row.get("url", ""),
-                    "status": row.get("status", ""),
-                    "listing_status": row.get("listing_status", ""),
-                })
+                rows.append(
+                    {
+                        "authority": row.get("source_authority", ""),
+                        "property_name": row.get("property_name", ""),
+                        "url": row.get("url", ""),
+                        "status": row.get("status", ""),
+                        "listing_status": row.get("listing_status", ""),
+                    }
+                )
     except FileNotFoundError:
         pass
     return rows
@@ -41,20 +41,28 @@ def _write_run_snapshot(current: list) -> None:
     """Write the current run's listing set to run_prev.csv for next-run diffing."""
     with open(_snapshot_path(), "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "source_authority", "property_name", "url", "status", "listing_status",
-        ])
+        writer.writerow(
+            [
+                "source_authority",
+                "property_name",
+                "url",
+                "status",
+                "listing_status",
+            ]
+        )
         for item in current:
             auth, name, url = listing_identity(item)
             status = item.get("status") or ""
             ls = item.get("listing_status") or ""
-            writer.writerow([
-                sanitize_csv_field(auth),
-                sanitize_csv_field(name),
-                sanitize_csv_field(url),
-                sanitize_csv_field(status),
-                sanitize_csv_field(ls),
-            ])
+            writer.writerow(
+                [
+                    sanitize_csv_field(auth),
+                    sanitize_csv_field(name),
+                    sanitize_csv_field(url),
+                    sanitize_csv_field(status),
+                    sanitize_csv_field(ls),
+                ]
+            )
 
 
 def _format_key(key: ListingKey) -> str:
@@ -119,7 +127,12 @@ def generate_changelog(
             for key in sorted(stale_keys):
                 md += f"- {_format_key(key)}\n"
             md += "\n"
-        if not run_diff.added and not run_diff.removed and not run_diff.status_changed and not stale_keys:
+        if (
+            not run_diff.added
+            and not run_diff.removed
+            and not run_diff.status_changed
+            and not stale_keys
+        ):
             md += "_No changes detected since last run._\n\n"
 
     if skipped_targets:
@@ -160,10 +173,7 @@ def generate_changelog(
     with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["change_type", "authority", "property_name", "url", "details"])
-        writer.writerows([
-            tuple(sanitize_csv_field(cell) for cell in row)
-            for row in csv_rows
-        ])
+        writer.writerows([tuple(sanitize_csv_field(cell) for cell in row) for row in csv_rows])
 
     _write_run_snapshot(current)
 

@@ -40,7 +40,8 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
+from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +61,11 @@ CITY_SEED_DOCUMENTS: dict[str, list[str]] = {
 
 # href substrings that mark a link as a published document worth following.
 DOCUMENT_LINK_HINTS = (
-    "showpublisheddocument", "publisheddocument", "documentcenter",
-    "docaccess", ".pdf",
+    "showpublisheddocument",
+    "publisheddocument",
+    "documentcenter",
+    "docaccess",
+    ".pdf",
 )
 
 # Link text that marks a per-property availability flyer.
@@ -119,7 +123,7 @@ def _get_realistic_headers() -> dict[str, str]:
     """Basic header realism without overcomplicating things."""
     return {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
@@ -148,29 +152,38 @@ def _parse_froala_availability_blocks(container, authority: str) -> list[dict]:
             strong_text = strong.get_text(" ", strip=True)
 
             # Match "Name - 5 available units" or "Name – 3 units available"
-            units_match = re.search(r'(\d+)\s*(?:available\s*)?units?', strong_text, re.IGNORECASE)
+            units_match = re.search(r"(\d+)\s*(?:available\s*)?units?", strong_text, re.IGNORECASE)
             if not units_match:
-                units_match = re.search(r'units?\s*(?:available)?:?\s*(\d+)', strong_text, re.IGNORECASE)
+                units_match = re.search(
+                    r"units?\s*(?:available)?:?\s*(\d+)", strong_text, re.IGNORECASE
+                )
 
             units = units_match.group(1) if units_match else None
             if not units:
                 continue
 
             # Strip the units portion to get a clean property name
-            property_name = re.sub(r'\s*[-–—]?\s*\d+\s*(?:available\s*)?units?.*$', '', strong_text, flags=re.IGNORECASE).strip()
+            property_name = re.sub(
+                r"\s*[-–—]?\s*\d+\s*(?:available\s*)?units?.*$",
+                "",
+                strong_text,
+                flags=re.IGNORECASE,
+            ).strip()
 
             # Pull contact info from the whole <li>
             full_text = li.get_text(" ", strip=True)
-            email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', full_text)
-            phone_match = re.search(r'\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}', full_text)
+            email_match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", full_text)
+            phone_match = re.search(r"\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}", full_text)
 
             record = _base_record(authority, "froala_availability_list", "")
-            record.update({
-                "property_name": property_name,
-                "available_units": units,
-                "email": email_match.group(0) if email_match else "",
-                "phone": phone_match.group(0) if phone_match else "",
-            })
+            record.update(
+                {
+                    "property_name": property_name,
+                    "available_units": units,
+                    "email": email_match.group(0) if email_match else "",
+                    "phone": phone_match.group(0) if phone_match else "",
+                }
+            )
             records.append(record)
 
     return records
@@ -182,21 +195,29 @@ def _extract_tables(soup, authority: str, source_url: str, method: str) -> list[
     for table in soup.find_all("table"):
         headers: list[str] = []
         for i, row in enumerate(table.find_all("tr")):
-            cells = [c.get_text(strip=True) for c in row.find_all(["th", "td"]) if c.get_text(strip=True)]
+            cells = [
+                c.get_text(strip=True) for c in row.find_all(["th", "td"]) if c.get_text(strip=True)
+            ]
             if not cells:
                 continue
             if i == 0 and not headers:
                 # Municipal published documents sometimes cram several header
                 # names into one cell — split on common separators.
                 for h in cells:
-                    parts = re.split(r'[,/|&]|\s{2,}', h)
+                    parts = re.split(r"[,/|&]|\s{2,}", h)
                     headers.extend(p.strip() for p in parts if p.strip())
                 continue
 
             record = _base_record(authority, method, source_url)
             for j, text in enumerate(cells):
                 key = headers[j] if j < len(headers) else f"col_{j}"
-                clean_key = key.lower().replace(" ", "_").replace("/", "_").replace(".", "").replace(",", "")
+                clean_key = (
+                    key.lower()
+                    .replace(" ", "_")
+                    .replace("/", "_")
+                    .replace(".", "")
+                    .replace(",", "")
+                )
                 record[clean_key] = text
             if len(record) > 6:  # more than just the base fields
                 records.append(record)
@@ -222,8 +243,8 @@ def _name_from_documentcenter_slug(url: str) -> str:
     if not m:
         return ""
     slug = m.group(1).replace("-", " ").replace("_", " ")
-    slug = re.sub(r'\s*(Flyer|Event|Calendar)\s*', ' ', slug, flags=re.I).strip()
-    slug = re.sub(r'\s*(\d+)\s*(?:%\s*)?ami\s*$', r' (\1% AMI)', slug, flags=re.I).strip()
+    slug = re.sub(r"\s*(Flyer|Event|Calendar)\s*", " ", slug, flags=re.I).strip()
+    slug = re.sub(r"\s*(\d+)\s*(?:%\s*)?ami\s*$", r" (\1% AMI)", slug, flags=re.I).strip()
     return slug
 
 
@@ -258,11 +279,13 @@ def _harvest_flyer_links(soup, page_url: str, authority: str) -> list[dict]:
         prop_name = _nearest_property_name(a) or _name_from_documentcenter_slug(full)
 
         record = _base_record(authority, "availability_list_flyer", page_url)
-        record.update({
-            "property_name": prop_name,
-            "flyer_text": link_text,
-            "flyer_url": full,
-        })
+        record.update(
+            {
+                "property_name": prop_name,
+                "flyer_text": link_text,
+                "flyer_url": full,
+            }
+        )
         records.append(record)
     return records
 
@@ -331,7 +354,9 @@ def extract_underlying_records(
         document_urls.append(seed)
 
     # A direct document link as the source skips the landing-page pass entirely.
-    direct_document_mode = "/documentcenter/view/" in source.lower() or source.lower().endswith(".pdf")
+    direct_document_mode = "/documentcenter/view/" in source.lower() or source.lower().endswith(
+        ".pdf"
+    )
     if direct_document_mode:
         document_urls.append(source)
         logger.info("[civicplus] Source is a direct document link — skipping landing page")
@@ -365,9 +390,7 @@ def extract_underlying_records(
                 except PlaywrightTimeout:
                     pass
                 try:
-                    page.wait_for_selector(
-                        "div.fr-view, ul[role='presentation']", timeout=10000
-                    )
+                    page.wait_for_selector("div.fr-view, ul[role='presentation']", timeout=10000)
                 except PlaywrightTimeout:
                     pass
 
@@ -386,8 +409,12 @@ def extract_underlying_records(
                 document_urls.extend(r["flyer_url"] for r in flyer_records)
                 document_urls.extend(_discover_document_links(soup, page.url))
                 document_urls = _dedupe_document_urls(document_urls)
-                logger.info("[civicplus] %s: %d page records, %d candidate documents",
-                            authority, len(records), len(document_urls))
+                logger.info(
+                    "[civicplus] %s: %d page records, %d candidate documents",
+                    authority,
+                    len(records),
+                    len(document_urls),
+                )
 
             # --- 2. Discovered documents: viewer pages and PDF flyers ---
             pdf_urls = [u for u in document_urls if u.lower().endswith(".pdf")]
@@ -407,8 +434,7 @@ def extract_underlying_records(
                     flyers = _harvest_flyer_links(doc_soup, page.url, authority)
                     records.extend(flyers)
                     pdf_urls.extend(
-                        f["flyer_url"] for f in flyers
-                        if f["flyer_url"].lower().endswith(".pdf")
+                        f["flyer_url"] for f in flyers if f["flyer_url"].lower().endswith(".pdf")
                     )
 
                     # DocumentCenter viewer pages carry the document title even
@@ -430,14 +456,17 @@ def extract_underlying_records(
                     else:
                         logger.warning("[civicplus] Error on document page %s: %s", doc_url, exc)
 
-            records.extend(_process_pdfs(_dedupe_document_urls(pdf_urls)[:max_documents], authority))
+            records.extend(
+                _process_pdfs(_dedupe_document_urls(pdf_urls)[:max_documents], authority)
+            )
 
             # --- 3. Merge list-page property names into PDF-derived records ---
             flyer_context = {
                 r["flyer_url"]: r["property_name"]
                 for r in records
                 if r.get("extraction_method") == "availability_list_flyer"
-                and r.get("flyer_url") and r.get("property_name")
+                and r.get("flyer_url")
+                and r.get("property_name")
             }
             for r in records:
                 if r.get("source_url") in flyer_context and (
@@ -452,15 +481,23 @@ def extract_underlying_records(
                     page.screenshot(path=debug_path, full_page=True)
                     logger.warning(
                         "[civicplus] %s: 0 records extracted — debug screenshot at %s (page title: %r)",
-                        authority, debug_path, page.title(),
+                        authority,
+                        debug_path,
+                        page.title(),
                     )
                 except Exception:
-                    logger.warning("[civicplus] %s: 0 records extracted (screenshot failed)", authority)
+                    logger.warning(
+                        "[civicplus] %s: 0 records extracted (screenshot failed)", authority
+                    )
 
         except Exception as exc:
-            logger.exception("[civicplus] Error during extraction for %s: %s", authority or source, exc)
+            logger.exception(
+                "[civicplus] Error during extraction for %s: %s", authority or source, exc
+            )
         finally:
             browser.close()
 
-    logger.info("[civicplus] Extracted %d underlying records from %s", len(records), authority or source)
+    logger.info(
+        "[civicplus] Extracted %d underlying records from %s", len(records), authority or source
+    )
     return records

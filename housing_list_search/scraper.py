@@ -8,9 +8,11 @@ from housing_list_search.host_throttle import mark_host_fetched, wait_for_host
 from housing_list_search.http_limits import (
     DEFAULT_MAX_RESPONSE_BYTES,
     USER_AGENT,
+)
+from housing_list_search.http_limits import (
     read_bounded_content as _read_bounded_content,
 )
-from housing_list_search.robots_cache import clear_robots_cache, get_robots_entry
+from housing_list_search.robots_cache import get_robots_entry
 from housing_list_search.url_policy import URLPolicyError, validate_http_url
 
 logger = logging.getLogger(__name__)
@@ -52,7 +54,8 @@ def is_allowed_by_robots(url: str) -> bool:
                 "robots.txt Disallows %s for %s — skipping this URL. "
                 "If this is wrong (e.g. WAF returned a fake Disallow page), "
                 "document it in TARGETS.md and handle at the call site.",
-                url, USER_AGENT,
+                url,
+                USER_AGENT,
             )
             return False
         return True

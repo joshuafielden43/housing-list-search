@@ -6,7 +6,8 @@ CI runs unit tests only: pytest tests/ -m "not integration"
 """
 
 import pytest
-from housing_list_search.extraction import extract_target, HousingRecord
+
+from housing_list_search.extraction import HousingRecord, extract_target
 
 
 @pytest.mark.integration
@@ -18,15 +19,16 @@ def test_san_jose_dispatcher_returns_real_records():
     assert isinstance(r, HousingRecord)
     assert r.authority == "City of San José"
     assert r.property_name, "Property name must be present"
-    assert r.document_url.startswith("https://housing.sanjoseca.gov/listing/"), "Should have direct listing link"
+    assert r.document_url.startswith("https://housing.sanjoseca.gov/listing/"), (
+        "Should have direct listing link"
+    )
 
 
 @pytest.mark.integration
 def test_gilroy_pdf_dispatcher_returns_real_records():
     """Gilroy DocumentCenter PDF via the table-aware extractor (one of the known good lists)."""
     records = extract_target(
-        "https://www.cityofgilroy.org/DocumentCenter/View/16518",
-        "City of Gilroy"
+        "https://www.cityofgilroy.org/DocumentCenter/View/16518", "City of Gilroy"
     )
     assert len(records) > 5, "Expected multiple rows from the PDF table"
     r = records[0]

@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime as _dt
-from typing import Any, Dict, List
+from typing import Any
 
 from bs4 import BeautifulSoup
 
@@ -35,16 +35,28 @@ logger = logging.getLogger(__name__)
 SEARCH_RESULTS_URL = "https://www.eahhousing.org/apartment-search-result-never-delete/"
 
 SANTA_CLARA_CITIES = {
-    "san jose", "san josé", "santa clara", "sunnyvale", "mountain view",
-    "palo alto", "milpitas", "cupertino", "campbell", "gilroy",
-    "morgan hill", "los gatos", "los altos", "saratoga", "stanford",
+    "san jose",
+    "san josé",
+    "santa clara",
+    "sunnyvale",
+    "mountain view",
+    "palo alto",
+    "milpitas",
+    "cupertino",
+    "campbell",
+    "gilroy",
+    "morgan hill",
+    "los gatos",
+    "los altos",
+    "saratoga",
+    "stanford",
 }
 
 
-def parse_search_results(html_text: str, now_iso: str, source_url: str) -> List[Dict[str, Any]]:
+def parse_search_results(html_text: str, now_iso: str, source_url: str) -> list[dict[str, Any]]:
     """Parse the EAH all-properties list, filtered to Santa Clara County."""
     soup = BeautifulSoup(html_text, "html.parser")
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     for li in soup.find_all("li"):
@@ -68,29 +80,31 @@ def parse_search_results(html_text: str, now_iso: str, source_url: str) -> List[
             continue
 
         seen.add(href)
-        records.append({
-            "authority": "EAH Housing (Santa Clara County portfolio)",
-            "property_name": name,
-            "address": re.sub(r"\s*,\s*California\s*", ", CA ", address).strip(),
-            "url": href,
-            "status": "Check with property",
-            "administrator": "EAH Housing",
-            "administrator_url": "https://www.eahhousing.org/",
-            "notes": "EAH Housing managed property",
-            "confidence": "high",
-            "last_seen": now_iso,
-            "first_seen": now_iso,
-            "source": "eah:search_results",
-            "source_url": source_url,
-            "expires_at": "",
-        })
+        records.append(
+            {
+                "authority": "EAH Housing (Santa Clara County portfolio)",
+                "property_name": name,
+                "address": re.sub(r"\s*,\s*California\s*", ", CA ", address).strip(),
+                "url": href,
+                "status": "Check with property",
+                "administrator": "EAH Housing",
+                "administrator_url": "https://www.eahhousing.org/",
+                "notes": "EAH Housing managed property",
+                "confidence": "high",
+                "last_seen": now_iso,
+                "first_seen": now_iso,
+                "source": "eah:search_results",
+                "source_url": source_url,
+                "expires_at": "",
+            }
+        )
 
     return records
 
 
-def scrape_eah(authority: str = "", url: str = "") -> List[Dict[str, Any]]:
+def scrape_eah(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     """Public entry point. Single request to the all-properties list."""
-    print(f"🧩 Running EAH Housing adapter (all-properties list, county filter)")
+    print("🧩 Running EAH Housing adapter (all-properties list, county filter)")
     now_iso = _dt.now().isoformat()
     target = url or SEARCH_RESULTS_URL
 

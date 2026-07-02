@@ -1,0 +1,19 @@
+{
+  "name": "housing-list-search",
+  "version": "0.8.7",
+  "private": true,
+  "description": "Affordable housing waitlist aggregator — Santa Clara County",
+  "scripts": {
+    "prepare": "husky",
+    "lint": "scripts/dev-ruff.sh check .",
+    "lint:fix": "scripts/dev-ruff.sh check . --fix && scripts/dev-ruff.sh format .",
+    "check:doctor": "scripts/dev-python.sh scripts/doctor.py --dry-run",
+    "test": "HLS_DISABLE_MARKER_PDF=1 scripts/dev-python.sh -m pytest tests/ -m \"not integration\" -q --tb=short",
+    "check:fast": "scripts/check-fast.sh",
+    "check": "scripts/check.sh"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8"
+  }
+}

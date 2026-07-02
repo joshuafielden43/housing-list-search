@@ -27,6 +27,9 @@ env/
 ENV/
 .venv/
 
+# Node (Husky / lint-staged hook runner)
+node_modules/
+
 # Output artifacts — generated at runtime (not source code)
 current_full.csv
 diff.csv

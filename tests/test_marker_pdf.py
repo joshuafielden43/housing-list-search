@@ -1,7 +1,8 @@
 """Unit tests for marker-pdf fallback (no model load)."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from housing_list_search.extraction.marker_pdf import (
     marker_available,
@@ -38,7 +39,9 @@ class TestRecordsFromMarkerMarkdown:
 """
         records = records_from_marker_markdown(text, "City of Gilroy", "https://example.com/a.pdf")
         assert len(records) >= 1
-        assert any("Oak" in (r.property_name or "") or "123 Main" in (r.address or "") for r in records)
+        assert any(
+            "Oak" in (r.property_name or "") or "123 Main" in (r.address or "") for r in records
+        )
 
     def test_flyer_style_markdown(self):
         text = """
@@ -51,7 +54,9 @@ Available Now!!!
 1 Bedroom - 1 Bath
 Rent $1,822.00
 """
-        records = records_from_marker_markdown(text, "City of Gilroy", "https://example.com/flyer.pdf")
+        records = records_from_marker_markdown(
+            text, "City of Gilroy", "https://example.com/flyer.pdf"
+        )
         assert len(records) >= 1
         assert records[0].property_name
 
@@ -61,11 +66,22 @@ class TestExtractRecordsFromPdfMarkerFallback:
         monkeypatch.setenv("HLS_DISABLE_MARKER_PDF", "1")
         from housing_list_search.extraction.pdf import extract_records_from_pdf
 
-        with patch("housing_list_search.extraction.pdf.extract_records_from_pdf_tables", return_value=[]), \
-             patch("housing_list_search.extraction.pdf._fetch_pdf", return_value=b"%PDF-1.4"), \
-             patch("housing_list_search.extraction.pdf._extract_flyer_pages_from_pdf", return_value=[]), \
-             patch("housing_list_search.extraction.pdf.extract_text_lines_from_pdf", return_value=[]), \
-             patch("housing_list_search.extraction.marker_pdf.extract_records_via_marker") as mock_marker:
+        with (
+            patch(
+                "housing_list_search.extraction.pdf.extract_records_from_pdf_tables",
+                return_value=[],
+            ),
+            patch("housing_list_search.extraction.pdf._fetch_pdf", return_value=b"%PDF-1.4"),
+            patch(
+                "housing_list_search.extraction.pdf._extract_flyer_pages_from_pdf", return_value=[]
+            ),
+            patch(
+                "housing_list_search.extraction.pdf.extract_text_lines_from_pdf", return_value=[]
+            ),
+            patch(
+                "housing_list_search.extraction.marker_pdf.extract_records_via_marker"
+            ) as mock_marker,
+        ):
             mock_marker.return_value = []
             result = extract_records_from_pdf("https://example.com/x.pdf", "Test")
             mock_marker.assert_called_once()

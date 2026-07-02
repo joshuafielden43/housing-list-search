@@ -10,7 +10,6 @@ import logging
 import threading
 import urllib.robotparser
 from dataclasses import dataclass
-from typing import Optional
 
 import requests
 
@@ -18,7 +17,7 @@ from housing_list_search.http_limits import USER_AGENT, read_bounded_content
 
 logger = logging.getLogger(__name__)
 
-_ROBOTS_CACHE: dict[str, "RobotsEntry"] = {}
+_ROBOTS_CACHE: dict[str, RobotsEntry] = {}
 _CACHE_LOCK = threading.Lock()
 
 
@@ -26,7 +25,7 @@ _CACHE_LOCK = threading.Lock()
 class RobotsEntry:
     """Cached robots.txt evaluation state for one origin."""
 
-    parser: Optional[urllib.robotparser.RobotFileParser]
+    parser: urllib.robotparser.RobotFileParser | None
     treat_as_allowed: bool
 
 

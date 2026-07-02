@@ -117,12 +117,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime as _dt
-from typing import List, Dict, Any, Optional
-from urllib.parse import urljoin, urlparse
+from typing import Any
+from urllib.parse import urljoin
 
-import requests
 from bs4 import BeautifulSoup
 
 from housing_list_search.scraper import polite_get
@@ -134,6 +132,7 @@ logger = logging.getLogger(__name__)
 # PUBLIC API
 # =============================================================================
 
+
 def extract_gis_portfolio(
     source: str,
     authority: str = "",
@@ -141,7 +140,7 @@ def extract_gis_portfolio(
     administrator_url: str = "",
     administrator_phone: str = "",
     administrator_contact: str = "",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Main entry point for municipal/GIS-based portfolio extraction.
 
@@ -167,7 +166,8 @@ def extract_gis_portfolio(
 
     if lower.endswith(".js") or "units.js" in lower or "purchase.js" in lower:
         return _parse_embedded_geojson_js(
-            source, authority,
+            source,
+            authority,
             administrator=administrator,
             administrator_url=administrator_url,
             administrator_phone=administrator_phone,
@@ -182,7 +182,8 @@ def extract_gis_portfolio(
 
     # Fallback: try to treat it as a page that might contain embedded data
     return _parse_page_for_embedded_gis(
-        source, authority,
+        source,
+        authority,
         administrator=administrator,
         administrator_url=administrator_url,
         administrator_phone=administrator_phone,
@@ -194,7 +195,8 @@ def extract_gis_portfolio(
 # CONVENIENCE HELPERS FOR KNOWN PATTERNS
 # =============================================================================
 
-def extract_cupertino_gis() -> List[Dict[str, Any]]:
+
+def extract_cupertino_gis() -> list[dict[str, Any]]:
     """
     Convenience wrapper specifically for the City of Cupertino's current
     GIS publication method (embedded GeoJSON in /bmr_units/units.js and
@@ -234,6 +236,7 @@ def extract_cupertino_gis() -> List[Dict[str, Any]]:
 # PARSERS
 # =============================================================================
 
+
 def _parse_embedded_geojson_js(
     url: str,
     authority: str,
@@ -241,7 +244,7 @@ def _parse_embedded_geojson_js(
     administrator_url: str = "",
     administrator_phone: str = "",
     administrator_contact: str = "",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Handles cases like Cupertino where the city serves GeoJSON inside a .js file
     as a JavaScript variable (e.g. var rentals = { "type": "FeatureCollection", ... }).
@@ -272,7 +275,9 @@ def _parse_embedded_geojson_js(
         return []
 
     return _features_to_records(
-        data, url, authority,
+        data,
+        url,
+        authority,
         administrator=administrator,
         administrator_url=administrator_url,
         administrator_phone=administrator_phone,
@@ -280,7 +285,7 @@ def _parse_embedded_geojson_js(
     )
 
 
-def _parse_direct_geojson(url: str, authority: str) -> List[Dict[str, Any]]:
+def _parse_direct_geojson(url: str, authority: str) -> list[dict[str, Any]]:
     """Handles direct .geojson or JSON FeatureCollection endpoints."""
     logger.debug(f"GIS (direct GeoJSON) on {url}")
 
@@ -297,7 +302,7 @@ def _parse_direct_geojson(url: str, authority: str) -> List[Dict[str, Any]]:
     return _features_to_records(data, url, authority)
 
 
-def _parse_arcgis_rest(url: str, authority: str) -> List[Dict[str, Any]]:
+def _parse_arcgis_rest(url: str, authority: str) -> list[dict[str, Any]]:
     """
     ArcGIS FeatureServer / MapServer query endpoints.
 
@@ -335,14 +340,14 @@ def _parse_arcgis_rest(url: str, authority: str) -> List[Dict[str, Any]]:
 
 
 def _arcgis_features_to_records(
-    data: Dict[str, Any], source_url: str, authority: str
-) -> List[Dict[str, Any]]:
+    data: dict[str, Any], source_url: str, authority: str
+) -> list[dict[str, Any]]:
     """Convert ArcGIS REST query results (features[].attributes) to records."""
     features = data.get("features", [])
     if not isinstance(features, list):
         return []
 
-    def pick(attrs: Dict[str, Any], *names: str) -> str:
+    def pick(attrs: dict[str, Any], *names: str) -> str:
         lower = {k.lower(): v for k, v in attrs.items()}
         for n in names:
             v = lower.get(n.lower())
@@ -350,7 +355,7 @@ def _arcgis_features_to_records(
                 return str(v).strip()
         return ""
 
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     now_iso = _dt.now().isoformat()
 
     for feat in features:
@@ -364,7 +369,7 @@ def _arcgis_features_to_records(
 
         units = pick(attrs, "AffordableUnits", "NumUnits", "TotalUnits", "Units", "UNIT_COUNT")
         manager = pick(attrs, "Agency", "Manager", "PropertyManager", "Owner")
-        notes_bits = [f"Source: municipal ArcGIS layer"]
+        notes_bits = ["Source: municipal ArcGIS layer"]
         for label, *fields in (
             ("Building type", "BuildingType", "ProjectType"),
             ("Income level", "Income_Level", "IncomeLevel", "AMI"),
@@ -374,7 +379,7 @@ def _arcgis_features_to_records(
             if val:
                 notes_bits.append(f"{label}: {val}")
 
-        rec: Dict[str, Any] = {
+        rec: dict[str, Any] = {
             "authority": authority or "Municipal GIS Portfolio",
             "property_name": name,
             "address": pick(attrs, "Address", "SiteAddress", "FullAddress"),
@@ -407,7 +412,7 @@ def _parse_page_for_embedded_gis(
     administrator_url: str = "",
     administrator_phone: str = "",
     administrator_contact: str = "",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Enhanced page scanner for municipal BMR/GIS pages.
 
@@ -439,7 +444,9 @@ def _parse_page_for_embedded_gis(
                 end = script.string.rfind("}") + 1
                 data = json.loads(script.string[start:end])
                 recs = _features_to_records(
-                    data, url, authority,
+                    data,
+                    url,
+                    authority,
                     administrator=administrator,
                     administrator_url=administrator_url,
                     administrator_phone=administrator_phone,
@@ -456,7 +463,10 @@ def _parse_page_for_embedded_gis(
         if not src:
             continue
         src_lower = src.lower()
-        if any(kw in src_lower for kw in ["units", "bmr", "rentals", "portfolio", "gis", "features", "geojson"]):
+        if any(
+            kw in src_lower
+            for kw in ["units", "bmr", "rentals", "portfolio", "gis", "features", "geojson"]
+        ):
             full_url = urljoin(base_url, src)
             candidates.append(full_url)
 
@@ -467,7 +477,8 @@ def _parse_page_for_embedded_gis(
     for candidate in candidates:
         try:
             recs = _parse_embedded_geojson_js(
-                candidate, authority,
+                candidate,
+                authority,
                 administrator=administrator,
                 administrator_url=administrator_url,
                 administrator_phone=administrator_phone,
@@ -489,7 +500,8 @@ def _parse_page_for_embedded_gis(
         for cand in candidates:
             try:
                 recs = _parse_embedded_geojson_js(
-                    cand, authority,
+                    cand,
+                    authority,
                     administrator=administrator,
                     administrator_url=administrator_url,
                     administrator_phone=administrator_phone,
@@ -509,15 +521,16 @@ def _parse_page_for_embedded_gis(
 # HELPERS
 # =============================================================================
 
+
 def _features_to_records(
-    geojson: Dict[str, Any],
+    geojson: dict[str, Any],
     source_url: str,
     authority: str,
     administrator: str = "",
     administrator_url: str = "",
     administrator_phone: str = "",
     administrator_contact: str = "",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Convert a GeoJSON FeatureCollection into normalized property records."""
     if not isinstance(geojson, dict):
         return []
@@ -526,7 +539,7 @@ def _features_to_records(
     if not isinstance(features, list):
         return []
 
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
 
     for feat in features:
         props = feat.get("properties", {}) if isinstance(feat, dict) else {}
@@ -547,7 +560,7 @@ def _features_to_records(
             or props.get("TotalUnits")
         )
 
-        rec: Dict[str, Any] = {
+        rec: dict[str, Any] = {
             "authority": authority or "Municipal GIS Portfolio",
             "property_name": str(name).strip(),
             "address": "",  # GIS layers often only have point geometry, not full address
@@ -608,6 +621,8 @@ if __name__ == "__main__":
 
     print(f"Total records returned: {len(records)}\n")
     for r in records:
-        print(f"  {r['property_name']:30} | Units: {r.get('unit_count', '?'):>3} | {r.get('authority', '')}")
+        print(
+            f"  {r['property_name']:30} | Units: {r.get('unit_count', '?'):>3} | {r.get('authority', '')}"
+        )
 
     print("\nDone.")

@@ -17,9 +17,8 @@ from __future__ import annotations
 import io
 import logging
 import re
-from dataclasses import dataclass, field
-from typing import List, Optional
-from urllib.parse import urlparse, parse_qs, unquote
+from dataclasses import dataclass
+from urllib.parse import parse_qs, unquote, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +36,7 @@ except ImportError:
 @dataclass
 class HousingRecord:
     """Structured record for one affordable housing opportunity / property."""
+
     authority: str = ""
     property_name: str = ""
     address: str = ""
@@ -54,14 +54,14 @@ class HousingRecord:
     listing_status: str = ""
     page_number: int = 0
     raw_line: str = ""
-    confidence: str = "low"   # "high", "medium", or "low"
+    confidence: str = "low"  # "high", "medium", or "low"
 
     # Freshness / delta metadata (added 2026-05 for 0.8.2+)
-    last_seen: str = ""       # ISO timestamp when last observed in a source
-    first_seen: str = ""      # ISO timestamp when first seen
-    source: str = ""          # e.g. "cdn:sunnyvale:370" or "housekeys:los-gatos"
-    source_url: str = ""      # canonical URL of the document/listing this came from
-    expires_at: str = ""      # optional explicit expiry if the source provides one
+    last_seen: str = ""  # ISO timestamp when last observed in a source
+    first_seen: str = ""  # ISO timestamp when first seen
+    source: str = ""  # e.g. "cdn:sunnyvale:370" or "housekeys:los-gatos"
+    source_url: str = ""  # canonical URL of the document/listing this came from
+    expires_at: str = ""  # optional explicit expiry if the source provides one
 
     def to_dict(self) -> dict:
         """Convert to plain dict for downstream normalizer/CSV/outputs."""
@@ -78,7 +78,7 @@ class HousingRecord:
             "supportive_services": self.supportive_services,
             "notes": self.notes,
             "document_url": self.document_url,
-            "url": self.document_url,   # alias expected by some older code
+            "url": self.document_url,  # alias expected by some older code
             "listing_status": self.listing_status,
             "confidence": self.confidence,
             "page_number": self.page_number,
@@ -94,6 +94,7 @@ class HousingRecord:
 # ------------------------------------------------------------------
 # PDF Text Extraction
 # ------------------------------------------------------------------
+
 
 def _fetch_pdf(url: str, timeout: int = 30) -> bytes:
     """Download a PDF via polite_get (robots.txt + rate limit). Handles DocumentCenter redirects."""
@@ -111,12 +112,12 @@ def _fetch_pdf(url: str, timeout: int = 30) -> bytes:
     return resp.content
 
 
-def extract_text_lines_from_pdf(pdf_bytes: bytes) -> List[tuple[int, str]]:
+def extract_text_lines_from_pdf(pdf_bytes: bytes) -> list[tuple[int, str]]:
     """
     Extract text from a PDF as (page_number, line) tuples.
     Uses PyMuPDF first (fast + reliable), falls back to pdfplumber.
     """
-    lines: List[tuple[int, str]] = []
+    lines: list[tuple[int, str]] = []
 
     if fitz:
         try:
@@ -152,25 +153,26 @@ def extract_text_lines_from_pdf(pdf_bytes: bytes) -> List[tuple[int, str]]:
 # ------------------------------------------------------------------
 
 # Common regexes for parsing property lines
-PHONE_RE = re.compile(r'\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}')
-EMAIL_RE = re.compile(r'[\w\.-]+@[\w\.-]+\.\w+')
+PHONE_RE = re.compile(r"\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}")
+EMAIL_RE = re.compile(r"[\w\.-]+@[\w\.-]+\.\w+")
 ADDRESS_RE = re.compile(
-    r'\d{1,5}\s+[\w\s\.\,\-]+(?:Ave|St|Street|Rd|Road|Dr|Drive|Blvd|Boulevard|Way|Ln|Lane|Ct|Court|Pl|Place|Cir|Circle)\b',
-    re.I
+    r"\d{1,5}\s+[\w\s\.\,\-]+(?:Ave|St|Street|Rd|Road|Dr|Drive|Blvd|Boulevard|Way|Ln|Lane|Ct|Court|Pl|Place|Cir|Circle)\b",
+    re.I,
 )
-BEDROOM_RE = re.compile(r'\d[\s,-]*(?:bed|bdrm|bedroom)s?', re.I)
+BEDROOM_RE = re.compile(r"\d[\s,-]*(?:bed|bdrm|bedroom)s?", re.I)
 
 COMMUNITY_TYPE_RE = re.compile(
-    r'\b(?:senior|family|general public|disabled|unhoused|homeless|'
-    r'veteran|agricultural worker|farmworker|moderate income|low income|'
-    r'very low income|workforce)\b',
-    re.I
+    r"\b(?:senior|family|general public|disabled|unhoused|homeless|"
+    r"veteran|agricultural worker|farmworker|moderate income|low income|"
+    r"very low income|workforce)\b",
+    re.I,
 )
 
 
 # ------------------------------------------------------------------
 # Table Extraction Helpers (ported from codex_pdf.py)
 # ------------------------------------------------------------------
+
 
 def clean_cell(value: object) -> str:
     if value is None:
@@ -213,10 +215,22 @@ def header_to_field(header: str) -> str:
 
 def looks_like_header_row(row: list[str]) -> bool:
     joined = " ".join(row).lower()
-    hits = sum(1 for word in [
-        "apartment", "complex", "property", "address", "phone",
-        "manager", "community", "bedroom", "email", "supportive"
-    ] if word in joined)
+    hits = sum(
+        1
+        for word in [
+            "apartment",
+            "complex",
+            "property",
+            "address",
+            "phone",
+            "manager",
+            "community",
+            "bedroom",
+            "email",
+            "supportive",
+        ]
+        if word in joined
+    )
     return hits >= 2
 
 
@@ -234,7 +248,7 @@ def record_from_table_row(
     field_map: dict[int, str],
     document_url: str = "",
     page_number: int = 0,
-) -> Optional[HousingRecord]:
+) -> HousingRecord | None:
     values = {
         "property_name": "",
         "address": "",
@@ -272,10 +286,18 @@ def record_from_table_row(
         if match:
             values["address"] = match.group(0)
 
-    signals = sum(bool(values[k]) for k in [
-        "property_name", "address", "phone", "email",
-        "property_manager", "community_type", "bedrooms"
-    ])
+    signals = sum(
+        bool(values[k])
+        for k in [
+            "property_name",
+            "address",
+            "phone",
+            "email",
+            "property_manager",
+            "community_type",
+            "bedrooms",
+        ]
+    )
 
     if signals < 2:
         return None
@@ -314,7 +336,9 @@ def record_from_table_row(
     )
 
 
-def parse_housing_line(line: str, document_url: str = "", page_number: int = 0) -> Optional[HousingRecord]:
+def parse_housing_line(
+    line: str, document_url: str = "", page_number: int = 0
+) -> HousingRecord | None:
     """
     Heuristic parser that turns a raw line from a housing list PDF into a structured record.
     This is the core logic that made the original Gilroy extraction work.
@@ -356,7 +380,7 @@ def parse_housing_line(line: str, document_url: str = "", page_number: int = 0) 
     if address_match:
         record.address = address_match.group(0).strip()
         # Property name is usually everything before the address
-        record.property_name = line[:address_match.start()].strip(" -–,")
+        record.property_name = line[: address_match.start()].strip(" -–,")
 
     if phone_match:
         record.phone = phone_match.group(0).strip()
@@ -369,12 +393,19 @@ def parse_housing_line(line: str, document_url: str = "", page_number: int = 0) 
 
     if community_matches:
         # Take the longest match as the community type
-        record.community_type = max(
-            (m.group(0).strip() for m in community_matches), key=len
-        )
+        record.community_type = max((m.group(0).strip() for m in community_matches), key=len)
 
     # Simple confidence heuristic
-    signals = sum(bool(x) for x in [record.address, record.phone, record.email, record.bedrooms, record.community_type])
+    signals = sum(
+        bool(x)
+        for x in [
+            record.address,
+            record.phone,
+            record.email,
+            record.bedrooms,
+            record.community_type,
+        ]
+    )
     if signals >= 4:
         record.confidence = "high"
     elif signals >= 2:
@@ -401,11 +432,11 @@ def _extract_flyer_page(
     document_url: str,
     page_number: int,
     full_text: str,
-) -> List[HousingRecord]:
+) -> list[HousingRecord]:
     """Extractor for single-page Gilroy / Eden Housing style flyers."""
     t = full_text
     t_lower = t.lower()
-    records: List[HousingRecord] = []
+    records: list[HousingRecord] = []
 
     if "apartments" not in t_lower and "manor" not in t_lower:
         return []
@@ -427,7 +458,9 @@ def _extract_flyer_page(
                 slug = m.group(1)
         if slug:
             slug = slug.replace("-", " ").replace("_", " ")
-            slug = re.sub(r"\s*(Flyer|Event|Calendar|50AMI|60AMI|50%|60%)\s*", " ", slug, flags=re.I).strip()
+            slug = re.sub(
+                r"\s*(Flyer|Event|Calendar|50AMI|60AMI|50%|60%)\s*", " ", slug, flags=re.I
+            ).strip()
             if len(slug) > 4:
                 property_name = slug
 
@@ -484,21 +517,23 @@ def _extract_flyer_page(
     if income:
         notes.append("Income: " + ", ".join(f"{k}: ${v}" for k, v in income.items()))
 
-    records.append(HousingRecord(
-        authority=authority,
-        property_name=property_name or "Unknown Property",
-        address=address,
-        phone=phone,
-        email="",
-        property_manager=manager,
-        community_type="Senior" if "senior" in t_lower or "62" in t_lower else "",
-        bedrooms=bedrooms,
-        supportive_services="",
-        confidence="medium",
-        notes="; ".join(notes),
-        document_url=document_url,
-        page_number=page_number,
-    ))
+    records.append(
+        HousingRecord(
+            authority=authority,
+            property_name=property_name or "Unknown Property",
+            address=address,
+            phone=phone,
+            email="",
+            property_manager=manager,
+            community_type="Senior" if "senior" in t_lower or "62" in t_lower else "",
+            bedrooms=bedrooms,
+            supportive_services="",
+            confidence="medium",
+            notes="; ".join(notes),
+            document_url=document_url,
+            page_number=page_number,
+        )
+    )
     return records
 
 
@@ -506,12 +541,12 @@ def _extract_flyer_pages_from_pdf(
     pdf_bytes: bytes,
     authority: str,
     document_url: str,
-) -> List[HousingRecord]:
+) -> list[HousingRecord]:
     """Try whole-page flyer extraction for each page."""
     if not fitz:
         return []
 
-    records: List[HousingRecord] = []
+    records: list[HousingRecord] = []
     try:
         with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
             for page_idx, page in enumerate(doc, start=1):
@@ -528,7 +563,7 @@ def extract_records_from_pdf(
     pdf_url: str,
     authority: str = "City of Gilroy",
     include_low_confidence: bool = False,
-) -> List[HousingRecord]:
+) -> list[HousingRecord]:
     """
     High-level entry point.
     Tries table extraction first, then flyer pages, then line-by-line parsing,
@@ -541,7 +576,9 @@ def extract_records_from_pdf(
     if table_records:
         if not include_low_confidence:
             table_records = [r for r in table_records if r.confidence != "low"]
-        logger.info("[pdf] Table extraction produced %d records from %s", len(table_records), real_url)
+        logger.info(
+            "[pdf] Table extraction produced %d records from %s", len(table_records), real_url
+        )
         return table_records
 
     try:
@@ -552,11 +589,13 @@ def extract_records_from_pdf(
 
     flyer_records = _extract_flyer_pages_from_pdf(pdf_bytes, authority, real_url)
     if flyer_records:
-        logger.info("[pdf] Flyer extraction produced %d records from %s", len(flyer_records), real_url)
+        logger.info(
+            "[pdf] Flyer extraction produced %d records from %s", len(flyer_records), real_url
+        )
         return flyer_records
 
     text_lines = extract_text_lines_from_pdf(pdf_bytes)
-    records: List[HousingRecord] = []
+    records: list[HousingRecord] = []
     for page_number, line in text_lines:
         rec = parse_housing_line(line, document_url=real_url, page_number=page_number)
         if rec:
@@ -583,10 +622,11 @@ def extract_records_from_pdf(
 # Table Extraction (pdfplumber)
 # ------------------------------------------------------------------
 
+
 def extract_records_from_pdf_tables(
     pdf_url: str,
     authority: str = "",
-) -> List[HousingRecord]:
+) -> list[HousingRecord]:
     """
     Table-aware extraction using pdfplumber.
     Preferred path for well-structured lists (like the Gilroy ones).
@@ -602,7 +642,7 @@ def extract_records_from_pdf_tables(
         print(f"   [pdf] Could not fetch {pdf_url}: {e}")
         return []
 
-    records: List[HousingRecord] = []
+    records: list[HousingRecord] = []
 
     table_settings = {
         "vertical_strategy": "lines",
@@ -642,12 +682,14 @@ def extract_records_from_pdf_tables(
 
                     field_map = build_field_map(cleaned_rows[header_index])
                     if not field_map:
-                        logger.debug("[pdf] No field_map built from header: %s", cleaned_rows[header_index])
+                        logger.debug(
+                            "[pdf] No field_map built from header: %s", cleaned_rows[header_index]
+                        )
                         continue
                     else:
                         logger.debug("[pdf] Field map for this table: %s", field_map)
 
-                    for row in cleaned_rows[header_index + 1:]:
+                    for row in cleaned_rows[header_index + 1 :]:
                         if looks_like_header_row(row):
                             continue
 

@@ -1,0 +1,6 @@
+{
+  "*.py": [
+    "scripts/dev-ruff.sh check --fix",
+    "scripts/dev-ruff.sh format"
+  ]
+}

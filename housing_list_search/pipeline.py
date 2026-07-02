@@ -11,22 +11,23 @@ import csv
 import logging
 import os
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
+import housing_list_search.runner as runner_module
 from housing_list_search.changelog import generate_changelog
 from housing_list_search.coverage import summarize_coverage
 from housing_list_search.csv_safety import sanitize_csv_field
-from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
+from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.outputs import (
     PARTIAL_DAILY_SUMMARY_PATH,
     STAFF_DAILY_SUMMARY_PATH,
     generate_daily_summary,
 )
-import housing_list_search.runner as runner_module
 
 logger = logging.getLogger("housing_list_search")
 
@@ -141,7 +142,9 @@ class RunPipeline:
 
         if partial_run:
             self._write_partial_changelog(target_filter or "")
-            logger.info("Partial --target run: left global run_prev.csv changelog baseline unchanged")
+            logger.info(
+                "Partial --target run: left global run_prev.csv changelog baseline unchanged"
+            )
             generate_daily_summary(
                 all_listings,
                 skipped_targets=[],
@@ -235,10 +238,12 @@ class RunPipeline:
         with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(["change_type", "authority", "property_name", "url", "details"])
-            writer.writerow([
-                sanitize_csv_field("PARTIAL_RUN"),
-                sanitize_csv_field("target"),
-                sanitize_csv_field(target_filter),
-                sanitize_csv_field(""),
-                sanitize_csv_field("global changelog baseline not updated"),
-            ])
+            writer.writerow(
+                [
+                    sanitize_csv_field("PARTIAL_RUN"),
+                    sanitize_csv_field("target"),
+                    sanitize_csv_field(target_filter),
+                    sanitize_csv_field(""),
+                    sanitize_csv_field("global changelog baseline not updated"),
+                ]
+            )

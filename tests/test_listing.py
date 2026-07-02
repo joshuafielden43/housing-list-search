@@ -1,7 +1,7 @@
 """Tests for the canonical Listing persistence seam."""
 
 from housing_list_search.extraction.pdf import HousingRecord
-from housing_list_search.listing import coerce_listing, listing_to_row, persistence_url
+from housing_list_search.listing import coerce_listing, listing_to_row
 
 
 class TestCoerceListing:
@@ -19,22 +19,27 @@ class TestCoerceListing:
 
 class TestListingToRow:
     def test_authority_from_source_authority(self):
-        row = listing_to_row({"source_authority": "SCCHA", "property_name": "X", "url": "https://a"})
+        row = listing_to_row(
+            {"source_authority": "SCCHA", "property_name": "X", "url": "https://a"}
+        )
         assert row["authority"] == "SCCHA"
 
     def test_empty_url_uses_address_surrogate(self):
-        row = listing_to_row({
-            "authority": "Morgan Hill",
-            "property_name": "Fiesta Gardens",
-            "url": "",
-            "address": "123 Main St, Morgan Hill, CA 95037",
-        })
+        row = listing_to_row(
+            {
+                "authority": "Morgan Hill",
+                "property_name": "Fiesta Gardens",
+                "url": "",
+                "address": "123 Main St, Morgan Hill, CA 95037",
+            }
+        )
         assert row["url"].startswith("hls:addr:")
 
     def test_distinct_empty_url_records_do_not_collide(self):
-        from housing_list_search.db import DatabaseManager
         import os
         import tempfile
+
+        from housing_list_search.db import DatabaseManager
 
         listings = [
             {
@@ -57,48 +62,57 @@ class TestListingToRow:
             assert db.get_record_count() == 2
 
     def test_url_from_document_url(self):
-        row = listing_to_row({
-            "authority": "Gilroy",
-            "property_name": "Wheeler",
-            "document_url": "https://gilroy.gov/doc.pdf",
-        })
+        row = listing_to_row(
+            {
+                "authority": "Gilroy",
+                "property_name": "Wheeler",
+                "document_url": "https://gilroy.gov/doc.pdf",
+            }
+        )
         assert row["url"] == "https://gilroy.gov/doc.pdf"
 
     def test_listing_status_maps_to_status(self):
-        row = listing_to_row({
-            "authority": "T",
-            "property_name": "P",
-            "url": "",
-            "listing_status": "open",
-        })
+        row = listing_to_row(
+            {
+                "authority": "T",
+                "property_name": "P",
+                "url": "",
+                "listing_status": "open",
+            }
+        )
         assert row["status"] == "Open"
         assert row["listing_status"] == "open"
 
     def test_eligibility_flags_list_joined(self):
-        row = listing_to_row({
-            "authority": "T",
-            "property_name": "P",
-            "url": "",
-            "eligibility_flags": ["senior", "low_income"],
-        })
+        row = listing_to_row(
+            {
+                "authority": "T",
+                "property_name": "P",
+                "url": "",
+                "eligibility_flags": ["senior", "low_income"],
+            }
+        )
         assert row["eligibility_flags"] == "senior|low_income"
 
     def test_notes_enriched_with_contact_fields(self):
-        row = listing_to_row({
-            "authority": "T",
-            "property_name": "P",
-            "url": "",
-            "phone": "408-555-0100",
-            "bedrooms": "2 BR",
-        })
+        row = listing_to_row(
+            {
+                "authority": "T",
+                "property_name": "P",
+                "url": "",
+                "phone": "408-555-0100",
+                "bedrooms": "2 BR",
+            }
+        )
         assert "phone: 408-555-0100" in row["notes"]
         assert "br: 2 BR" in row["notes"]
 
     def test_db_upsert_uses_same_path_as_normalizer(self):
         """listing_to_row output must satisfy upsert_listings required fields."""
-        from housing_list_search.db import DatabaseManager
-        import tempfile
         import os
+        import tempfile
+
+        from housing_list_search.db import DatabaseManager
 
         raw = {
             "authority": "Test City",

@@ -35,10 +35,18 @@ Thanks for helping. This project exists to make affordable housing data accessib
 git clone https://github.com/joshuafielden43/housing-list-search.git
 cd housing-list-search
 uv venv && source .venv/bin/activate
-uv pip install -r requirements.txt
+uv pip install -r requirements-dev.txt
+npm install   # Husky pre-commit / pre-push hooks (secrets, ruff, doctor, pytest)
 playwright install chromium
 python scripts/doctor.py --fix
 ```
+
+Commit-time checks (same pattern as `agent-deep-research`):
+
+- **pre-commit:** secrets guard → `ruff` on staged `.py` → `doctor --dry-run` → unit tests
+- **pre-push:** full `npm run check` (lint + doctor + tests)
+
+Override once if you know it's safe: `git commit --no-verify`
 
 Run tests:
 

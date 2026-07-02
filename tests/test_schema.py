@@ -1,8 +1,5 @@
 """Tests for unified housing_registry.db schema ownership."""
 
-import sqlite3
-from pathlib import Path
-
 from housing_list_search.schema import init_schema
 from housing_list_search.sqlite_config import connect_sqlite
 
@@ -15,9 +12,7 @@ class TestInitSchema:
 
         tables = {
             row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         assert {"targets", "housing_records", "run_history"}.issubset(tables)
 
@@ -37,16 +32,14 @@ class TestInitSchema:
         conn = db.connect()
         tables = {
             row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         assert "targets" in tables
         assert "housing_records" in tables
 
     def test_registry_ingest_after_db_init(self, tmp_path, monkeypatch):
-        from housing_list_search.registry import load_targets_to_db, get_all_targets
         from housing_list_search.db import DatabaseManager
+        from housing_list_search.registry import get_all_targets, load_targets_to_db
 
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr("housing_list_search.registry.DB_PATH", str(tmp_path / "shared.db"))

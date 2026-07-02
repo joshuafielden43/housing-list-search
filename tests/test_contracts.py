@@ -22,17 +22,15 @@ Coverage:
 
 from __future__ import annotations
 
-import io
 import json
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _listing(name, status="active", notes="accepting applications", source="bloom:test", addr=""):
     return {
@@ -51,13 +49,17 @@ def _listing(name, status="active", notes="accepting applications", source="bloo
 # outputs.py — summary open-listing detection
 # ---------------------------------------------------------------------------
 
+
 class TestSummaryOpenDetection:
     """generate_daily_summary must surface realistic open listings."""
 
     def _run(self, listings, **kwargs):
         """Run generate_daily_summary and return the written markdown."""
-        import tempfile, os
+        import os
+        import tempfile
+
         from housing_list_search.outputs import generate_daily_summary
+
         # Write to a temp dir so we never touch the real daily_summary.md
         orig_dir = os.getcwd()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -76,7 +78,13 @@ class TestSummaryOpenDetection:
         assert "Monroe Commons" in md
 
     def test_accepting_applications_in_notes_is_open(self):
-        listings = [_listing("Oakwood Terrace Apartments", notes="accepting applications; lottery", source="bloom:x")]
+        listings = [
+            _listing(
+                "Oakwood Terrace Apartments",
+                notes="accepting applications; lottery",
+                source="bloom:x",
+            )
+        ]
         md = self._run(listings)
         assert "Oakwood Terrace Apartments" in md
 
@@ -91,12 +99,21 @@ class TestSummaryOpenDetection:
         assert "Sunrise Gardens" in md
 
     def test_closed_listing_excluded(self):
-        listings = [_listing("Closed Towers", status="closed", notes="closed — not currently accepting applications", source="bloom:x")]
+        listings = [
+            _listing(
+                "Closed Towers",
+                status="closed",
+                notes="closed — not currently accepting applications",
+                source="bloom:x",
+            )
+        ]
         md = self._run(listings)
         assert "Closed Towers" not in md or "CURRENTLY OPEN" not in md
 
     def test_nav_link_excluded_even_when_open(self):
-        listings = [_listing("Quick links to housing", status="Open", notes="", source="generic:scrape")]
+        listings = [
+            _listing("Quick links to housing", status="Open", notes="", source="generic:scrape")
+        ]
         md = self._run(listings)
         assert "Quick links to housing" not in md
 
@@ -169,6 +186,7 @@ class TestSummaryOpenDetection:
 # bloom_housing.py — listing_status field on HousingRecord
 # ---------------------------------------------------------------------------
 
+
 class TestBloomListingStatus:
     """_bloom_record_from_item must set listing_status, not only embed it in notes."""
 
@@ -188,42 +206,55 @@ class TestBloomListingStatus:
 
     def test_active_listing_sets_open(self):
         from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+
         item = self._make_item("active")
         rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "Test")
         assert rec.listing_status == "open"
 
     def test_closed_listing_sets_closed(self):
         from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+
         item = self._make_item("closed")
         rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "Test")
         assert rec.listing_status == "closed"
 
     def test_coming_soon_sets_coming_soon(self):
         from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+
         item = self._make_item("active", marketing="comingSoon")
         rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "Test")
         assert rec.listing_status == "coming_soon"
 
     def test_waitlist_open_sets_waitlist(self):
         from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+
         item = self._make_item("closed", is_waitlist_open=True)
         rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "Test")
         assert rec.listing_status == "waitlist"
 
     def test_listing_status_field_surfaces_in_summary(self):
         """outputs.py must use listing_status field — not require notes string."""
-        import tempfile, os
-        from housing_list_search.outputs import generate_daily_summary
+        import os
+        import tempfile
+
         from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
+        from housing_list_search.outputs import generate_daily_summary
 
         item = {
-            "id": "abc", "name": "Monroe Commons", "status": "active",
-            "marketingType": "", "isWaitlistOpen": False, "reviewOrderType": "",
-            "leasingAgentPhone": "", "leasingAgentEmail": "",
+            "id": "abc",
+            "name": "Monroe Commons",
+            "status": "active",
+            "marketingType": "",
+            "isWaitlistOpen": False,
+            "reviewOrderType": "",
+            "leasingAgentPhone": "",
+            "leasingAgentEmail": "",
             "listingsBuildingAddress": {"city": "Santa Clara"},
             "units": [],
         }
-        rec = _bloom_record_from_item(item, "https://housingbayarea.mtc.ca.gov/listings", "City of Santa Clara")
+        rec = _bloom_record_from_item(
+            item, "https://housingbayarea.mtc.ca.gov/listings", "City of Santa Clara"
+        )
         d = rec.to_dict()
         # Blank out notes to confirm listing_status alone triggers open detection
         d["notes"] = ""
@@ -245,14 +276,34 @@ class TestBloomListingStatus:
 # dedupe.py — shared URL must NOT collapse distinct named records
 # ---------------------------------------------------------------------------
 
+
 class TestDedupeSharedURL:
     def test_distinct_names_same_url_both_kept(self):
         from housing_list_search.dedupe import deduplicate_listings
+
         shared_url = "https://www.housekeys1.com/"
         records = [
-            {"property_name": "Fiesta Gardens", "authority": "Morgan Hill", "url": shared_url, "address": "", "confidence": "medium"},
-            {"property_name": "De Rose Manor",  "authority": "Morgan Hill", "url": shared_url, "address": "", "confidence": "medium"},
-            {"property_name": "La Colina",      "authority": "Morgan Hill", "url": shared_url, "address": "", "confidence": "medium"},
+            {
+                "property_name": "Fiesta Gardens",
+                "authority": "Morgan Hill",
+                "url": shared_url,
+                "address": "",
+                "confidence": "medium",
+            },
+            {
+                "property_name": "De Rose Manor",
+                "authority": "Morgan Hill",
+                "url": shared_url,
+                "address": "",
+                "confidence": "medium",
+            },
+            {
+                "property_name": "La Colina",
+                "authority": "Morgan Hill",
+                "url": shared_url,
+                "address": "",
+                "confidence": "medium",
+            },
         ]
         result = deduplicate_listings(records)
         names = {r["property_name"] for r in result}
@@ -263,9 +314,22 @@ class TestDedupeSharedURL:
 
     def test_same_address_deduplicates_across_sources(self):
         from housing_list_search.dedupe import deduplicate_listings
+
         records = [
-            {"property_name": "Oak Creek", "authority": "SCCHA", "address": "100 Oak St, San Jose, CA", "url": "", "confidence": "high"},
-            {"property_name": "Oak Creek",  "authority": "SJ Portal", "address": "100 Oak St, San Jose, CA", "url": "", "confidence": "medium"},
+            {
+                "property_name": "Oak Creek",
+                "authority": "SCCHA",
+                "address": "100 Oak St, San Jose, CA",
+                "url": "",
+                "confidence": "high",
+            },
+            {
+                "property_name": "Oak Creek",
+                "authority": "SJ Portal",
+                "address": "100 Oak St, San Jose, CA",
+                "url": "",
+                "confidence": "medium",
+            },
         ]
         result = deduplicate_listings(records)
         assert len(result) == 1
@@ -275,6 +339,7 @@ class TestDedupeSharedURL:
         """HousingRecord objects from extraction layer must not cause AttributeError in dedupe."""
         from housing_list_search.dedupe import deduplicate_listings
         from housing_list_search.extraction.pdf import HousingRecord
+
         rec = HousingRecord(
             authority="City of Test",
             property_name="Cedar Park Apartments",
@@ -291,12 +356,16 @@ class TestDedupeSharedURL:
 # write path is caught rather than just the logic duplicated here.
 # ---------------------------------------------------------------------------
 
-class TestNormalizerFlagsCoercion:
 
+class TestNormalizerFlagsCoercion:
     def _csv_rows(self, listings):
         """Write via save_current_full and return parsed CSV rows."""
-        import csv, os, tempfile
+        import csv
+        import os
+        import tempfile
+
         from housing_list_search.normalizer import save_current_full
+
         orig = os.getcwd()
         with tempfile.TemporaryDirectory() as tmp:
             os.chdir(tmp)
@@ -308,39 +377,94 @@ class TestNormalizerFlagsCoercion:
                 os.chdir(orig)
 
     def test_string_flag_is_joined_intact(self):
-        rows = self._csv_rows([{"property_name": "Test", "eligibility_flags": "below_market_rate", "authority": "X"}])
+        rows = self._csv_rows(
+            [{"property_name": "Test", "eligibility_flags": "below_market_rate", "authority": "X"}]
+        )
         assert rows[0]["eligibility_flags"] == "below_market_rate"
 
     def test_list_flags_joined_with_pipe(self):
-        rows = self._csv_rows([{"property_name": "Test", "eligibility_flags": ["below_market_rate", "senior"], "authority": "X"}])
+        rows = self._csv_rows(
+            [
+                {
+                    "property_name": "Test",
+                    "eligibility_flags": ["below_market_rate", "senior"],
+                    "authority": "X",
+                }
+            ]
+        )
         assert rows[0]["eligibility_flags"] == "below_market_rate|senior"
 
     def test_empty_string_flag_becomes_empty(self):
-        rows = self._csv_rows([{"property_name": "Test", "eligibility_flags": "", "authority": "X"}])
+        rows = self._csv_rows(
+            [{"property_name": "Test", "eligibility_flags": "", "authority": "X"}]
+        )
         assert rows[0]["eligibility_flags"] == ""
 
     def test_listing_status_open_maps_to_Open_in_csv(self):
-        rows = self._csv_rows([{"property_name": "Monroe Commons", "listing_status": "open", "authority": "Test", "eligibility_flags": []}])
+        rows = self._csv_rows(
+            [
+                {
+                    "property_name": "Monroe Commons",
+                    "listing_status": "open",
+                    "authority": "Test",
+                    "eligibility_flags": [],
+                }
+            ]
+        )
         assert rows[0]["status"] == "Open"
 
     def test_listing_status_waitlist_maps_correctly(self):
-        rows = self._csv_rows([{"property_name": "Park View", "listing_status": "waitlist", "authority": "Test", "eligibility_flags": []}])
+        rows = self._csv_rows(
+            [
+                {
+                    "property_name": "Park View",
+                    "listing_status": "waitlist",
+                    "authority": "Test",
+                    "eligibility_flags": [],
+                }
+            ]
+        )
         assert rows[0]["status"] == "Waitlist Open"
 
     def test_listing_status_closed_maps_correctly(self):
-        rows = self._csv_rows([{"property_name": "Elm Court", "listing_status": "closed", "authority": "Test", "eligibility_flags": []}])
+        rows = self._csv_rows(
+            [
+                {
+                    "property_name": "Elm Court",
+                    "listing_status": "closed",
+                    "authority": "Test",
+                    "eligibility_flags": [],
+                }
+            ]
+        )
         assert rows[0]["status"] == "Closed"
 
     def test_listing_status_overrides_raw_status_field(self):
         """listing_status takes precedence over the generic status field."""
-        rows = self._csv_rows([{
-            "property_name": "Bloom Prop", "listing_status": "open", "status": "active",
-            "authority": "Test", "eligibility_flags": [],
-        }])
+        rows = self._csv_rows(
+            [
+                {
+                    "property_name": "Bloom Prop",
+                    "listing_status": "open",
+                    "status": "active",
+                    "authority": "Test",
+                    "eligibility_flags": [],
+                }
+            ]
+        )
         assert rows[0]["status"] == "Open"
 
     def test_no_listing_status_falls_back_to_status_field(self):
-        rows = self._csv_rows([{"property_name": "Generic", "status": "Waitlisting", "authority": "Test", "eligibility_flags": []}])
+        rows = self._csv_rows(
+            [
+                {
+                    "property_name": "Generic",
+                    "status": "Waitlisting",
+                    "authority": "Test",
+                    "eligibility_flags": [],
+                }
+            ]
+        )
         assert rows[0]["status"] == "Waitlisting"
 
 
@@ -348,9 +472,11 @@ class TestNormalizerFlagsCoercion:
 # housekeys.py — city 403 still produces a registration record
 # ---------------------------------------------------------------------------
 
+
 class TestHouseKeysFailedFetch:
     def test_city_page_403_still_returns_record(self):
         from housing_list_search.adapters.housekeys import scrape_housekeys
+
         with patch("housing_list_search.adapters.housekeys.polite_get", return_value=None):
             records = scrape_housekeys(
                 "City of Morgan Hill",
@@ -363,6 +489,7 @@ class TestHouseKeysFailedFetch:
 
     def test_fallback_to_default_when_no_admin_url(self):
         from housing_list_search.adapters.housekeys import scrape_housekeys
+
         with patch("housing_list_search.adapters.housekeys.polite_get", return_value=None):
             records = scrape_housekeys(
                 "City of Somewhere",
@@ -377,29 +504,37 @@ class TestHouseKeysFailedFetch:
 # bloom_housing.py — API pagination fetches beyond page 1
 # ---------------------------------------------------------------------------
 
+
 class TestBloomAPIPagination:
     """_fetch_via_api must loop through pages until meta.totalItems is satisfied."""
 
     def _make_page(self, items, total, status_code=200):
         payload = {"items": items, "meta": {"totalItems": total}}
-        import json
         content = json.dumps(payload).encode()
-        return MagicMock(**{
-            "status_code": status_code,
-            "content": content,
-            "json.return_value": payload,
-        })
+        return MagicMock(
+            **{
+                "status_code": status_code,
+                "content": content,
+                "json.return_value": payload,
+            }
+        )
 
     def test_two_pages_fetched_when_first_page_full(self):
         # Build page1 with exactly 100 items (the hard-coded page_size) so the
         # "len(page_items) < page_size" short-circuit does NOT fire; the loop
         # must continue to page 2 because totalItems=101.
-        page1_items = [{"id": str(i), "name": f"Prop {i}", "listingsBuildingAddress": {"city": "San Jose"}} for i in range(100)]
-        page2_items = [{"id": "100", "name": "Prop 100", "listingsBuildingAddress": {"city": "San Jose"}}]
+        page1_items = [
+            {"id": str(i), "name": f"Prop {i}", "listingsBuildingAddress": {"city": "San Jose"}}
+            for i in range(100)
+        ]
+        page2_items = [
+            {"id": "100", "name": "Prop 100", "listingsBuildingAddress": {"city": "San Jose"}}
+        ]
 
         responses = [self._make_page(page1_items, 101), self._make_page(page2_items, 101)]
 
         import housing_list_search.extraction.bloom_housing as bh
+
         orig_api_instances = bh._API_INSTANCES
         bh._API_INSTANCES = {
             "housingbayarea.mtc.ca.gov": {
@@ -421,6 +556,7 @@ class TestBloomAPIPagination:
 
     def test_http_201_accepted(self):
         import housing_list_search.extraction.bloom_housing as bh
+
         orig = bh._API_INSTANCES
         bh._API_INSTANCES = {
             "housingbayarea.mtc.ca.gov": {
@@ -429,11 +565,20 @@ class TestBloomAPIPagination:
             }
         }
         try:
-            with patch("requests.post", return_value=self._make_page(
-                [{"id": "1", "name": "Monroe Commons", "listingsBuildingAddress": {"city": "Santa Clara"}}],
-                1,
-                status_code=201,
-            )):
+            with patch(
+                "requests.post",
+                return_value=self._make_page(
+                    [
+                        {
+                            "id": "1",
+                            "name": "Monroe Commons",
+                            "listingsBuildingAddress": {"city": "Santa Clara"},
+                        }
+                    ],
+                    1,
+                    status_code=201,
+                ),
+            ):
                 open_items, _ = bh._fetch_via_api(
                     "https://housingbayarea.mtc.ca.gov/listings",
                     city_filter="Santa Clara",
@@ -444,11 +589,16 @@ class TestBloomAPIPagination:
 
     def test_city_filter_applied_after_all_pages(self):
         items_p1 = [
-            {"id": "1", "name": "Monroe Commons", "listingsBuildingAddress": {"city": "Santa Clara"}},
-            {"id": "2", "name": "San Jose Prop",  "listingsBuildingAddress": {"city": "San Jose"}},
+            {
+                "id": "1",
+                "name": "Monroe Commons",
+                "listingsBuildingAddress": {"city": "Santa Clara"},
+            },
+            {"id": "2", "name": "San Jose Prop", "listingsBuildingAddress": {"city": "San Jose"}},
         ]
 
         import housing_list_search.extraction.bloom_housing as bh
+
         orig = bh._API_INSTANCES
         bh._API_INSTANCES = {
             "housingbayarea.mtc.ca.gov": {
@@ -480,6 +630,7 @@ class TestBloomAPIPagination:
         ]
 
         import housing_list_search.extraction.bloom_housing as bh
+
         orig = bh._API_INSTANCES
         bh._API_INSTANCES = {
             "housingbayarea.mtc.ca.gov": {
@@ -504,14 +655,19 @@ class TestBloomAPIPagination:
 # bloom_housing.py — city_filter applied after Playwright fallback
 # ---------------------------------------------------------------------------
 
+
 class TestBloomPlaywrightCityFilter:
     def test_city_filter_applied_after_playwright(self):
         import housing_list_search.extraction.bloom_housing as bh
 
         playwright_open = [
-            {"id": "a", "name": "Santa Clara Prop", "listingsBuildingAddress": {"city": "Santa Clara"}},
-            {"id": "b", "name": "Sunnyvale Prop",   "listingsBuildingAddress": {"city": "Sunnyvale"}},
-            {"id": "c", "name": "San Jose Prop",    "listingsBuildingAddress": {"city": "San Jose"}},
+            {
+                "id": "a",
+                "name": "Santa Clara Prop",
+                "listingsBuildingAddress": {"city": "Santa Clara"},
+            },
+            {"id": "b", "name": "Sunnyvale Prop", "listingsBuildingAddress": {"city": "Sunnyvale"}},
+            {"id": "c", "name": "San Jose Prop", "listingsBuildingAddress": {"city": "San Jose"}},
         ]
 
         with (
@@ -533,6 +689,7 @@ class TestBloomPlaywrightCityFilter:
 # extraction/__init__.py — city_filter derivation for MTC Doorway targets
 # ---------------------------------------------------------------------------
 
+
 class TestCityFilterDerivation:
     """extract_target must strip parenthetical qualifiers from authority names
     so city_filter exactly matches listingsBuildingAddress.city in Bloom."""
@@ -540,13 +697,16 @@ class TestCityFilterDerivation:
     def _city_filter_for(self, authority: str) -> str:
         """Replicate the derivation logic from extraction/__init__.py."""
         import re
+
         cf = authority.replace("City of ", "").replace("Town of ", "")
         cf = re.sub(r"\s*\(.*\)\s*$", "", cf).strip()
         return cf
 
     def test_parenthetical_qualifier_stripped(self):
         """'City of Santa Clara (rentals via MTC Doorway)' must yield 'Santa Clara'."""
-        assert self._city_filter_for("City of Santa Clara (rentals via MTC Doorway)") == "Santa Clara"
+        assert (
+            self._city_filter_for("City of Santa Clara (rentals via MTC Doorway)") == "Santa Clara"
+        )
 
     def test_plain_city_of_prefix_stripped(self):
         assert self._city_filter_for("City of Santa Clara") == "Santa Clara"
@@ -560,11 +720,14 @@ class TestCityFilterDerivation:
     def test_extract_target_passes_clean_filter(self):
         """extract_target must call extract_bloom_housing_listings with the bare
         city name, not the full authority string including parenthetical."""
-        from unittest.mock import patch, call
+        from unittest.mock import patch
 
-        with patch("housing_list_search.extraction.bloom_housing.extract_bloom_housing_listings",
-                   return_value=[]) as mock_bloom:
+        with patch(
+            "housing_list_search.extraction.bloom_housing.extract_bloom_housing_listings",
+            return_value=[],
+        ) as mock_bloom:
             from housing_list_search.extraction import extract_target
+
             extract_target(
                 "https://housingbayarea.mtc.ca.gov/listings",
                 authority="City of Santa Clara (rentals via MTC Doorway)",
@@ -581,12 +744,16 @@ class TestCityFilterDerivation:
 # outputs.py — daily_summary KeyError on missing url field
 # ---------------------------------------------------------------------------
 
+
 class TestDailySummaryUrlFallback:
     """generate_daily_summary must not crash when a listing lacks a 'url' key."""
 
     def _run(self, listings):
-        import os, tempfile
+        import os
+        import tempfile
+
         from housing_list_search.outputs import generate_daily_summary
+
         orig = os.getcwd()
         with tempfile.TemporaryDirectory() as tmp:
             os.chdir(tmp)
@@ -643,14 +810,16 @@ class TestDailySummaryUrlFallback:
 # runner.py — measure-driven dispatch (replaces inline cli.py routing)
 # ---------------------------------------------------------------------------
 
+
 class TestRunnerDispatch:
     """
     run_target() must be driven purely by scraping_measures.
     URL substrings and authority name patterns must NOT affect routing.
     """
 
-    def _target(self, measures, authority="City of Test", url="https://example.gov/housing",
-                admin_url=""):
+    def _target(
+        self, measures, authority="City of Test", url="https://example.gov/housing", admin_url=""
+    ):
         return {
             "authority": authority,
             "url": url,
@@ -663,17 +832,29 @@ class TestRunnerDispatch:
         }
 
     def test_housekeys_and_civicplus_both_called(self):
-        hk_rec = {"property_name": "HK Prop", "authority": "City of Test", "url": "https://hk.example.com/"}
-        cp_rec = {"property_name": "CivicPlus Prop", "authority": "City of Test", "url": "https://example.com/doc.pdf"}
+        hk_rec = {
+            "property_name": "HK Prop",
+            "authority": "City of Test",
+            "url": "https://hk.example.com/",
+        }
+        cp_rec = {
+            "property_name": "CivicPlus Prop",
+            "authority": "City of Test",
+            "url": "https://example.com/doc.pdf",
+        }
 
         with (
             patch("housing_list_search.dispatch._run_url_extractors", return_value=[]),
-            patch("housing_list_search.dispatch._MEASURE_HANDLERS", {
-                "housekeys": lambda ctx: [hk_rec],
-                "civicplus": lambda ctx: [cp_rec],
-            }),
+            patch(
+                "housing_list_search.dispatch._MEASURE_HANDLERS",
+                {
+                    "housekeys": lambda ctx: [hk_rec],
+                    "civicplus": lambda ctx: [cp_rec],
+                },
+            ),
         ):
             from housing_list_search.runner import run_target
+
             result = run_target(self._target("housekeys,civicplus"))
 
         names = {r["property_name"] for r in result}
@@ -682,15 +863,23 @@ class TestRunnerDispatch:
 
     def test_john_stewart_routed_by_measure_not_url(self):
         """john_stewart measure must trigger the adapter regardless of URL content."""
-        js_rec = {"property_name": "JS Prop", "authority": "City of Test", "url": "https://example.gov/housing"}
+        js_rec = {
+            "property_name": "JS Prop",
+            "authority": "City of Test",
+            "url": "https://example.gov/housing",
+        }
 
         with (
             patch("housing_list_search.dispatch._run_url_extractors", return_value=[]),
-            patch("housing_list_search.dispatch._MEASURE_HANDLERS", {
-                "john_stewart": lambda ctx: [js_rec],
-            }),
+            patch(
+                "housing_list_search.dispatch._MEASURE_HANDLERS",
+                {
+                    "john_stewart": lambda ctx: [js_rec],
+                },
+            ),
         ):
             from housing_list_search.runner import run_target
+
             # URL has no "jscosccha" or "properties-list" — routing must come from the measure
             result = run_target(self._target("john_stewart", url="https://example.gov/housing"))
         assert result[0]["property_name"] == "JS Prop"
@@ -698,6 +887,7 @@ class TestRunnerDispatch:
     def test_waf_blocked_returns_empty_immediately(self):
         with patch("housing_list_search.dispatch._run_url_extractors", return_value=[]) as mock_ext:
             from housing_list_search.runner import run_target
+
             result = run_target(self._target("waf_blocked,civicplus"))
         mock_ext.assert_not_called()
         assert result == []
@@ -709,6 +899,7 @@ class TestRunnerDispatch:
             patch("housing_list_search.dispatch._run_fallbacks", return_value=[]),
         ):
             from housing_list_search.runner import run_target
+
             result = run_target(self._target("housekey_typo"))
         assert isinstance(result, list)  # no exception
 
@@ -720,15 +911,21 @@ class TestRunnerDispatch:
 
         with (
             patch("housing_list_search.dispatch._run_url_extractors", return_value=[bloom_rec]),
-            patch("housing_list_search.dispatch._MEASURE_HANDLERS", {
-                "housekeys": lambda ctx: [hk_rec],
-            }),
+            patch(
+                "housing_list_search.dispatch._MEASURE_HANDLERS",
+                {
+                    "housekeys": lambda ctx: [hk_rec],
+                },
+            ),
         ):
             from housing_list_search.runner import run_target
-            result = run_target(self._target(
-                "bloom,housekeys",
-                url="https://housing.sanjoseca.gov/listings",
-            ))
+
+            result = run_target(
+                self._target(
+                    "bloom,housekeys",
+                    url="https://housing.sanjoseca.gov/listings",
+                )
+            )
 
         names = {r["property_name"] for r in result}
         assert "Bloom Prop" in names
@@ -736,12 +933,17 @@ class TestRunnerDispatch:
 
     def test_bloom_requires_measure(self):
         """Bloom host alone must not trigger extraction without bloom measure."""
-        with patch("housing_list_search.extraction.bloom_housing.extract_bloom_for_target") as mock_bloom:
+        with patch(
+            "housing_list_search.extraction.bloom_housing.extract_bloom_for_target"
+        ) as mock_bloom:
             from housing_list_search.runner import run_target
-            run_target(self._target(
-                "housekeys",
-                url="https://housing.sanjoseca.gov/listings",
-            ))
+
+            run_target(
+                self._target(
+                    "housekeys",
+                    url="https://housing.sanjoseca.gov/listings",
+                )
+            )
         mock_bloom.assert_not_called()
 
     def test_adapter_error_appends_to_failures_list(self):
@@ -753,6 +955,7 @@ class TestRunnerDispatch:
             patch("housing_list_search.dispatch._MEASURE_HANDLERS", {"housekeys": _boom}),
         ):
             from housing_list_search.runner import run_target
+
             failures: list[str] = []
             result = run_target(self._target("housekeys"), failures=failures)
 
@@ -764,18 +967,29 @@ class TestRunnerDispatch:
 # db.py — upsert_listings, export_csv, export_diff_csv, first_seen preservation
 # ---------------------------------------------------------------------------
 
+
 class TestDatabaseManager:
     """DatabaseManager must persist listings, preserve first_seen, and tag diffs."""
 
     def _make_db(self, tmp_path):
         from pathlib import Path
+
         from housing_list_search.db import DatabaseManager
+
         db = DatabaseManager(db_path=Path(tmp_path) / "test.db")
         db.init_db()
         return db
 
-    def _listing(self, name, authority="Test City", url="", status="open",
-                 listing_status="open", first_seen=None, last_seen=None):
+    def _listing(
+        self,
+        name,
+        authority="Test City",
+        url="",
+        status="open",
+        listing_status="open",
+        first_seen=None,
+        last_seen=None,
+    ):
         d = {
             "property_name": name,
             "authority": authority,
@@ -807,9 +1021,14 @@ class TestDatabaseManager:
     def test_first_seen_preserved_on_update(self, tmp_path):
         import csv
         from pathlib import Path
+
         db = self._make_db(tmp_path)
-        db.upsert_listings([self._listing("Cedar Park", first_seen="2026-01-01T00:00:00")], run_id="run1")
-        db.upsert_listings([self._listing("Cedar Park", last_seen="2026-06-05T00:00:00")], run_id="run2")
+        db.upsert_listings(
+            [self._listing("Cedar Park", first_seen="2026-01-01T00:00:00")], run_id="run1"
+        )
+        db.upsert_listings(
+            [self._listing("Cedar Park", last_seen="2026-06-05T00:00:00")], run_id="run2"
+        )
 
         export_path = str(Path(tmp_path) / "out.csv")
         db.export_csv(export_path)
@@ -822,16 +1041,22 @@ class TestDatabaseManager:
     def test_export_csv_writes_rich_fields(self, tmp_path):
         import csv
         from pathlib import Path
+
         db = self._make_db(tmp_path)
-        db.upsert_listings([{
-            "property_name": "Park View",
-            "authority": "Test City",
-            "url": "",
-            "bedrooms": "1BR,2BR",
-            "income_limits": "80% AMI",
-            "eligibility_flags": ["senior", "below_market_rate"],
-            "listing_status": "open",
-        }], run_id="run1")
+        db.upsert_listings(
+            [
+                {
+                    "property_name": "Park View",
+                    "authority": "Test City",
+                    "url": "",
+                    "bedrooms": "1BR,2BR",
+                    "income_limits": "80% AMI",
+                    "eligibility_flags": ["senior", "below_market_rate"],
+                    "listing_status": "open",
+                }
+            ],
+            run_id="run1",
+        )
 
         export_path = str(Path(tmp_path) / "out.csv")
         db.export_csv(export_path)
@@ -848,14 +1073,20 @@ class TestDatabaseManager:
         """Production DB export must preserve normalizer status semantics."""
         import csv
         from pathlib import Path
+
         db = self._make_db(tmp_path)
-        db.upsert_listings([{
-            "property_name": "Monroe Commons",
-            "authority": "City of Santa Clara",
-            "url": "https://housingbayarea.mtc.ca.gov/listing/abc",
-            "status": "",
-            "listing_status": "open",
-        }], run_id="run1")
+        db.upsert_listings(
+            [
+                {
+                    "property_name": "Monroe Commons",
+                    "authority": "City of Santa Clara",
+                    "url": "https://housingbayarea.mtc.ca.gov/listing/abc",
+                    "status": "",
+                    "listing_status": "open",
+                }
+            ],
+            run_id="run1",
+        )
 
         export_path = str(Path(tmp_path) / "out.csv")
         db.export_csv(export_path)
@@ -868,11 +1099,15 @@ class TestDatabaseManager:
         """Records from run1 are STALE when diff is exported with run2's run_id."""
         import csv
         from pathlib import Path
+
         db = self._make_db(tmp_path)
-        db.upsert_listings([
-            self._listing("New Prop"),
-            self._listing("Old Prop"),
-        ], run_id="run1")
+        db.upsert_listings(
+            [
+                self._listing("New Prop"),
+                self._listing("Old Prop"),
+            ],
+            run_id="run1",
+        )
         # Second run only sees New Prop
         db.upsert_listings([self._listing("New Prop")], run_id="run2")
 
@@ -881,18 +1116,22 @@ class TestDatabaseManager:
         with open(diff_path, newline="", encoding="utf-8") as f:
             rows = {r["property_name"]: r["change_type"] for r in csv.DictReader(f)}
 
-        assert rows["New Prop"] == "UPDATED"   # seen in run2, existed before
-        assert rows["Old Prop"] == "STALE"     # not confirmed in run2
+        assert rows["New Prop"] == "UPDATED"  # seen in run2, existed before
+        assert rows["Old Prop"] == "STALE"  # not confirmed in run2
 
     def test_export_diff_csv_marks_new(self, tmp_path):
         """A brand-new record (first_seen == last_seen) must be tagged NEW."""
         import csv
         from pathlib import Path
+
         db = self._make_db(tmp_path)
         now = "2026-06-05T10:00:00"
-        db.upsert_listings([
-            self._listing("Fresh Prop", first_seen=now, last_seen=now),
-        ], run_id="run1")
+        db.upsert_listings(
+            [
+                self._listing("Fresh Prop", first_seen=now, last_seen=now),
+            ],
+            run_id="run1",
+        )
 
         diff_path = str(Path(tmp_path) / "diff.csv")
         db.export_diff_csv(diff_path, run_id="run1")
@@ -901,14 +1140,20 @@ class TestDatabaseManager:
 
         assert rows["Fresh Prop"] == "NEW"
 
-    def test_export_diff_csv_marks_inserted_record_new_even_with_imported_first_seen(self, tmp_path):
+    def test_export_diff_csv_marks_inserted_record_new_even_with_imported_first_seen(
+        self, tmp_path
+    ):
         """run_id-based NEW detection must not depend on first_seen == last_seen."""
         import csv
         from pathlib import Path
+
         db = self._make_db(tmp_path)
-        db.upsert_listings([
-            self._listing("Imported Fresh Prop", first_seen="2026-01-01T00:00:00"),
-        ], run_id="run1")
+        db.upsert_listings(
+            [
+                self._listing("Imported Fresh Prop", first_seen="2026-01-01T00:00:00"),
+            ],
+            run_id="run1",
+        )
 
         diff_path = str(Path(tmp_path) / "diff.csv")
         db.export_diff_csv(diff_path, run_id="run1")
@@ -920,20 +1165,26 @@ class TestDatabaseManager:
     def test_upsert_skips_records_missing_required_fields(self, tmp_path):
         """Records without authority+property_name are silently skipped."""
         db = self._make_db(tmp_path)
-        counts = db.upsert_listings([
-            {"authority": "", "property_name": "No Auth"},
-            {"authority": "City", "property_name": ""},
-            {"property_name": "Missing Auth"},
-        ], run_id="run1")
+        counts = db.upsert_listings(
+            [
+                {"authority": "", "property_name": "No Auth"},
+                {"authority": "City", "property_name": ""},
+                {"property_name": "Missing Auth"},
+            ],
+            run_id="run1",
+        )
         assert counts["inserted"] == 0
         assert db.get_record_count() == 0
 
     def test_diff_counts_matches_export_labels(self, tmp_path):
         db = self._make_db(tmp_path)
-        db.upsert_listings([
-            self._listing("New Prop"),
-            self._listing("Old Prop"),
-        ], run_id="run1")
+        db.upsert_listings(
+            [
+                self._listing("New Prop"),
+                self._listing("Old Prop"),
+            ],
+            run_id="run1",
+        )
         db.upsert_listings([self._listing("New Prop")], run_id="run2")
 
         counts = db.diff_counts("run2")
@@ -945,14 +1196,21 @@ class TestDatabaseManager:
         """A --target-style diff must not mark unrelated authorities as STALE."""
         import csv
         from pathlib import Path
+
         db = self._make_db(tmp_path)
-        db.upsert_listings([
-            self._listing("A Prop", authority="City A"),
-            self._listing("B Prop", authority="City B"),
-        ], run_id="full")
-        db.upsert_listings([
-            self._listing("A Prop", authority="City A"),
-        ], run_id="partial")
+        db.upsert_listings(
+            [
+                self._listing("A Prop", authority="City A"),
+                self._listing("B Prop", authority="City B"),
+            ],
+            run_id="full",
+        )
+        db.upsert_listings(
+            [
+                self._listing("A Prop", authority="City A"),
+            ],
+            run_id="partial",
+        )
 
         diff_path = str(Path(tmp_path) / "diff.csv")
         db.export_diff_csv(diff_path, run_id="partial", authorities=["City A"])
@@ -973,12 +1231,15 @@ class TestDatabaseManager:
 # changelog.py — generate_changelog / run_prev.csv round-trip
 # ---------------------------------------------------------------------------
 
+
 class TestChangelogRoundTrip:
     """generate_changelog must diff against run_prev.csv and snapshot correctly."""
 
     def _run_changelog(self, tmp_path, current, skipped=None):
         import os
+
         from housing_list_search.changelog import generate_changelog
+
         orig = os.getcwd()
         os.chdir(tmp_path)
         try:
@@ -988,31 +1249,54 @@ class TestChangelogRoundTrip:
 
     def _read_file(self, tmp_path, filename):
         import os
+
         return open(os.path.join(tmp_path, filename), encoding="utf-8").read()
 
     def _read_csv(self, tmp_path, filename):
-        import csv, os
+        import csv
+        import os
+
         with open(os.path.join(tmp_path, filename), newline="", encoding="utf-8") as f:
             return list(csv.DictReader(f))
 
     def test_first_run_writes_baseline_snapshot(self, tmp_path):
         """First run (no run_prev.csv) produces a snapshot and reports initial population."""
         listings = [
-            {"authority": "Test City", "property_name": "Park View", "status": "Open", "listing_status": "open"},
+            {
+                "authority": "Test City",
+                "property_name": "Park View",
+                "status": "Open",
+                "listing_status": "open",
+            },
         ]
         self._run_changelog(tmp_path, listings)
 
         import os
+
         assert os.path.exists(os.path.join(tmp_path, "run_prev.csv"))
         md = self._read_file(tmp_path, "changelog_diffs.md")
         assert "First run" in md
 
     def test_added_listing_appears_in_next_run_changelog(self, tmp_path):
         """A listing present in run2 but absent from run1 must appear as Added."""
-        run1 = [{"authority": "City", "property_name": "Old Prop", "status": "Open", "listing_status": "open"}]
+        run1 = [
+            {
+                "authority": "City",
+                "property_name": "Old Prop",
+                "status": "Open",
+                "listing_status": "open",
+            }
+        ]
         self._run_changelog(tmp_path, run1)
 
-        run2 = run1 + [{"authority": "City", "property_name": "New Prop", "status": "Open", "listing_status": "open"}]
+        run2 = run1 + [
+            {
+                "authority": "City",
+                "property_name": "New Prop",
+                "status": "Open",
+                "listing_status": "open",
+            }
+        ]
         self._run_changelog(tmp_path, run2)
 
         md = self._read_file(tmp_path, "changelog_diffs.md")
@@ -1024,12 +1308,29 @@ class TestChangelogRoundTrip:
     def test_removed_listing_appears_in_next_run_changelog(self, tmp_path):
         """A listing absent in run2 that was present in run1 must appear as Removed."""
         run1 = [
-            {"authority": "City", "property_name": "Stays", "status": "Open", "listing_status": "open"},
-            {"authority": "City", "property_name": "Gone Prop", "status": "Open", "listing_status": "open"},
+            {
+                "authority": "City",
+                "property_name": "Stays",
+                "status": "Open",
+                "listing_status": "open",
+            },
+            {
+                "authority": "City",
+                "property_name": "Gone Prop",
+                "status": "Open",
+                "listing_status": "open",
+            },
         ]
         self._run_changelog(tmp_path, run1)
 
-        run2 = [{"authority": "City", "property_name": "Stays", "status": "Open", "listing_status": "open"}]
+        run2 = [
+            {
+                "authority": "City",
+                "property_name": "Stays",
+                "status": "Open",
+                "listing_status": "open",
+            }
+        ]
         self._run_changelog(tmp_path, run2)
 
         md = self._read_file(tmp_path, "changelog_diffs.md")
@@ -1041,12 +1342,29 @@ class TestChangelogRoundTrip:
     def test_removed_listing_does_not_accumulate_across_runs(self, tmp_path):
         """The 'removed forever' bug: a removed record must NOT reappear in run3 changelog."""
         run1 = [
-            {"authority": "City", "property_name": "Gone Prop", "status": "Open", "listing_status": "open"},
-            {"authority": "City", "property_name": "Stays", "status": "Open", "listing_status": "open"},
+            {
+                "authority": "City",
+                "property_name": "Gone Prop",
+                "status": "Open",
+                "listing_status": "open",
+            },
+            {
+                "authority": "City",
+                "property_name": "Stays",
+                "status": "Open",
+                "listing_status": "open",
+            },
         ]
         self._run_changelog(tmp_path, run1)
 
-        run2 = [{"authority": "City", "property_name": "Stays", "status": "Open", "listing_status": "open"}]
+        run2 = [
+            {
+                "authority": "City",
+                "property_name": "Stays",
+                "status": "Open",
+                "listing_status": "open",
+            }
+        ]
         self._run_changelog(tmp_path, run2)
 
         # run3: same as run2 — Gone Prop should NOT appear again
@@ -1060,10 +1378,24 @@ class TestChangelogRoundTrip:
 
     def test_status_change_detected(self, tmp_path):
         """A listing with a changed status field must appear in Status Changed section."""
-        run1 = [{"authority": "City", "property_name": "Monroe Commons", "status": "Open", "listing_status": "open"}]
+        run1 = [
+            {
+                "authority": "City",
+                "property_name": "Monroe Commons",
+                "status": "Open",
+                "listing_status": "open",
+            }
+        ]
         self._run_changelog(tmp_path, run1)
 
-        run2 = [{"authority": "City", "property_name": "Monroe Commons", "status": "Closed", "listing_status": "closed"}]
+        run2 = [
+            {
+                "authority": "City",
+                "property_name": "Monroe Commons",
+                "status": "Closed",
+                "listing_status": "closed",
+            }
+        ]
         self._run_changelog(tmp_path, run2)
 
         rows = self._read_csv(tmp_path, "changelog_diffs.csv")
@@ -1072,10 +1404,24 @@ class TestChangelogRoundTrip:
 
     def test_listing_status_only_change_detected(self, tmp_path):
         """Bloom-style rows may have blank status; listing_status must still drive changelog."""
-        run1 = [{"authority": "City", "property_name": "Monroe Commons", "status": "", "listing_status": "open"}]
+        run1 = [
+            {
+                "authority": "City",
+                "property_name": "Monroe Commons",
+                "status": "",
+                "listing_status": "open",
+            }
+        ]
         self._run_changelog(tmp_path, run1)
 
-        run2 = [{"authority": "City", "property_name": "Monroe Commons", "status": "", "listing_status": "closed"}]
+        run2 = [
+            {
+                "authority": "City",
+                "property_name": "Monroe Commons",
+                "status": "",
+                "listing_status": "closed",
+            }
+        ]
         self._run_changelog(tmp_path, run2)
 
         rows = self._read_csv(tmp_path, "changelog_diffs.csv")
@@ -1084,7 +1430,14 @@ class TestChangelogRoundTrip:
 
     def test_no_change_produces_no_change_row(self, tmp_path):
         """Identical run1 and run2 must produce a NO_CHANGE row, not empty CSV."""
-        run = [{"authority": "City", "property_name": "Stable Prop", "status": "Open", "listing_status": "open"}]
+        run = [
+            {
+                "authority": "City",
+                "property_name": "Stable Prop",
+                "status": "Open",
+                "listing_status": "open",
+            }
+        ]
         self._run_changelog(tmp_path, run)
         self._run_changelog(tmp_path, run)
 
@@ -1096,6 +1449,7 @@ class TestChangelogRoundTrip:
 # cli.py — --target partial runs must not corrupt global run baselines
 # ---------------------------------------------------------------------------
 
+
 class TestCliTargetRun:
     def test_target_run_scopes_diff_and_preserves_run_prev(self, tmp_path):
         import csv
@@ -1103,18 +1457,31 @@ class TestCliTargetRun:
         import sys
         from pathlib import Path
 
-        from housing_list_search.db import DatabaseManager
         from housing_list_search.cli import main
+        from housing_list_search.db import DatabaseManager
 
         orig = os.getcwd()
         os.chdir(tmp_path)
         try:
             db = DatabaseManager(Path("housing_registry.db"))
             db.init_db()
-            db.upsert_listings([
-                {"authority": "City A", "property_name": "A Prop", "url": "https://a", "listing_status": "open"},
-                {"authority": "City B", "property_name": "B Prop", "url": "https://b", "listing_status": "open"},
-            ], run_id="full")
+            db.upsert_listings(
+                [
+                    {
+                        "authority": "City A",
+                        "property_name": "A Prop",
+                        "url": "https://a",
+                        "listing_status": "open",
+                    },
+                    {
+                        "authority": "City B",
+                        "property_name": "B Prop",
+                        "url": "https://b",
+                        "listing_status": "open",
+                    },
+                ],
+                run_id="full",
+            )
 
             run_prev = "source_authority,property_name,status,listing_status\nCity A,A Prop,Open,open\nCity B,B Prop,Open,open\n"
             Path("run_prev.csv").write_text(run_prev, encoding="utf-8")
@@ -1129,9 +1496,17 @@ class TestCliTargetRun:
                 patch("housing_list_search.registry.load_targets_to_db", return_value=None),
                 patch("housing_list_search.registry.get_active_targets", return_value=targets),
                 patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
-                patch("housing_list_search.runner.run_target", return_value=[
-                    {"authority": "City A", "property_name": "A Prop", "url": "https://a", "listing_status": "open"}
-                ]),
+                patch(
+                    "housing_list_search.runner.run_target",
+                    return_value=[
+                        {
+                            "authority": "City A",
+                            "property_name": "A Prop",
+                            "url": "https://a",
+                            "listing_status": "open",
+                        }
+                    ],
+                ),
             ):
                 main()
 
@@ -1152,8 +1527,8 @@ class TestCliTargetRun:
         import sys
         from pathlib import Path
 
-        from housing_list_search.db import DatabaseManager
         from housing_list_search.cli import main
+        from housing_list_search.db import DatabaseManager
         from housing_list_search.outputs import (
             PARTIAL_DAILY_SUMMARY_PATH,
             STAFF_DAILY_SUMMARY_PATH,
@@ -1177,15 +1552,18 @@ class TestCliTargetRun:
                 patch("housing_list_search.registry.load_targets_to_db", return_value=None),
                 patch("housing_list_search.registry.get_active_targets", return_value=targets),
                 patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
-                patch("housing_list_search.runner.run_target", return_value=[
-                    {
-                        "authority": "City A",
-                        "property_name": "A Prop",
-                        "url": "https://a",
-                        "listing_status": "open",
-                        "status": "Open",
-                    }
-                ]),
+                patch(
+                    "housing_list_search.runner.run_target",
+                    return_value=[
+                        {
+                            "authority": "City A",
+                            "property_name": "A Prop",
+                            "url": "https://a",
+                            "listing_status": "open",
+                            "status": "Open",
+                        }
+                    ],
+                ),
             ):
                 main()
 
@@ -1200,8 +1578,8 @@ class TestCliTargetRun:
         import sys
         from pathlib import Path
 
-        from housing_list_search.db import DatabaseManager
         from housing_list_search.cli import main
+        from housing_list_search.db import DatabaseManager
 
         orig = os.getcwd()
         os.chdir(tmp_path)
@@ -1210,7 +1588,12 @@ class TestCliTargetRun:
             db.init_db()
 
             targets = [
-                {"authority": "City A", "url": "https://a", "scraping_measures": "housekeys", "notes": ""},
+                {
+                    "authority": "City A",
+                    "url": "https://a",
+                    "scraping_measures": "housekeys",
+                    "notes": "",
+                },
             ]
 
             with (
@@ -1218,7 +1601,10 @@ class TestCliTargetRun:
                 patch("housing_list_search.registry.load_targets_to_db", return_value=None),
                 patch("housing_list_search.registry.get_active_targets", return_value=targets),
                 patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
-                patch("housing_list_search.runner.run_target", side_effect=RuntimeError("adapter down")),
+                patch(
+                    "housing_list_search.runner.run_target",
+                    side_effect=RuntimeError("adapter down"),
+                ),
                 pytest.raises(SystemExit) as excinfo,
             ):
                 main()

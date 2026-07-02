@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime as _dt
-from typing import Any, Dict, List
+from typing import Any
 
 from bs4 import BeautifulSoup
 
@@ -30,17 +30,15 @@ logger = logging.getLogger(__name__)
 
 PORTFOLIO_URL = "https://www.firsthousing.org/portfolio"
 
-_ADDRESS_RE = re.compile(
-    r"\d{1,5}[\w .'-]+,\s*[A-Z][A-Za-z .]+,\s*CA\s*\d{5}"
-)
+_ADDRESS_RE = re.compile(r"\d{1,5}[\w .'-]+,\s*[A-Z][A-Za-z .]+,\s*CA\s*\d{5}")
 _PHONE_RE = re.compile(r"\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}")
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
 
-def parse_portfolio(html_text: str, now_iso: str, source_url: str) -> List[Dict[str, Any]]:
+def parse_portfolio(html_text: str, now_iso: str, source_url: str) -> list[dict[str, Any]]:
     """Parse the FirstHousing /portfolio property cards."""
     soup = BeautifulSoup(html_text, "html.parser")
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     for a in soup.find_all("a", href=re.compile(r"^https://www\.firsthousing\.org/[a-z0-9-]+$")):
@@ -79,32 +77,34 @@ def parse_portfolio(html_text: str, now_iso: str, source_url: str) -> List[Dict[
         email_m = _EMAIL_RE.search(text)
 
         seen.add(href)
-        records.append({
-            "authority": "First Community Housing (Santa Clara County portfolio)",
-            "property_name": name,
-            "address": address,
-            "phone": phone_m.group(0) if phone_m else "",
-            "email": email_m.group(0) if email_m else "",
-            "url": href,
-            "status": "Check with property",
-            "administrator": "First Community Housing",
-            "administrator_url": "https://www.firsthousing.org/",
-            "notes": "First Community Housing property (day-to-day management "
-                     "typically John Stewart Company)",
-            "confidence": "high",
-            "last_seen": now_iso,
-            "first_seen": now_iso,
-            "source": "first_housing:portfolio",
-            "source_url": source_url,
-            "expires_at": "",
-        })
+        records.append(
+            {
+                "authority": "First Community Housing (Santa Clara County portfolio)",
+                "property_name": name,
+                "address": address,
+                "phone": phone_m.group(0) if phone_m else "",
+                "email": email_m.group(0) if email_m else "",
+                "url": href,
+                "status": "Check with property",
+                "administrator": "First Community Housing",
+                "administrator_url": "https://www.firsthousing.org/",
+                "notes": "First Community Housing property (day-to-day management "
+                "typically John Stewart Company)",
+                "confidence": "high",
+                "last_seen": now_iso,
+                "first_seen": now_iso,
+                "source": "first_housing:portfolio",
+                "source_url": source_url,
+                "expires_at": "",
+            }
+        )
 
     return records
 
 
-def scrape_first_housing(authority: str = "", url: str = "") -> List[Dict[str, Any]]:
+def scrape_first_housing(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     """Public entry point. Single request to the portfolio page."""
-    print(f"🧩 Running First Community Housing adapter (portfolio page)")
+    print("🧩 Running First Community Housing adapter (portfolio page)")
     now_iso = _dt.now().isoformat()
     target = url or PORTFOLIO_URL
 

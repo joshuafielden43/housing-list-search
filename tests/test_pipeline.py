@@ -2,21 +2,20 @@
 
 import csv
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from housing_list_search.db import DatabaseManager
 from housing_list_search.pipeline import RunPipeline
 
 
 def _fake_listings_for(target: dict, failures: list[str] | None = None) -> list[dict]:
-    return [{
-        "authority": target["authority"],
-        "property_name": f"{target['authority']} Prop",
-        "url": target.get("url", ""),
-        "listing_status": "open",
-    }]
+    return [
+        {
+            "authority": target["authority"],
+            "property_name": f"{target['authority']} Prop",
+            "url": target.get("url", ""),
+            "listing_status": "open",
+        }
+    ]
 
 
 class TestRunPipeline:
@@ -57,10 +56,23 @@ class TestRunPipeline:
         try:
             db = DatabaseManager(Path("housing_registry.db"))
             db.init_db()
-            db.upsert_listings([
-                {"authority": "City A", "property_name": "A Prop", "url": "https://a", "listing_status": "open"},
-                {"authority": "City B", "property_name": "B Prop", "url": "https://b", "listing_status": "open"},
-            ], run_id="prior-full")
+            db.upsert_listings(
+                [
+                    {
+                        "authority": "City A",
+                        "property_name": "A Prop",
+                        "url": "https://a",
+                        "listing_status": "open",
+                    },
+                    {
+                        "authority": "City B",
+                        "property_name": "B Prop",
+                        "url": "https://b",
+                        "listing_status": "open",
+                    },
+                ],
+                run_id="prior-full",
+            )
 
             run_prev = (
                 "source_authority,property_name,status,listing_status\n"
@@ -76,12 +88,14 @@ class TestRunPipeline:
                 db=db,
                 partial_run=True,
                 target_filter="City A",
-                run_target_fn=lambda t, failures=None: [{
-                    "authority": "City A",
-                    "property_name": "A Prop",
-                    "url": "https://a",
-                    "listing_status": "open",
-                }],
+                run_target_fn=lambda t, failures=None: [
+                    {
+                        "authority": "City A",
+                        "property_name": "A Prop",
+                        "url": "https://a",
+                        "listing_status": "open",
+                    }
+                ],
                 run_id="test-run-partial",
             )
 

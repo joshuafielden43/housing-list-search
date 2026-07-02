@@ -10,8 +10,9 @@ Naming note: deduping is a cross-source concern, not tied to any one city or too
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any, Tuple
+
 import re
+from typing import Any
 
 
 def _norm_name(name: str) -> str:
@@ -22,10 +23,25 @@ def _norm_name(name: str) -> str:
 
     # Remove very common varying suffixes (order matters — longer first)
     suffixes = [
-        " senior apartments", " family apartments", " senior housing", " family housing",
-        " apartments", " apartment", " housing", " homes", " village", " gardens",
-        " court", " plaza", " park", " studios", " lofts", " way", " drive",
-        " senior", " family"
+        " senior apartments",
+        " family apartments",
+        " senior housing",
+        " family housing",
+        " apartments",
+        " apartment",
+        " housing",
+        " homes",
+        " village",
+        " gardens",
+        " court",
+        " plaza",
+        " park",
+        " studios",
+        " lofts",
+        " way",
+        " drive",
+        " senior",
+        " family",
     ]
     for s in suffixes:
         if n.endswith(s):
@@ -67,7 +83,7 @@ def _norm_address(addr: str) -> str:
     return re.sub(r"[^a-z0-9]", "", a)[:30]
 
 
-def _make_key(rec: Dict[str, Any]) -> Tuple[str, str, str]:
+def _make_key(rec: dict[str, Any]) -> tuple[str, str, str]:
     """Return (name_key, addr_key, addr_only_key).
     We treat a strong address match as sufficient for dedup even if names differ.
 
@@ -84,7 +100,7 @@ def _make_key(rec: Dict[str, Any]) -> Tuple[str, str, str]:
     return (name_key, addr_key, addr_only)
 
 
-def deduplicate_listings(listings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def deduplicate_listings(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Remove duplicate properties across sources.
 
@@ -97,7 +113,7 @@ def deduplicate_listings(listings: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 
     # Coerce dataclass instances (e.g. HousingRecord from pdf_scraper / extraction)
     # to plain dicts so all downstream .get() calls are safe.
-    plain: List[Dict[str, Any]] = []
+    plain: list[dict[str, Any]] = []
     for rec in listings:
         if isinstance(rec, dict):
             plain.append(rec)
@@ -121,7 +137,7 @@ def deduplicate_listings(listings: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     sorted_listings = sorted(listings, key=score, reverse=True)
 
     seen: set = set()
-    unique: List[Dict[str, Any]] = []
+    unique: list[dict[str, Any]] = []
 
     for rec in sorted_listings:
         name_k, addr_k, addr_only = _make_key(rec)

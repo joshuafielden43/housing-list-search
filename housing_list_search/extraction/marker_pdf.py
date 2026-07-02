@@ -10,7 +10,7 @@ from __future__ import annotations
 import io
 import logging
 import os
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from housing_list_search.extraction.pdf import HousingRecord
@@ -32,6 +32,7 @@ def marker_available() -> bool:
     _MARKER_CHECKED = True
     try:
         import marker.converters.pdf  # noqa: F401
+
         _MARKER_AVAILABLE = True
     except ImportError:
         _MARKER_AVAILABLE = False
@@ -54,10 +55,9 @@ def records_from_marker_markdown(
     text: str,
     authority: str,
     document_url: str,
-) -> List[HousingRecord]:
+) -> list[HousingRecord]:
     """Parse marker markdown into HousingRecords using existing heuristics."""
     from housing_list_search.extraction.pdf import (
-        HousingRecord,
         _extract_flyer_page,
         parse_housing_line,
     )
@@ -65,10 +65,10 @@ def records_from_marker_markdown(
     if not text or not text.strip():
         return []
 
-    records: List[HousingRecord] = []
+    records: list[HousingRecord] = []
     seen: set[tuple[str, str]] = set()
 
-    def _add(rec: Optional[HousingRecord]) -> None:
+    def _add(rec: HousingRecord | None) -> None:
         if not rec:
             return
         rec.authority = authority
@@ -95,7 +95,7 @@ def records_from_marker_markdown(
     return records
 
 
-def _split_marker_pages(text: str) -> List[str]:
+def _split_marker_pages(text: str) -> list[str]:
     """Split marker markdown on page separator lines (48 dashes)."""
     import re
 
@@ -132,7 +132,7 @@ def extract_records_via_marker(
     pdf_bytes: bytes,
     authority: str,
     document_url: str,
-) -> List[HousingRecord]:
+) -> list[HousingRecord]:
     """Run marker-pdf on in-memory PDF bytes; return parsed HousingRecords."""
     if not marker_available():
         return []

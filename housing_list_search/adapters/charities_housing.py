@@ -30,7 +30,7 @@ import html as _html
 import logging
 import re
 from datetime import datetime as _dt
-from typing import Any, Dict, List
+from typing import Any
 
 from bs4 import BeautifulSoup
 
@@ -45,7 +45,7 @@ ADMINISTRATOR = "Charities Housing"
 ADMINISTRATOR_URL = "https://charitieshousing.org/"
 
 
-def _base_record(now_iso: str, method: str, source_url: str) -> Dict[str, Any]:
+def _base_record(now_iso: str, method: str, source_url: str) -> dict[str, Any]:
     return {
         "authority": "Charities Housing (Santa Clara County portfolio)",
         "administrator": ADMINISTRATOR,
@@ -59,10 +59,10 @@ def _base_record(now_iso: str, method: str, source_url: str) -> Dict[str, Any]:
     }
 
 
-def _parse_find_a_home(html_text: str, now_iso: str) -> List[Dict[str, Any]]:
+def _parse_find_a_home(html_text: str, now_iso: str) -> list[dict[str, Any]]:
     """Parse the div.h_apart_ctc directory cards on /find-a-home/."""
     soup = BeautifulSoup(html_text, "html.parser")
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
 
     for card in soup.find_all("div", class_="h_apart_ctc"):
         title_link = card.select_one(".heading_h4 a") or card.find("a", href=True)
@@ -77,7 +77,7 @@ def _parse_find_a_home(html_text: str, now_iso: str) -> List[Dict[str, Any]]:
         for a in card.find_all("a", href=True):
             href = a["href"]
             if href.startswith("mailto:"):
-                email = href[len("mailto:"):].strip()
+                email = href[len("mailto:") :].strip()
             elif href.startswith("tel:"):
                 phone = a.get_text(strip=True)
             elif "clipboard" in href or href == "javascript:;":
@@ -87,24 +87,26 @@ def _parse_find_a_home(html_text: str, now_iso: str) -> List[Dict[str, Any]]:
         unit_types = unit_p.get_text(" ", strip=True) if unit_p else ""
 
         rec = _base_record(now_iso, "find_a_home", FIND_A_HOME_URL)
-        rec.update({
-            "property_name": name,
-            "address": re.sub(r"\s*,?\s*USA$", "", address).strip(),
-            "email": email,
-            "phone": phone,
-            "unit_types": unit_types,
-            "bedrooms": unit_types,
-            "url": detail_url,
-            "status": "Accepting Applications",
-            "listing_status": "open",
-            "notes": "Listed on Charities Housing 'Find A Home' (accepting applications) page",
-        })
+        rec.update(
+            {
+                "property_name": name,
+                "address": re.sub(r"\s*,?\s*USA$", "", address).strip(),
+                "email": email,
+                "phone": phone,
+                "unit_types": unit_types,
+                "bedrooms": unit_types,
+                "url": detail_url,
+                "status": "Accepting Applications",
+                "listing_status": "open",
+                "notes": "Listed on Charities Housing 'Find A Home' (accepting applications) page",
+            }
+        )
         records.append(rec)
 
     return records
 
 
-def _fetch_portfolio_api(now_iso: str, known_urls: set[str]) -> List[Dict[str, Any]]:
+def _fetch_portfolio_api(now_iso: str, known_urls: set[str]) -> list[dict[str, Any]]:
     """Backfill the full portfolio from the WordPress REST API."""
     resp = polite_get(API_URL)
     if not resp:
@@ -117,7 +119,7 @@ def _fetch_portfolio_api(now_iso: str, known_urls: set[str]) -> List[Dict[str, A
     if not isinstance(items, list):
         return []
 
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     for item in items:
         link = item.get("link") or ""
         if link in known_urls:
@@ -133,30 +135,32 @@ def _fetch_portfolio_api(now_iso: str, known_urls: set[str]) -> List[Dict[str, A
         ]
 
         rec = _base_record(now_iso, "portfolio_api", API_URL)
-        rec.update({
-            "property_name": name,
-            "url": link,
-            "status": "Not currently accepting applications",
-            "listing_status": "closed",
-            "notes": (
-                "Charities Housing portfolio property (not on the current "
-                "'Find A Home' list)"
-                + (f" | category: {', '.join(taxonomy)}" if taxonomy else "")
-                + (f" | vendor page last updated {modified}" if modified else "")
-            ),
-        })
+        rec.update(
+            {
+                "property_name": name,
+                "url": link,
+                "status": "Not currently accepting applications",
+                "listing_status": "closed",
+                "notes": (
+                    "Charities Housing portfolio property (not on the current "
+                    "'Find A Home' list)"
+                    + (f" | category: {', '.join(taxonomy)}" if taxonomy else "")
+                    + (f" | vendor page last updated {modified}" if modified else "")
+                ),
+            }
+        )
         records.append(rec)
 
     return records
 
 
-def scrape_charities_housing(authority: str = "", url: str = "") -> List[Dict[str, Any]]:
+def scrape_charities_housing(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     """Public entry point. `url` is accepted for runner uniformity; the
     adapter always reads the two canonical charitieshousing.org sources."""
-    print(f"🧩 Running Charities Housing adapter (find-a-home + portfolio API)")
+    print("🧩 Running Charities Housing adapter (find-a-home + portfolio API)")
     now_iso = _dt.now().isoformat()
 
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     resp = polite_get(url or FIND_A_HOME_URL)
     if resp:
         records.extend(_parse_find_a_home(resp.text, now_iso))
@@ -166,6 +170,8 @@ def scrape_charities_housing(authority: str = "", url: str = "") -> List[Dict[st
     known_urls = {r.get("url", "") for r in records}
     records.extend(_fetch_portfolio_api(now_iso, known_urls))
 
-    print(f"   → Charities Housing: {len(records)} properties "
-          f"({len(known_urls)} accepting applications)")
+    print(
+        f"   → Charities Housing: {len(records)} properties "
+        f"({len(known_urls)} accepting applications)"
+    )
     return records

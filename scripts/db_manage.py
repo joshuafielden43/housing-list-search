@@ -23,7 +23,7 @@ from pathlib import Path
 # Allow running from repo root
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from housing_list_search.db import DatabaseManager, get_manager
+from housing_list_search.db import get_manager
 
 
 def main():
@@ -41,12 +41,18 @@ def main():
 
     # prune
     prune_p = subparsers.add_parser("prune", help="Remove stale records")
-    prune_p.add_argument("--not-seen-since", type=int, metavar="DAYS", help="Prune records not seen in N days")
+    prune_p.add_argument(
+        "--not-seen-since", type=int, metavar="DAYS", help="Prune records not seen in N days"
+    )
     prune_p.add_argument("--all-stale", action="store_true", help="Apply all current stale rules")
     prune_p.add_argument("--dry-run", action="store_true", help="Show what would be deleted")
     prune_p.add_argument("--authority", help="Limit to a specific authority")
-    prune_p.add_argument("--expires-at-past", action="store_true", help="Prune records past expires_at")
-    prune_p.add_argument("--from-diff", action="store_true", help="Delete rows matching STALE entries in diff.csv")
+    prune_p.add_argument(
+        "--expires-at-past", action="store_true", help="Prune records past expires_at"
+    )
+    prune_p.add_argument(
+        "--from-diff", action="store_true", help="Delete rows matching STALE entries in diff.csv"
+    )
     prune_p.add_argument("--diff-path", default="diff.csv", help="Path to diff.csv for --from-diff")
 
     # snapshot
@@ -89,7 +95,9 @@ def main():
             if args.dry_run:
                 print(f"Would delete {result.get('would_delete', 0)} records (dry run)")
             else:
-                print(f"Pruned {result.get('deleted', 0)} records. Before={result['before']}, After={result['after']}")
+                print(
+                    f"Pruned {result.get('deleted', 0)} records. Before={result['before']}, After={result['after']}"
+                )
 
         elif args.command == "snapshot":
             path = mgr.snapshot(args.name)
@@ -112,7 +120,9 @@ def main():
             # simple history dump
             conn = mgr.connect()
             c = conn.cursor()
-            c.execute("SELECT timestamp, command, authority_filter, rows_before, rows_after FROM run_history ORDER BY timestamp DESC LIMIT 20")
+            c.execute(
+                "SELECT timestamp, command, authority_filter, rows_before, rows_after FROM run_history ORDER BY timestamp DESC LIMIT 20"
+            )
             rows = c.fetchall()
             if not rows:
                 print("No run history yet.")

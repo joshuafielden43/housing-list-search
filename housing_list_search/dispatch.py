@@ -8,10 +8,9 @@ runner.run_target() delegates here.
 from __future__ import annotations
 
 import logging
-import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
-from urllib.parse import urlparse
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,21 +19,41 @@ Handler = Callable[["TargetContext"], list[Record]]
 UrlPredicate = Callable[[str, str], bool]
 UrlExtractor = Callable[[str, str], list[Any]]
 
-INFORMATIONAL_MEASURES = frozenset({
-    "native_requests", "js_heavy", "table_based", "html_cards",
-    "playwright_needed", "robots_respect", "delegated_administrator",
-    "notification_based", "monitor_housing_element",
-})
+INFORMATIONAL_MEASURES = frozenset(
+    {
+        "native_requests",
+        "js_heavy",
+        "table_based",
+        "html_cards",
+        "playwright_needed",
+        "robots_respect",
+        "delegated_administrator",
+        "notification_based",
+        "monitor_housing_element",
+    }
+)
 
 SKIP_MEASURES = frozenset({"waf_blocked", "no_public_list"})
 
-KNOWN_MEASURES = frozenset({
-    "john_stewart", "gis", "housekeys", "civicplus", "cdn", "alta",
-    "charities_housing", "midpen", "eden", "eah", "first_housing",
-    "bloom", "pdf",
-    *SKIP_MEASURES,
-    *INFORMATIONAL_MEASURES,
-})
+KNOWN_MEASURES = frozenset(
+    {
+        "john_stewart",
+        "gis",
+        "housekeys",
+        "civicplus",
+        "cdn",
+        "alta",
+        "charities_housing",
+        "midpen",
+        "eden",
+        "eah",
+        "first_housing",
+        "bloom",
+        "pdf",
+        *SKIP_MEASURES,
+        *INFORMATIONAL_MEASURES,
+    }
+)
 
 MEASURE_ALIASES = {"cdn": "civicplus"}
 
@@ -184,7 +203,9 @@ def dispatch_target(
 
     unknown = ctx.measures - KNOWN_MEASURES
     if unknown:
-        logger.warning("[dispatch] %s: unrecognised measures %s — check TARGETS.md", ctx.authority, unknown)
+        logger.warning(
+            "[dispatch] %s: unrecognised measures %s — check TARGETS.md", ctx.authority, unknown
+        )
 
     # Last-resort fallbacks
     if not ran_any:
@@ -201,6 +222,7 @@ def _run_fallbacks(ctx: TargetContext, note_error: Callable[[], None]) -> list[R
     if "playwright_needed" in ctx.measures or "js_heavy" in ctx.measures:
         try:
             from housing_list_search.playwright_scraper import playwright_scrape
+
             recs = playwright_scrape(ctx.authority, ctx.url)
             results.extend(recs)
             logger.info("[dispatch] %s: playwright fallback → %d records", ctx.authority, len(recs))
@@ -211,13 +233,16 @@ def _run_fallbacks(ctx: TargetContext, note_error: Callable[[], None]) -> list[R
             logger.warning("[dispatch] %s: playwright failed: %s", ctx.authority, exc)
     else:
         try:
-            from housing_list_search.scraper import polite_get
             from housing_list_search.generic_scraper import generic_scrape
+            from housing_list_search.scraper import polite_get
+
             resp = polite_get(ctx.url)
             if resp:
                 recs = generic_scrape(ctx.authority, ctx.url, resp.text)
                 results.extend(recs)
-                logger.info("[dispatch] %s: generic fallback → %d records", ctx.authority, len(recs))
+                logger.info(
+                    "[dispatch] %s: generic fallback → %d records", ctx.authority, len(recs)
+                )
         except ImportError:
             pass
         except Exception as exc:
@@ -230,13 +255,16 @@ def _run_fallbacks(ctx: TargetContext, note_error: Callable[[], None]) -> list[R
 # URL extractor registrations (bloom, pdf)
 # ---------------------------------------------------------------------------
 
+
 def _bloom_predicate(url: str, _authority: str) -> bool:
     from housing_list_search.extraction.bloom_housing import is_bloom_url
+
     return is_bloom_url(url)
 
 
 def _bloom_extract(url: str, authority: str) -> list[Any]:
     from housing_list_search.extraction.bloom_housing import extract_bloom_for_target
+
     return extract_bloom_for_target(url, authority)
 
 
@@ -247,6 +275,7 @@ def _pdf_predicate(url: str, _authority: str) -> bool:
 
 def _pdf_extract(url: str, authority: str) -> list[Any]:
     from housing_list_search.extraction.pdf import extract_records_from_pdf
+
     auth_label = authority or "City of Gilroy"
     return extract_records_from_pdf(url, authority=auth_label)
 
@@ -259,71 +288,95 @@ register_url_extractor("pdf", _pdf_predicate, _pdf_extract, measures=frozenset({
 # Measure handler registrations
 # ---------------------------------------------------------------------------
 
+
 def _register_measure_handlers() -> None:
     try:
         from housing_list_search.adapters.john_stewart import scrape_john_stewart
+
         register_measure("john_stewart", lambda ctx: scrape_john_stewart(ctx.url))
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
-        register_measure("gis", lambda ctx: extract_gis_portfolio(
-            ctx.url, ctx.authority,
-            administrator=ctx.administrator,
-            administrator_url=ctx.administrator_url,
-            administrator_phone=ctx.administrator_phone,
-            administrator_contact=ctx.administrator_contact,
-        ))
+
+        register_measure(
+            "gis",
+            lambda ctx: extract_gis_portfolio(
+                ctx.url,
+                ctx.authority,
+                administrator=ctx.administrator,
+                administrator_url=ctx.administrator_url,
+                administrator_phone=ctx.administrator_phone,
+                administrator_contact=ctx.administrator_contact,
+            ),
+        )
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.housekeys import scrape_housekeys
-        register_measure("housekeys", lambda ctx: scrape_housekeys(
-            ctx.authority, ctx.url, admin_url=ctx.administrator_url,
-        ))
+
+        register_measure(
+            "housekeys",
+            lambda ctx: scrape_housekeys(
+                ctx.authority,
+                ctx.url,
+                admin_url=ctx.administrator_url,
+            ),
+        )
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.civicplus import extract_underlying_records
-        register_measure("civicplus", lambda ctx: extract_underlying_records(ctx.url, ctx.authority))
+
+        register_measure(
+            "civicplus", lambda ctx: extract_underlying_records(ctx.url, ctx.authority)
+        )
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.alta import scrape_alta
+
         register_measure("alta", lambda ctx: scrape_alta(ctx.authority, ctx.url))
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.charities_housing import scrape_charities_housing
-        register_measure("charities_housing", lambda ctx: scrape_charities_housing(ctx.authority, ctx.url))
+
+        register_measure(
+            "charities_housing", lambda ctx: scrape_charities_housing(ctx.authority, ctx.url)
+        )
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.midpen import scrape_midpen
+
         register_measure("midpen", lambda ctx: scrape_midpen(ctx.authority, ctx.url))
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.eden import scrape_eden
+
         register_measure("eden", lambda ctx: scrape_eden(ctx.authority, ctx.url))
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.eah import scrape_eah
+
         register_measure("eah", lambda ctx: scrape_eah(ctx.authority, ctx.url))
     except ImportError:
         pass
 
     try:
         from housing_list_search.adapters.first_housing import scrape_first_housing
+
         register_measure("first_housing", lambda ctx: scrape_first_housing(ctx.authority, ctx.url))
     except ImportError:
         pass

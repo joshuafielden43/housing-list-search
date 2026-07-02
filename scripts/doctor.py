@@ -18,25 +18,25 @@ Intended to be run by humans and by Hermes-style agents after
 cloning or when things feel broken.
 """
 
-import sys
 import argparse
-from pathlib import Path
+import sys
 from importlib.util import find_spec
+from pathlib import Path
 
 
 def section(title: str):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {title}")
-    print('='*60)
+    print("=" * 60)
 
 
 def check_python_version() -> bool:
     print(f"Python version: {sys.version.split()[0]}")
-    if sys.version_info < (3, 10):
-        print("⚠️  Warning: Python 3.10+ recommended")
-        return True  # not fatal yet
-    print("✅ Python version looks good")
-    return True
+    ok = sys.version_info >= (3, 11)
+    print(
+        "✅ Python version looks good" if ok else "❌ Python 3.11+ required (see .python-version)"
+    )
+    return ok
 
 
 def check_requirements() -> bool:
@@ -79,17 +79,22 @@ def check_requirements() -> bool:
 
 
 def check_package_imports() -> bool:
-    # Try normal import first
+    import importlib
+
+    # Side-effect imports: verify each adapter module loads without ImportError.
+    modules = (
+        "housing_list_search",
+        "housing_list_search.scraper",
+        "housing_list_search.registry",
+        "housing_list_search.adapters.john_stewart",
+        "housing_list_search.adapters.gis_extraction",
+        "housing_list_search.adapters.housekeys",
+        "housing_list_search.adapters.civicplus",
+        "housing_list_search.adapters.alta",
+    )
     try:
-        import housing_list_search
-        from housing_list_search.scraper import polite_get
-        from housing_list_search.registry import load_targets_to_db
-        from housing_list_search.adapters.john_stewart import scrape_john_stewart
-        from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
-        from housing_list_search.adapters.housekeys import scrape_housekeys
-        from housing_list_search.adapters.civicplus import extract_underlying_records
-        from housing_list_search.adapters.alta import scrape_alta
-        from housing_list_search.registry import get_active_targets, get_skipped_targets
+        for name in modules:
+            importlib.import_module(name)
         print("✅ housing_list_search package imports cleanly")
         return True
     except ImportError:
@@ -98,20 +103,12 @@ def check_package_imports() -> bool:
     # Development mode: allow running directly from the repo root
     # without having the package installed in site-packages.
     import sys
+
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
     try:
-        import housing_list_search
-        from housing_list_search.scraper import polite_get
-        from housing_list_search.registry import load_targets_to_db
-        from housing_list_search.adapters.john_stewart import scrape_john_stewart
-        from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
-        from housing_list_search.adapters.housekeys import scrape_housekeys
-        from housing_list_search.adapters.civicplus import extract_underlying_records
-        from housing_list_search.adapters.alta import scrape_alta
-        from housing_list_search.registry import get_active_targets, get_skipped_targets
         print("✅ housing_list_search imports successfully (development mode)")
         return True
     except Exception as e:
@@ -138,12 +135,19 @@ def check_targets_file() -> bool:
 
 def check_registry_load() -> bool:
     try:
-        from housing_list_search.registry import load_targets_to_db, get_active_targets, get_skipped_targets
+        from housing_list_search.registry import (
+            get_active_targets,
+            get_skipped_targets,
+            load_targets_to_db,
+        )
+
         load_targets_to_db()
         active = get_active_targets()
         skipped = get_skipped_targets()
-        print(f"✅ Registry loads TARGETS.md successfully")
-        print(f"   Active targets: {len(active)} | Intentionally skipped (no_public_list): {len(skipped)}")
+        print("✅ Registry loads TARGETS.md successfully")
+        print(
+            f"   Active targets: {len(active)} | Intentionally skipped (no_public_list): {len(skipped)}"
+        )
         if skipped:
             for t in skipped:
                 print(f"     - {t['authority']} (marked no_public_list)")
@@ -154,8 +158,11 @@ def check_registry_load() -> bool:
 
 
 def check_playwright() -> bool:
+    import importlib.util
+
     try:
-        from playwright.sync_api import sync_playwright
+        if importlib.util.find_spec("playwright.sync_api") is None:
+            raise ImportError("playwright.sync_api not found")
         # Don't actually launch a browser here — just check import + basic readiness
         print("✅ Playwright Python package is installed")
         print("   (Run `playwright install` if you haven't already for browser binaries)")
@@ -168,9 +175,10 @@ def check_playwright() -> bool:
 
 def _prune_snapshots(older_than_days: int):
     import time
+
     snapshots_dir = Path("snapshots")
     if not snapshots_dir.exists():
-        print(f"   snapshots/ directory not found — nothing to prune")
+        print("   snapshots/ directory not found — nothing to prune")
         return
     cutoff = time.time() - older_than_days * 86400
     removed = 0
@@ -179,30 +187,30 @@ def _prune_snapshots(older_than_days: int):
             f.unlink()
             print(f"   Pruned: {f.name}")
             removed += 1
-    print(f"✅ Snapshot pruning complete — {removed} file(s) removed (older than {older_than_days} days)")
+    print(
+        f"✅ Snapshot pruning complete — {removed} file(s) removed (older than {older_than_days} days)"
+    )
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Housing List Search Doctor + Registry Fixer"
-    )
+    parser = argparse.ArgumentParser(description="Housing List Search Doctor + Registry Fixer")
     parser.add_argument(
         "--fix",
         action="store_true",
         help="Re-ingest TARGETS.md and re-run the sanitizer on all registry objects. "
-             "Use this after editing TARGETS.md to guarantee the DB reflects the current (sanitized) state."
+        "Use this after editing TARGETS.md to guarantee the DB reflects the current (sanitized) state.",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Validate imports and config only — no network requests, no DB writes. "
-             "Safe to run in CI or restricted environments."
+        "Safe to run in CI or restricted environments.",
     )
     parser.add_argument(
         "--prune-snapshots",
         type=int,
         metavar="DAYS",
-        help="Delete snapshots/ archives older than DAYS days."
+        help="Delete snapshots/ archives older than DAYS days.",
     )
     args = parser.parse_args()
 
@@ -227,6 +235,7 @@ def main():
     if args.fix and not dry_run:
         try:
             from housing_list_search.registry import load_targets_to_db
+
             print("\n🔧 --fix: Forcing fresh registry load + sanitization from TARGETS.md ...")
             load_targets_to_db()
             print("   ✅ Registry objects have been re-scanned and re-sanitized.\n")
@@ -247,25 +256,34 @@ def main():
         # Network smoke tests — skipped in dry-run / CI mode
         try:
             from housing_list_search.adapters.housekeys import scrape_housekeys
-            recs = scrape_housekeys("City of Milpitas (test)", "https://www.milpitas.gov/1303/Below-Market-Rate-BMR-Homeownership-Prog")
+
+            recs = scrape_housekeys(
+                "City of Milpitas (test)",
+                "https://www.milpitas.gov/1303/Below-Market-Rate-BMR-Homeownership-Prog",
+            )
             if recs and any("HouseKeys" in str(r) for r in recs):
                 print("✅ HouseKeys adapter smoke test passed")
             else:
                 print("✅ HouseKeys adapter runs without crashing")
 
             from housing_list_search.adapters.civicplus import extract_underlying_records
+
             # Document IDs 364/366/368 confirmed current as of 2026-06-05.
             # sunnyvale.ca.gov is WAF-blocked so these return empty; smoke only validates no crash.
             recs = extract_underlying_records(
                 "https://www.sunnyvale.ca.gov/homes-streets-and-property/housing/rental-programs",
                 authority="City of Sunnyvale (doctor smoke)",
                 known_document_urls=["https://www.sunnyvale.ca.gov/home/showpublisheddocument/368"],
-                timeout=30000
+                timeout=30000,
             )
             print("✅ civicplus adapter smoke test ran (returned list, no crash)")
 
             from housing_list_search.adapters.alta import scrape_alta
-            recs = scrape_alta("City of Palo Alto (doctor smoke)", "https://www.paloalto.gov/Departments/Planning-Development-Services/Housing-Policies-Projects/Below-Market-Rate-Housing")
+
+            recs = scrape_alta(
+                "City of Palo Alto (doctor smoke)",
+                "https://www.paloalto.gov/Departments/Planning-Development-Services/Housing-Policies-Projects/Below-Market-Rate-Housing",
+            )
             print("✅ alta adapter smoke test ran (returned list, no crash)")
         except Exception as e:
             print(f"⚠️  Adapter smoke had issues (may be expected in restricted env): {e}")

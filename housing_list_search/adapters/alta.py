@@ -74,7 +74,8 @@ from datetime import datetime as _dt
 from typing import Any
 
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
+from playwright.sync_api import sync_playwright
 
 from housing_list_search.scraper import polite_get
 
@@ -97,15 +98,16 @@ _STATUS_MAP = {
 
 
 def _jitter(seconds: float = 0.8) -> None:
-    import time
     import random
+    import time
+
     time.sleep(seconds + random.uniform(0.2, 0.9))
 
 
 def _get_headers() -> dict[str, str]:
     return {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
     }
@@ -260,24 +262,26 @@ def scrape_property_directory(authority: str = "") -> list[dict[str, Any]]:
         desc = box.select_one(".block-desc")
         address = desc.get_text(" ", strip=True) if desc else ""
 
-        records.append({
-            "authority": authority or "Alta Housing",
-            "property_name": name,
-            "address": address,
-            "url": detail_url,
-            "status": status_text or "See property page",
-            "listing_status": listing_status,
-            "administrator": "Alta Housing",
-            "administrator_url": "https://altahousing.org/",
-            "administrator_phone": "(650) 321-9709",
-            "notes": f"Alta Housing managed property | directory status: {status_text}",
-            "confidence": "high",
-            "last_seen": now_iso,
-            "first_seen": now_iso,
-            "source": "alta:property_directory",
-            "source_url": PROPERTY_DIRECTORY_URL,
-            "expires_at": "",
-        })
+        records.append(
+            {
+                "authority": authority or "Alta Housing",
+                "property_name": name,
+                "address": address,
+                "url": detail_url,
+                "status": status_text or "See property page",
+                "listing_status": listing_status,
+                "administrator": "Alta Housing",
+                "administrator_url": "https://altahousing.org/",
+                "administrator_phone": "(650) 321-9709",
+                "notes": f"Alta Housing managed property | directory status: {status_text}",
+                "confidence": "high",
+                "last_seen": now_iso,
+                "first_seen": now_iso,
+                "source": "alta:property_directory",
+                "source_url": PROPERTY_DIRECTORY_URL,
+                "expires_at": "",
+            }
+        )
 
     logger.info("[alta] Property directory: %d properties", len(records))
     return records
@@ -297,7 +301,11 @@ def _extract_ownership_section(soup: BeautifulSoup, page) -> dict[str, Any]:
             if any(kw in link_text for kw in ["waitlist", "interest", "apply", "sign up"]):
                 if "http" not in href:
                     base = page.url.split("/")[0:3]
-                    href = "/".join(base) + href if href.startswith("/") else page.url.rsplit("/", 1)[0] + "/" + href
+                    href = (
+                        "/".join(base) + href
+                        if href.startswith("/")
+                        else page.url.rsplit("/", 1)[0] + "/" + href
+                    )
                 info["waitlist_link"] = href
                 break
 

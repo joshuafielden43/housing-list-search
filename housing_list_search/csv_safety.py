@@ -8,7 +8,8 @@ values with a single quote so imports stay literal.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 # OWASP CSV injection guidance — leading characters that trigger formula parsing.
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")

@@ -1,6 +1,5 @@
 # normalizer.py
 import csv
-from datetime import datetime
 
 from housing_list_search.csv_safety import sanitize_csv_row
 from housing_list_search.listing import listing_to_row
@@ -46,12 +45,31 @@ def save_current_full(listings: list):
         return
 
     fieldnames = [
-        "source_authority", "property_name", "address", "phone", "email",
-        "bedrooms", "url", "status", "listing_status", "deadline",
-        "income_limits", "unit_types", "eligibility_flags", "notes",
-        "scrape_date", "confidence",
-        "administrator", "administrator_url", "administrator_phone", "administrator_contact",
-        "last_seen", "first_seen", "source", "source_url", "expires_at"
+        "source_authority",
+        "property_name",
+        "address",
+        "phone",
+        "email",
+        "bedrooms",
+        "url",
+        "status",
+        "listing_status",
+        "deadline",
+        "income_limits",
+        "unit_types",
+        "eligibility_flags",
+        "notes",
+        "scrape_date",
+        "confidence",
+        "administrator",
+        "administrator_url",
+        "administrator_phone",
+        "administrator_contact",
+        "last_seen",
+        "first_seen",
+        "source",
+        "source_url",
+        "expires_at",
     ]
 
     with open("current_full.csv", "w", newline="", encoding="utf-8") as f:

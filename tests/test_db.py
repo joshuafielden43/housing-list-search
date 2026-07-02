@@ -4,11 +4,11 @@ Unit tests for the Database Management Layer.
 These tests create and destroy their own temporary databases.
 """
 
-import tempfile
 import os
+import tempfile
 from pathlib import Path
+
 import pytest
-import yaml
 
 from housing_list_search.db import DatabaseManager
 
@@ -80,14 +80,20 @@ def test_prune_not_seen_since(temp_db):
 
 def test_export_diff_csv_marks_scrape_failed_separate_from_stale(temp_db):
     mgr = temp_db
-    mgr.upsert_listings([
-        {"authority": "City A", "property_name": "A1", "url": "https://a/1"},
-        {"authority": "City B", "property_name": "B1", "url": "https://b/1"},
-    ], run_id="prior")
+    mgr.upsert_listings(
+        [
+            {"authority": "City A", "property_name": "A1", "url": "https://a/1"},
+            {"authority": "City B", "property_name": "B1", "url": "https://b/1"},
+        ],
+        run_id="prior",
+    )
 
-    mgr.upsert_listings([
-        {"authority": "City A", "property_name": "A1", "url": "https://a/1"},
-    ], run_id="current")
+    mgr.upsert_listings(
+        [
+            {"authority": "City A", "property_name": "A1", "url": "https://a/1"},
+        ],
+        run_id="current",
+    )
 
     out = Path(tempfile.gettempdir()) / "test_diff_scrape_failed.csv"
     try:
@@ -97,6 +103,7 @@ def test_export_diff_csv_marks_scrape_failed_separate_from_stale(temp_db):
             scrape_failed_authorities=["City B"],
         )
         import csv
+
         rows = list(csv.DictReader(out.read_text(encoding="utf-8").splitlines()))
         by_auth = {r["source_authority"]: r["change_type"] for r in rows}
         assert by_auth["City A"] == "UPDATED"
@@ -108,15 +115,31 @@ def test_export_diff_csv_marks_scrape_failed_separate_from_stale(temp_db):
 
 def test_export_csv_includes_record_kind(temp_db):
     mgr = temp_db
-    mgr.upsert_listings([
-        {"authority": "City A", "property_name": "Oak Manor", "url": "https://a/1", "source": "midpen:find_housing", "address": "1 Oak"},
-        {"authority": "City B", "property_name": "City B BMR (via HouseKeys)", "url": "https://hk.example/", "source": "housekeys:city_b", "administrator": "HouseKeys"},
-    ], run_id="run1")
+    mgr.upsert_listings(
+        [
+            {
+                "authority": "City A",
+                "property_name": "Oak Manor",
+                "url": "https://a/1",
+                "source": "midpen:find_housing",
+                "address": "1 Oak",
+            },
+            {
+                "authority": "City B",
+                "property_name": "City B BMR (via HouseKeys)",
+                "url": "https://hk.example/",
+                "source": "housekeys:city_b",
+                "administrator": "HouseKeys",
+            },
+        ],
+        run_id="run1",
+    )
 
     out = Path(tempfile.gettempdir()) / "test_export_record_kind.csv"
     try:
         mgr.export_csv(str(out))
         import csv
+
         rows = list(csv.DictReader(out.read_text(encoding="utf-8").splitlines()))
         kinds = {r["property_name"]: r["record_kind"] for r in rows}
         assert kinds["Oak Manor"] == "property"
@@ -128,11 +151,16 @@ def test_export_csv_includes_record_kind(temp_db):
 
 def test_export_csv_escapes_formula_injection(temp_db):
     mgr = temp_db
-    mgr.upsert_listings([{
-        "authority": "Test City",
-        "property_name": "=CMD|'/C calc'!A0",
-        "url": "https://example.gov/1",
-    }], run_id="testrun1")
+    mgr.upsert_listings(
+        [
+            {
+                "authority": "Test City",
+                "property_name": "=CMD|'/C calc'!A0",
+                "url": "https://example.gov/1",
+            }
+        ],
+        run_id="testrun1",
+    )
 
     out = Path(tempfile.gettempdir()) / "test_export_formula.csv"
     try:
@@ -163,7 +191,6 @@ def test_prune_all_stale_combines_rules(temp_db):
 
 def test_snapshot_creates_archive(temp_db, tmp_path):
     import json
-    import os
     import tarfile
 
     mgr = temp_db
@@ -205,10 +232,13 @@ def test_settings_default_when_no_file(temp_db):
 
 def test_prune_from_diff_deletes_stale_rows(temp_db):
     mgr = temp_db
-    mgr.upsert_listings([
-        {"authority": "Old Auth", "property_name": "Gone", "url": "https://old.example/1"},
-        {"authority": "Live Auth", "property_name": "Stays", "url": "https://live.example/1"},
-    ], run_id="prior")
+    mgr.upsert_listings(
+        [
+            {"authority": "Old Auth", "property_name": "Gone", "url": "https://old.example/1"},
+            {"authority": "Live Auth", "property_name": "Stays", "url": "https://live.example/1"},
+        ],
+        run_id="prior",
+    )
 
     diff_path = Path(tempfile.gettempdir()) / "test_prune_diff.csv"
     diff_path.write_text(

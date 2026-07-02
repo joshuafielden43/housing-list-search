@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime as _dt
-from typing import Any, Dict, List
+from typing import Any
 
 from bs4 import BeautifulSoup
 
@@ -49,8 +49,14 @@ SEARCH_URL_TEMPLATE = (
 MAX_PAGES = 4  # ~30 cards/page; county portfolio fits in 2 today
 
 _STATUS_FLAGS = [
-    "Wait List Open", "Wait List Closed", "Waitlist Open", "Waitlist Closed",
-    "Referral Only", "Interest List", "Coming Soon", "Now Leasing",
+    "Wait List Open",
+    "Wait List Closed",
+    "Waitlist Open",
+    "Waitlist Closed",
+    "Referral Only",
+    "Interest List",
+    "Coming Soon",
+    "Now Leasing",
 ]
 
 # status flag → our listing_status vocabulary (status_labels.py)
@@ -70,7 +76,7 @@ _POPULATION_TYPES = ["Family", "Senior", "Supportive"]
 _CITY_RE = re.compile(r"([A-Z][A-Za-z .]+),\s*CA\s*$")
 
 
-def _parse_card(card, now_iso: str, page_url: str) -> Dict[str, Any] | None:
+def _parse_card(card, now_iso: str, page_url: str) -> dict[str, Any] | None:
     links = card.find_all("a", href=re.compile(r"/property/[^/]+/?$"))
     if not links:
         return None
@@ -125,11 +131,11 @@ def _parse_card(card, now_iso: str, page_url: str) -> Dict[str, Any] | None:
     }
 
 
-def scrape_midpen(authority: str = "", url: str = "") -> List[Dict[str, Any]]:
+def scrape_midpen(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     """Public entry point. Walks the county-filtered search pages."""
-    print(f"🧩 Running MidPen adapter (county-filtered find-housing search)")
+    print("🧩 Running MidPen adapter (county-filtered find-housing search)")
     now_iso = _dt.now().isoformat()
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
 
     for page_num in range(1, MAX_PAGES + 1):
@@ -140,9 +146,7 @@ def scrape_midpen(authority: str = "", url: str = "") -> List[Dict[str, Any]]:
             break
 
         soup = BeautifulSoup(resp.text, "html.parser")
-        cards = soup.find_all(
-            "div", class_=lambda c: c and "elementor-location-single" in c
-        )
+        cards = soup.find_all("div", class_=lambda c: c and "elementor-location-single" in c)
 
         new_on_page = 0
         for card in cards:

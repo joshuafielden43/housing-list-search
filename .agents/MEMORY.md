@@ -75,6 +75,8 @@ Epic **#389** (portable routing + record identity) — **complete** as of 2026-0
 
 ## Dev shortcuts
 
+- Hooks: `npm install` after clone (Husky → `.husky/pre-commit` + `pre-push`; Vikunja **#650**)
+- Full local gate: `npm run check` (ruff + `doctor --dry-run` + unit tests)
 - Unit tests: `HLS_DISABLE_MARKER_PDF=1 .venv/bin/python -m pytest tests/ -m "not integration"`
 - Parallel targets: `HLS_MAX_TARGET_WORKERS=3` (default); set `1` for serial. Per-host robots cache + throttle in `robots_cache.py` / `host_throttle.py`.
 - Single-target smoke: `python main.py --run --target "Gilroy"`

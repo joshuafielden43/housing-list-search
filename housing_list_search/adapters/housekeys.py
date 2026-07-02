@@ -57,8 +57,9 @@ This keeps the skill location-agnostic and prevents one-off city files from
 proliferating.
 """
 
-from housing_list_search.scraper import polite_get
 import logging
+
+from housing_list_search.scraper import polite_get
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ def scrape_housekeys(authority: str, url: str, admin_url: str = ""):
     )
 
     from datetime import datetime as _dt
+
     now_iso = _dt.now().isoformat()
 
     record = {
@@ -118,7 +120,6 @@ def scrape_housekeys(authority: str, url: str, admin_url: str = ""):
         "last_seen": now_iso,
         "first_seen": now_iso,
         "source": f"housekeys:{authority.lower().replace(' ', '_')}",
-        "source_url": url,
         "expires_at": "",
     }
 
@@ -128,5 +129,7 @@ def scrape_housekeys(authority: str, url: str, admin_url: str = ""):
         f"No public unit-level list is available for scraping."
     )
 
-    print(f"   → HouseKeys adapter produced 1 registration record (this is the actionable public entry point)")
+    print(
+        "   → HouseKeys adapter produced 1 registration record (this is the actionable public entry point)"
+    )
     return [record]

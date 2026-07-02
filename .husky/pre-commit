@@ -1,0 +1,4 @@
+"$(dirname "$0")/pre-commit-secrets.sh" || exit 1
+npx lint-staged
+npm run check:fast
+npm run test

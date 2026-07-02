@@ -4,9 +4,10 @@ TARGETS.md → SQLite targets table.
 
 Ingestion and sanitization for the `targets` table. DDL lives in schema.py.
 """
-import sqlite3
-import re
+
 import logging
+import re
+import sqlite3
 
 from housing_list_search.schema import init_schema
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
@@ -73,7 +74,9 @@ def sanitize_target(raw: dict) -> dict:
     # Authority (human name)
     authority = _clean_text(raw.get("authority", ""), MAX_AUTHORITY_LEN)
     if not authority:
-        logger.warning("Sanitizer: empty authority after cleaning — row will be skipped in practice")
+        logger.warning(
+            "Sanitizer: empty authority after cleaning — row will be skipped in practice"
+        )
     out["authority"] = authority
 
     # URL — the highest-risk field
@@ -83,11 +86,15 @@ def sanitize_target(raw: dict) -> dict:
 
     if not any(url.startswith(s) for s in ALLOWED_URL_SCHEMES):
         if url:
-            logger.warning(f"Sanitizer: URL for '{authority}' has disallowed scheme or is malformed: {original_url[:100]}")
+            logger.warning(
+                f"Sanitizer: URL for '{authority}' has disallowed scheme or is malformed: {original_url[:100]}"
+            )
         url = ""  # Will cause the row to be effectively inert
 
     if len(url) > MAX_URL_LEN:
-        logger.warning(f"Sanitizer: URL for '{authority}' was truncated (was {len(original_url)} chars)")
+        logger.warning(
+            f"Sanitizer: URL for '{authority}' was truncated (was {len(original_url)} chars)"
+        )
         url = url[:MAX_URL_LEN]
 
     out["url"] = url
@@ -138,25 +145,29 @@ def sanitize_target(raw: dict) -> dict:
     out["administrator_url"] = admin_url
 
     # Detect potential prompt-injection style content in notes (future-proofing)
-    suspicious = any(phrase in notes.lower() for phrase in [
-        "ignore previous", "disregard", "system prompt", "you are now", "forget all"
-    ])
+    suspicious = any(
+        phrase in notes.lower()
+        for phrase in ["ignore previous", "disregard", "system prompt", "you are now", "forget all"]
+    )
     if suspicious:
-        logger.warning(f"Sanitizer: notes for '{authority}' contained patterns that look like prompt injection attempts. They have been kept but should be reviewed by a human.")
+        logger.warning(
+            f"Sanitizer: notes for '{authority}' contained patterns that look like prompt injection attempts. They have been kept but should be reviewed by a human."
+        )
 
     return out
+
 
 def load_targets_to_db():
     init_db()
     conn = connect_sqlite(DB_PATH)
     c = conn.cursor()
-    
+
     # Clear and reload from markdown
     c.execute("DELETE FROM targets")
-    
-    with open("TARGETS.md", "r", encoding="utf-8") as f:
+
+    with open("TARGETS.md", encoding="utf-8") as f:
         lines = f.readlines()
-    
+
     in_table = False
     sanitized_count = 0
     skipped_count = 0
@@ -185,18 +196,30 @@ def load_targets_to_db():
 
                 # If the URL is empty after sanitization we treat it as a bad row
                 if not cleaned["url"]:
-                    logger.warning(f"Sanitizer rejected row for authority='{raw['authority'][:60]}' — no usable URL after cleaning")
+                    logger.warning(
+                        f"Sanitizer rejected row for authority='{raw['authority'][:60]}' — no usable URL after cleaning"
+                    )
                     skipped_count += 1
                     continue
 
-                c.execute("""INSERT INTO targets 
+                c.execute(
+                    """INSERT INTO targets 
                     (authority, url, notes, scraping_measures, priority, last_seen,
                      administrator, administrator_url, administrator_phone, administrator_contact)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (cleaned["authority"], cleaned["url"], cleaned["notes"], cleaned["scraping_measures"],
-                     cleaned["priority"], cleaned["last_seen"],
-                     cleaned["administrator"], cleaned["administrator_url"],
-                     cleaned["administrator_phone"], cleaned["administrator_contact"]))
+                    (
+                        cleaned["authority"],
+                        cleaned["url"],
+                        cleaned["notes"],
+                        cleaned["scraping_measures"],
+                        cleaned["priority"],
+                        cleaned["last_seen"],
+                        cleaned["administrator"],
+                        cleaned["administrator_url"],
+                        cleaned["administrator_phone"],
+                        cleaned["administrator_contact"],
+                    ),
+                )
                 sanitized_count += 1
 
     conn.commit()
@@ -205,7 +228,9 @@ def load_targets_to_db():
     if sanitized_count:
         print(f"   Sanitizer processed {sanitized_count} rows")
     if skipped_count:
-        print(f"   ⚠️  Sanitizer skipped {skipped_count} malformed row(s) — check TARGETS.md and logs")
+        print(
+            f"   ⚠️  Sanitizer skipped {skipped_count} malformed row(s) — check TARGETS.md and logs"
+        )
 
 
 def get_all_targets():

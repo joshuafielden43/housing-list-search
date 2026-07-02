@@ -7,24 +7,23 @@ URL dispatch is registered in housing_list_search.dispatch.
 
 from __future__ import annotations
 
-from typing import List
-
-from .pdf import HousingRecord, extract_records_from_pdf
 from .bloom_housing import (
     BLOOM_DOMAINS,
-    extract_bloom_housing_listings,
     extract_bloom_for_target,
+    extract_bloom_housing_listings,
     extract_san_jose_listings,
     is_bloom_url,
 )
+from .pdf import HousingRecord, extract_records_from_pdf
 
 
-def extract_target(url: str, authority: str = "") -> List[HousingRecord]:
+def extract_target(url: str, authority: str = "") -> list[HousingRecord]:
     """
     Standalone URL extraction entry point (integration tests, ground_truth).
     Delegates to the dispatch registry with measure gate disabled.
     """
     from housing_list_search.dispatch import extract_target as _dispatch_extract
+
     return _dispatch_extract(url, authority)
 
 

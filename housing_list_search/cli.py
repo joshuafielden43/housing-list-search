@@ -27,14 +27,18 @@ def main():
         )
         logger = logging.getLogger("housing_list_search")
 
-        from housing_list_search.registry import load_targets_to_db, get_active_targets, get_skipped_targets
-        from housing_list_search.target_filter import filter_targets_by_authority
         from housing_list_search.db import get_manager
-        from housing_list_search.pipeline import RunPipeline
         from housing_list_search.outputs import (
             PARTIAL_DAILY_SUMMARY_PATH,
             STAFF_DAILY_SUMMARY_PATH,
         )
+        from housing_list_search.pipeline import RunPipeline
+        from housing_list_search.registry import (
+            get_active_targets,
+            get_skipped_targets,
+            load_targets_to_db,
+        )
+        from housing_list_search.target_filter import filter_targets_by_authority
 
         db = get_manager()
         db.init_db()
@@ -75,9 +79,13 @@ def main():
             skipped_targets=skipped_targets,
         )
 
-        print(f"   Exported current_full.csv ({result.n_full} rows), diff.csv ({result.n_diff} rows)")
-        print(f"\n✅ Run complete! {len(result.listings)} listings this run "
-              f"({result.inserted} new, {result.updated} updated).")
+        print(
+            f"   Exported current_full.csv ({result.n_full} rows), diff.csv ({result.n_diff} rows)"
+        )
+        print(
+            f"\n✅ Run complete! {len(result.listings)} listings this run "
+            f"({result.inserted} new, {result.updated} updated)."
+        )
         if skipped_targets:
             print(f"   ⚠️  Skipped {len(skipped_targets)} targets marked no_public_list")
         if partial_run:
@@ -98,7 +106,7 @@ def main():
     else:
         print("Usage:")
         print("  python main.py --run")
-        print("  python main.py --run --target \"San José\"")
+        print('  python main.py --run --target "San José"')
         print("\nTargets are hand-maintained in TARGETS.md.")
         sys.exit(0)
 

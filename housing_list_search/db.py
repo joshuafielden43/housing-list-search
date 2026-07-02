@@ -7,15 +7,15 @@ used for validation, testing, and future trash compactor work.
 See PROJECT_CONTRACT_v0.8.6.md for the active contract.
 """
 
-import sqlite3
 import json
 import os
+import sqlite3
 import subprocess
 import tarfile
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 import yaml
 
@@ -24,7 +24,6 @@ from housing_list_search.csv_safety import sanitize_csv_row
 from housing_list_search.schema import init_schema
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
 
-
 # Centralized paths
 DB_PATH = DEFAULT_DB_PATH
 SNAPSHOTS_DIR = Path("snapshots")
@@ -32,6 +31,7 @@ DEFAULT_SETTINGS_PATH = Path.home() / ".housing-list-search" / "settings.yaml"
 
 # Warn on --run when STALE rows in diff.csv meet or exceed this count.
 DEFAULT_STALE_WARN_THRESHOLD = 5
+
 
 def _git_short_commit() -> str:
     try:
@@ -52,9 +52,9 @@ def _git_short_commit() -> str:
 class DatabaseManager:
     """Core manager for the housing database operations."""
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or DB_PATH
-        self.conn: Optional[sqlite3.Connection] = None
+        self.conn: sqlite3.Connection | None = None
 
     def connect(self) -> sqlite3.Connection:
         """Get or create a connection to the database."""
@@ -68,14 +68,14 @@ class DatabaseManager:
             self.conn.close()
             self.conn = None
 
-    def _get_settings(self) -> Dict[str, Any]:
+    def _get_settings(self) -> dict[str, Any]:
         """Load settings from YAML, with sensible defaults."""
         default_prune_days = 45
         if not DEFAULT_SETTINGS_PATH.exists():
             return {"database": {"prune": {"default_not_seen_days": default_prune_days}}}
 
         try:
-            with open(DEFAULT_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            with open(DEFAULT_SETTINGS_PATH, encoding="utf-8") as f:
                 settings = yaml.safe_load(f) or {}
             prune_days = (
                 settings.get("database", {})
@@ -107,23 +107,33 @@ class DatabaseManager:
         c.execute(f"SELECT COUNT(*) FROM {table}")
         return c.fetchone()[0]
 
-    def _log_run(self, command: str, authority_filter: str = "", rows_before: int = 0, rows_after: int = 0, notes: str = ""):
+    def _log_run(
+        self,
+        command: str,
+        authority_filter: str = "",
+        rows_before: int = 0,
+        rows_after: int = 0,
+        notes: str = "",
+    ):
         conn = self.connect()
         c = conn.cursor()
-        c.execute("""
+        c.execute(
+            """
             INSERT INTO run_history (command, authority_filter, rows_before, rows_after, notes)
             VALUES (?, ?, ?, ?, ?)
-        """, (command, authority_filter, rows_before, rows_after, notes))
+        """,
+            (command, authority_filter, rows_before, rows_after, notes),
+        )
         conn.commit()
 
     def prune(
         self,
-        not_seen_since_days: Optional[int] = None,
-        authority: Optional[str] = None,
+        not_seen_since_days: int | None = None,
+        authority: str | None = None,
         dry_run: bool = False,
         all_stale: bool = False,
         expires_at_past: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Prune stale records according to contract rules."""
         settings = self._get_settings()
         default_days = settings["database"]["prune"]["default_not_seen_days"]
@@ -135,7 +145,7 @@ class DatabaseManager:
         before = self.get_record_count()
 
         where_clauses = []
-        params: List[Any] = []
+        params: list[Any] = []
 
         # Rule 1: expires_at in the past
         if all_stale or expires_at_past:
@@ -174,7 +184,7 @@ class DatabaseManager:
         diff_path: str = "diff.csv",
         *,
         dry_run: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Delete housing_records matching STALE rows in diff.csv.
 
@@ -189,13 +199,20 @@ class DatabaseManager:
                 for row in _csv.DictReader(f):
                     if row.get("change_type") != "STALE":
                         continue
-                    stale_keys.append((
-                        (row.get("source_authority") or row.get("authority") or "").strip(),
-                        (row.get("property_name") or "").strip(),
-                        (row.get("url") or "").strip(),
-                    ))
+                    stale_keys.append(
+                        (
+                            (row.get("source_authority") or row.get("authority") or "").strip(),
+                            (row.get("property_name") or "").strip(),
+                            (row.get("url") or "").strip(),
+                        )
+                    )
         except FileNotFoundError:
-            return {"deleted": 0, "before": self.get_record_count(), "after": self.get_record_count(), "stale_keys": 0}
+            return {
+                "deleted": 0,
+                "before": self.get_record_count(),
+                "after": self.get_record_count(),
+                "stale_keys": 0,
+            }
 
         before = self.get_record_count()
         if not stale_keys:
@@ -212,7 +229,12 @@ class DatabaseManager:
                 )
                 if c.fetchone():
                     found += 1
-            return {"dry_run": True, "would_delete": found, "before": before, "stale_keys": len(stale_keys)}
+            return {
+                "dry_run": True,
+                "would_delete": found,
+                "before": before,
+                "stale_keys": len(stale_keys),
+            }
 
         deleted = 0
         for auth, name, url in stale_keys:
@@ -223,7 +245,9 @@ class DatabaseManager:
             deleted += c.rowcount
         conn.commit()
         after = self.get_record_count()
-        self._log_run("prune", "", before, after, f"from_diff stale_keys={len(stale_keys)} deleted={deleted}")
+        self._log_run(
+            "prune", "", before, after, f"from_diff stale_keys={len(stale_keys)} deleted={deleted}"
+        )
         return {"deleted": deleted, "before": before, "after": after, "stale_keys": len(stale_keys)}
 
     def snapshot(self, name: str) -> Path:
@@ -264,12 +288,12 @@ class DatabaseManager:
         self._log_run("snapshot", "", 0, 0, f"name={name}")
         return archive_path
 
-    def list_snapshots(self) -> List[Path]:
+    def list_snapshots(self) -> list[Path]:
         if not SNAPSHOTS_DIR.exists():
             return []
         return sorted(SNAPSHOTS_DIR.glob("*.tgz"), reverse=True)
 
-    def info(self) -> Dict[str, Any]:
+    def info(self) -> dict[str, Any]:
         return {
             "db_path": str(self.db_path),
             "db_exists": self.db_path.exists(),
@@ -355,7 +379,8 @@ class DatabaseManager:
 
             if existing:
                 # Preserve original first_seen; update everything else
-                c.execute("""
+                c.execute(
+                    """
                     UPDATE housing_records SET
                         last_seen=?, last_run_id=?, status=?, listing_status=?, notes=?,
                         source=?, source_url=?, expires_at=?, address=?,
@@ -364,18 +389,39 @@ class DatabaseManager:
                         confidence=?, administrator=?, administrator_url=?,
                         administrator_phone=?, administrator_contact=?, raw_data=?
                     WHERE authority=? AND property_name=? AND url=?
-                """, (
-                    last_seen, run_id, status, listing_status, notes,
-                    source, source_url, expires_at, address,
-                    phone, email, deadline,
-                    bedrooms, income_limits, unit_types, eligibility_flags,
-                    confidence, administrator, administrator_url,
-                    administrator_phone, administrator_contact, raw_json,
-                    authority, property_name, url,
-                ))
+                """,
+                    (
+                        last_seen,
+                        run_id,
+                        status,
+                        listing_status,
+                        notes,
+                        source,
+                        source_url,
+                        expires_at,
+                        address,
+                        phone,
+                        email,
+                        deadline,
+                        bedrooms,
+                        income_limits,
+                        unit_types,
+                        eligibility_flags,
+                        confidence,
+                        administrator,
+                        administrator_url,
+                        administrator_phone,
+                        administrator_contact,
+                        raw_json,
+                        authority,
+                        property_name,
+                        url,
+                    ),
+                )
                 updated += 1
             else:
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO housing_records
                         (authority, property_name, address, phone, email, url,
                          status, listing_status, deadline, notes,
@@ -384,30 +430,56 @@ class DatabaseManager:
                          administrator_phone, administrator_contact,
                          last_seen, first_seen, last_run_id, first_run_id, source, source_url, expires_at, raw_data)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    authority, property_name, address, phone, email, url,
-                    status, listing_status, deadline, notes,
-                    bedrooms, income_limits, unit_types, eligibility_flags,
-                    confidence, administrator, administrator_url,
-                    administrator_phone, administrator_contact,
-                    last_seen, first_seen_val, run_id, run_id, source, source_url, expires_at, raw_json,
-                ))
+                """,
+                    (
+                        authority,
+                        property_name,
+                        address,
+                        phone,
+                        email,
+                        url,
+                        status,
+                        listing_status,
+                        deadline,
+                        notes,
+                        bedrooms,
+                        income_limits,
+                        unit_types,
+                        eligibility_flags,
+                        confidence,
+                        administrator,
+                        administrator_url,
+                        administrator_phone,
+                        administrator_contact,
+                        last_seen,
+                        first_seen_val,
+                        run_id,
+                        run_id,
+                        source,
+                        source_url,
+                        expires_at,
+                        raw_json,
+                    ),
+                )
                 inserted += 1
 
         conn.commit()
         after = self.get_record_count()
-        self._log_run("upsert", "", after - inserted, after,
-                      f"inserted={inserted} updated={updated}")
+        self._log_run(
+            "upsert", "", after - inserted, after, f"inserted={inserted} updated={updated}"
+        )
         return {"inserted": inserted, "updated": updated}
 
     @staticmethod
-    def _diff_case_sql(scrape_failed_authorities: Optional[list[str]] = None) -> tuple[str, list[str]]:
+    def _diff_case_sql(scrape_failed_authorities: list[str] | None = None) -> tuple[str, list[str]]:
         """Build the SCRAPE_FAILED CASE branch and its bind parameters."""
         failed = [a for a in (scrape_failed_authorities or []) if a]
         if not failed:
             return "", []
         placeholders = ",".join("?" for _ in failed)
-        branch = f"WHEN authority IN ({placeholders}) THEN 'SCRAPE_FAILED'\n                        "
+        branch = (
+            f"WHEN authority IN ({placeholders}) THEN 'SCRAPE_FAILED'\n                        "
+        )
         return branch, failed
 
     def export_csv(self, path: str = "current_full.csv") -> int:
@@ -417,7 +489,6 @@ class DatabaseManager:
         Column order matches the historical current_full.csv schema so existing
         importers and downstream tools require no changes.
         """
-        import csv as _csv
         self.init_db()
         conn = self.connect()
         c = conn.cursor()
@@ -475,6 +546,7 @@ class DatabaseManager:
     def _write_csv_atomic(path: str, fieldnames: list[str], rows) -> None:
         """Write CSV via a same-directory temp file, then atomic replace."""
         import csv as _csv
+
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = None
@@ -503,8 +575,8 @@ class DatabaseManager:
         self,
         path: str = "diff.csv",
         run_id: str = "",
-        authorities: Optional[list[str]] = None,
-        scrape_failed_authorities: Optional[list[str]] = None,
+        authorities: list[str] | None = None,
+        scrape_failed_authorities: list[str] | None = None,
     ) -> int:
         """
         Export a diff CSV: every housing_record row tagged with its change type.
@@ -528,7 +600,6 @@ class DatabaseManager:
         The intent is that any competent DBA or AI can ingest this CSV and drive
         upserts into their own schema without knowing anything about this tool.
         """
-        import csv as _csv
         self.init_db()
         conn = self.connect()
         c = conn.cursor()
@@ -543,7 +614,8 @@ class DatabaseManager:
         scrape_failed_branch, scrape_failed_params = self._diff_case_sql(scrape_failed_authorities)
 
         if run_id:
-            c.execute("""
+            c.execute(
+                f"""
                 SELECT
                     CASE
                         WHEN last_run_id = ? AND (first_run_id = ? OR (first_run_id IS NULL AND first_seen = last_seen)) THEN 'NEW'
@@ -573,11 +645,13 @@ class DatabaseManager:
                 FROM housing_records
                 {where}
                 ORDER BY change_type, authority, property_name
-            """.format(where=where, scrape_failed_branch=scrape_failed_branch),
-                [run_id, run_id, run_id, *scrape_failed_params, *authority_params])
+            """,
+                [run_id, run_id, run_id, *scrape_failed_params, *authority_params],
+            )
         else:
             # Fallback when no run_id: STALE = not seen in 7 days
-            c.execute("""
+            c.execute(
+                f"""
                 SELECT
                     CASE
                         WHEN first_seen = last_seen THEN 'NEW'
@@ -607,7 +681,9 @@ class DatabaseManager:
                 FROM housing_records
                 {where}
                 ORDER BY change_type, authority, property_name
-            """.format(where=where), authority_params)
+            """,
+                authority_params,
+            )
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
         fieldnames, rows = self._enrich_rows_with_record_kind(fieldnames, rows)
@@ -618,8 +694,8 @@ class DatabaseManager:
     def diff_counts(
         self,
         run_id: str,
-        authorities: Optional[list[str]] = None,
-        scrape_failed_authorities: Optional[list[str]] = None,
+        authorities: list[str] | None = None,
+        scrape_failed_authorities: list[str] | None = None,
     ) -> dict[str, int]:
         """
         Count NEW / UPDATED / SCRAPE_FAILED / STALE rows using export_diff_csv() rules.
@@ -639,7 +715,8 @@ class DatabaseManager:
             placeholders = ",".join("?" for _ in authorities)
             where = f" WHERE authority IN ({placeholders})"
             params.extend(authorities)
-        c.execute("""
+        c.execute(
+            f"""
             SELECT
                 CASE
                     WHEN last_run_id = ? AND (first_run_id = ? OR (first_run_id IS NULL AND first_seen = last_seen)) THEN 'NEW'
@@ -650,12 +727,14 @@ class DatabaseManager:
             FROM housing_records
             {where}
             GROUP BY change_type
-        """.format(where=where, scrape_failed_branch=scrape_failed_branch), params)
+        """,
+            params,
+        )
         counts = {row[0]: row[1] for row in c.fetchall()}
         for key in ("NEW", "UPDATED", "SCRAPE_FAILED", "STALE"):
             counts.setdefault(key, 0)
         return counts
 
 
-def get_manager(db_path: Optional[Path] = None) -> DatabaseManager:
+def get_manager(db_path: Path | None = None) -> DatabaseManager:
     return DatabaseManager(db_path)

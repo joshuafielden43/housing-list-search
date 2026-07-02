@@ -120,12 +120,14 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, List, Optional
+from typing import Any
 
 try:
     from bs4 import BeautifulSoup
 except ImportError:
     BeautifulSoup = None
+
+from datetime import UTC
 
 from housing_list_search.extraction.pdf import HousingRecord
 from housing_list_search.scraper import polite_get
@@ -138,10 +140,12 @@ logger = logging.getLogger(__name__)
 # To add a new API instance: add its hostname here with the jurisdictionname
 # (from the Bloom admin config) and the county filter name.
 # The endpoint path (/api/adapter/listings/combined) is the same for all instances.
-BLOOM_DOMAINS = frozenset({
-    "housing.sanjoseca.gov",
-    "housingbayarea.mtc.ca.gov",
-})
+BLOOM_DOMAINS = frozenset(
+    {
+        "housing.sanjoseca.gov",
+        "housingbayarea.mtc.ca.gov",
+    }
+)
 
 _API_INSTANCES: dict[str, dict] = {
     "housingbayarea.mtc.ca.gov": {
@@ -153,6 +157,7 @@ _API_INSTANCES: dict[str, dict] = {
 
 def is_bloom_url(url: str) -> bool:
     from urllib.parse import urlparse
+
     return urlparse(url).netloc.lower() in BLOOM_DOMAINS
 
 
@@ -165,9 +170,11 @@ def extract_bloom_for_target(url: str, authority: str = "") -> list[HousingRecor
         city_filter = re.sub(r"\s*\(.*\)\s*$", "", city_filter).strip()
     return extract_bloom_housing_listings(url, authority=authority, city_filter=city_filter)
 
+
 def _listing_detail_url(listings_url: str, listing_id: str, slug: str) -> str:
     """Build the detail URL for a listing given the instance's base URL."""
     from urllib.parse import urlparse
+
     parsed = urlparse(listings_url)
     base = f"{parsed.scheme}://{parsed.netloc}/listing"
     if slug:
@@ -180,6 +187,7 @@ def _listing_detail_url(listings_url: str, listing_id: str, slug: str) -> str:
 # =============================================================================
 # FIELD EXTRACTION HELPERS
 # =============================================================================
+
 
 def _extract_address(item: dict) -> str:
     """
@@ -327,7 +335,8 @@ def _extract_community_type(item: dict) -> str:
 # RECORD MAPPER
 # =============================================================================
 
-def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Optional[HousingRecord]:
+
+def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> HousingRecord | None:
     """
     Map one Bloom Housing listing object → HousingRecord.
 
@@ -430,8 +439,9 @@ def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Op
     # go below medium even if some fields are sparse.
     confidence: str = "high" if (address and (phone or email)) else "medium"
 
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).isoformat()
+    from datetime import datetime
+
+    now = datetime.now(UTC).isoformat()
 
     return HousingRecord(
         authority=authority,
@@ -457,6 +467,7 @@ def _bloom_record_from_item(item: dict, listings_url: str, authority: str) -> Op
 # =============================================================================
 # SSR PRIMARY PATH
 # =============================================================================
+
 
 def _fetch_via_ssr(listings_url: str) -> tuple[list[dict], list[dict]]:
     """
@@ -537,6 +548,7 @@ def _fetch_via_ssr(listings_url: str) -> tuple[list[dict], list[dict]]:
 # REST API PATH (CSR instances like MTC Doorway)
 # =============================================================================
 
+
 def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict], list[dict]]:
     """
     REST API extraction path for Bloom instances that use client-side rendering.
@@ -566,6 +578,7 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
         listingsBuildingAddress.city matches (case-insensitive).
     """
     from urllib.parse import urlparse
+
     import requests as _requests
 
     from housing_list_search.scraper import DEFAULT_MAX_RESPONSE_BYTES
@@ -626,7 +639,9 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
         try:
             resp = _requests.post(endpoint, json=body, headers=headers, timeout=30)
         except Exception as exc:
-            logger.warning("[Bloom] API path: request to %s page %d failed: %s", endpoint, page, exc)
+            logger.warning(
+                "[Bloom] API path: request to %s page %d failed: %s", endpoint, page, exc
+            )
             pagination_complete = False
             break
 
@@ -641,22 +656,33 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
             break
 
         if not (200 <= resp.status_code < 300):
-            logger.warning("[Bloom] API path: HTTP %d from %s page %d", resp.status_code, endpoint, page)
+            logger.warning(
+                "[Bloom] API path: HTTP %d from %s page %d", resp.status_code, endpoint, page
+            )
             pagination_complete = False
             break
         if resp.status_code != 200:
-            logger.info("[Bloom] API path: HTTP %d from %s page %d (accepted 2xx)", resp.status_code, endpoint, page)
+            logger.info(
+                "[Bloom] API path: HTTP %d from %s page %d (accepted 2xx)",
+                resp.status_code,
+                endpoint,
+                page,
+            )
 
         try:
             payload = resp.json()
         except Exception as exc:
-            logger.warning("[Bloom] API path: failed to parse JSON from %s page %d: %s", endpoint, page, exc)
+            logger.warning(
+                "[Bloom] API path: failed to parse JSON from %s page %d: %s", endpoint, page, exc
+            )
             pagination_complete = False
             break
 
         page_items = payload.get("items") or []
         if not isinstance(page_items, list):
-            logger.warning("[Bloom] API path: unexpected payload shape from %s page %d", endpoint, page)
+            logger.warning(
+                "[Bloom] API path: unexpected payload shape from %s page %d", endpoint, page
+            )
             pagination_complete = False
             break
 
@@ -697,7 +723,8 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
     if city_filter:
         cf = city_filter.lower()
         items = [
-            it for it in items
+            it
+            for it in items
             if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
         ]
 
@@ -716,6 +743,7 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
 # =============================================================================
 # PLAYWRIGHT FALLBACK
 # =============================================================================
+
 
 def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
     """
@@ -753,7 +781,9 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
         )
         return [], []
 
-    logger.warning("[Bloom] Playwright fallback activated for %s — SSR/API paths yielded no data", listings_url)
+    logger.warning(
+        "[Bloom] Playwright fallback activated for %s — SSR/API paths yielded no data", listings_url
+    )
 
     captured_payloads: list[dict] = []
 
@@ -791,7 +821,9 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
             except Exception:
                 pass
         except Exception as exc:
-            logger.warning("[Bloom] Playwright fallback navigation failed for %s: %s", listings_url, exc)
+            logger.warning(
+                "[Bloom] Playwright fallback navigation failed for %s: %s", listings_url, exc
+            )
         finally:
             browser.close()
 
@@ -807,8 +839,12 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
         data = payload.get("data", {})
         # Direct match (XHR returns pageProps-equivalent object)
         if isinstance(data, dict):
-            open_l = data.get("openListings") or data.get("props", {}).get("pageProps", {}).get("openListings", [])
-            closed_l = data.get("closedListings") or data.get("props", {}).get("pageProps", {}).get("closedListings", [])
+            open_l = data.get("openListings") or data.get("props", {}).get("pageProps", {}).get(
+                "openListings", []
+            )
+            closed_l = data.get("closedListings") or data.get("props", {}).get("pageProps", {}).get(
+                "closedListings", []
+            )
             if isinstance(open_l, list) and len(open_l) > 0:
                 logger.info(
                     "[Bloom] Playwright fallback: found listings in response from %s",
@@ -833,6 +869,7 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
 # =============================================================================
 # HEURISTIC FALLBACK (used by Playwright path)
 # =============================================================================
+
 
 def _looks_like_housing_item(item: dict) -> bool:
     """
@@ -875,7 +912,7 @@ def _find_listing_arrays(obj: Any, depth: int = 0, max_depth: int = 8) -> list[l
         return []
     found: list[list] = []
     if isinstance(obj, list):
-        if len(obj) > 0 and all(isinstance(x, dict) for x in obj[:min(5, len(obj))]):
+        if len(obj) > 0 and all(isinstance(x, dict) for x in obj[: min(5, len(obj))]):
             if any(_looks_like_housing_item(x) for x in obj[:5]):
                 found.append(obj)
         for child in obj:
@@ -889,6 +926,7 @@ def _find_listing_arrays(obj: Any, depth: int = 0, max_depth: int = 8) -> list[l
 # =============================================================================
 # PUBLIC ENTRY POINT
 # =============================================================================
+
 
 def extract_bloom_housing_listings(
     url: str,
@@ -934,11 +972,13 @@ def extract_bloom_housing_listings(
         # SSR gave us results but we still need to filter by city
         cf = city_filter.lower()
         open_items = [
-            it for it in open_items
+            it
+            for it in open_items
             if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
         ]
         closed_items = [
-            it for it in closed_items
+            it
+            for it in closed_items
             if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
         ]
 
@@ -953,11 +993,13 @@ def extract_bloom_housing_listings(
         if city_filter and (open_items or closed_items):
             cf = city_filter.lower()
             open_items = [
-                it for it in open_items
+                it
+                for it in open_items
                 if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
             ]
             closed_items = [
-                it for it in closed_items
+                it
+                for it in closed_items
                 if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
             ]
 
@@ -1005,7 +1047,9 @@ def extract_bloom_housing_listings(
         len(open_items),
         len(closed_items),
     )
-    print(f"   [bloom_housing] {len(records)} records ({len(open_items)} open + {len(closed_items)} closed) from {url}")
+    print(
+        f"   [bloom_housing] {len(records)} records ({len(open_items)} open + {len(closed_items)} closed) from {url}"
+    )
     return records
 
 
@@ -1022,6 +1066,7 @@ def extract_san_jose_listings(max_results: int = 200) -> list[HousingRecord]:
 # DIAGNOSTIC / OUTPUT HELPERS
 # =============================================================================
 
+
 def records_to_markdown(records: list[HousingRecord]) -> str:
     """Human-readable markdown table of extracted records."""
     if not records:
@@ -1036,7 +1081,7 @@ def records_to_markdown(records: list[HousingRecord]) -> str:
         addr = (r.address or "")[:40]
         br = (r.bedrooms or "")[:22]
         notes = (r.notes or "")[:55].replace("|", "/")
-        link = (r.document_url or "")
+        link = r.document_url or ""
         if len(link) > 55:
             link = link[:52] + "..."
         lines.append(f"| {name} | {addr} | {br} | {notes} | {link} |")
