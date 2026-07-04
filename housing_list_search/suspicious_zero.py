@@ -11,55 +11,8 @@ from datetime import date
 from typing import Any
 
 from housing_list_search.coverage import classify_record_kind
-from housing_list_search.dispatch import (
-    INFORMATIONAL_MEASURES,
-    MEASURE_ALIASES,
-    SKIP_MEASURES,
-)
+from housing_list_search.measure_registry import expects_property_inventory, parse_target_measures
 from housing_list_search.validated_zero import has_current_validated_zero
-
-INVENTORY_MEASURES = frozenset(
-    {
-        "bloom",
-        "john_stewart",
-        "gis",
-        "civicplus",
-        "alta",
-        "charities_housing",
-        "midpen",
-        "eden",
-        "eah",
-        "first_housing",
-        "pdf",
-    }
-)
-
-PORTAL_ONLY_MEASURES = frozenset({"housekeys"})
-
-
-def parse_target_measures(raw: str) -> set[str]:
-    """Normalize scraping_measures from a TARGETS.md row."""
-    parts = {m.strip().lower() for m in (raw or "").split(",") if m.strip()}
-    return {MEASURE_ALIASES.get(m, m) for m in parts}
-
-
-def expects_property_inventory(measures: set[str]) -> bool:
-    """
-    True when a target's measures imply per-property inventory, not portal-only.
-
-    Portal-only targets (HouseKeys registration) may legitimately return zero
-    property rows. Informational measures (native_requests, delegated_administrator,
-    …) do not change that classification.
-    """
-    if measures & SKIP_MEASURES:
-        return False
-
-    adapter_measures = measures - INFORMATIONAL_MEASURES - SKIP_MEASURES
-    if not adapter_measures:
-        return False
-    if adapter_measures <= PORTAL_ONLY_MEASURES:
-        return False
-    return bool(adapter_measures & INVENTORY_MEASURES)
 
 
 def property_inventory_count(listings: list[dict[str, Any]]) -> int:

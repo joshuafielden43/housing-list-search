@@ -39,3 +39,31 @@ targets:
       administrator_url: https://www.housekeys1.com/
       administrator_phone: ""
       administrator_contact: ""
+
+  - name: midpen_portfolio
+    method: run_target
+    min_records: 35
+    max_records: 55
+    target:
+      authority: MidPen Housing (Santa Clara County portfolio)
+      url: https://www.midpen-housing.org/find-housing/
+      scraping_measures: midpen,native_requests
+      notes: ""
+      administrator: ""
+      administrator_url: ""
+      administrator_phone: ""
+      administrator_contact: ""
+
+  - name: jsco_portfolio
+    method: run_target
+    min_records: 55
+    max_records: 80
+    target:
+      authority: John Stewart Company (jsco.net portfolio)
+      url: https://jsco.net/properties/
+      scraping_measures: john_stewart,native_requests
+      notes: ""
+      administrator: ""
+      administrator_url: ""
+      administrator_phone: ""
+      administrator_contact: ""

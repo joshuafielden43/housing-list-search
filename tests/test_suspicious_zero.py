@@ -1,11 +1,10 @@
 """Unit tests for suspicious zero detection."""
 
-from housing_list_search.suspicious_zero import (
+from housing_list_search.measure_registry import (
     expects_property_inventory,
-    find_suspicious_zeros,
     parse_target_measures,
-    property_inventory_count,
 )
+from housing_list_search.suspicious_zero import find_suspicious_zeros, property_inventory_count
 
 
 def _target(authority: str, measures: str) -> dict:

@@ -125,6 +125,39 @@ def check_targets_file() -> bool:
     return True
 
 
+def check_targets_table_shape() -> bool:
+    """Warn when markdown table rows look mis-parsed (pipes in notes shift columns)."""
+    targets = Path("TARGETS.md")
+    if not targets.exists():
+        return True
+
+    ok = True
+    in_table = False
+    for line in targets.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("City/Authority"):
+            in_table = True
+            continue
+        if not in_table or "|" not in stripped or stripped.startswith("---"):
+            continue
+
+        parts = [p.strip() for p in stripped.split("|")]
+        col_count = len(parts)
+        if col_count < 6:
+            print(f"⚠️  TARGETS.md row has only {col_count} fields (expected ≥6): {stripped[:90]}")
+            ok = False
+        elif col_count > 13:
+            print(
+                f"⚠️  TARGETS.md row has {col_count - 1} columns — "
+                f"pipe character in notes may have shifted fields: {stripped[:90]}"
+            )
+            ok = False
+
+    if ok:
+        print("✅ TARGETS.md table rows look well-formed")
+    return ok
+
+
 def check_registry_load() -> bool:
     try:
         from housing_list_search.registry import (
@@ -236,6 +269,7 @@ def main():
 
     section("Configuration")
     results.append(check_targets_file())
+    results.append(check_targets_table_shape())
     if not dry_run:
         results.append(check_registry_load())
     else:
