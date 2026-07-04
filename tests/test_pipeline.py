@@ -218,3 +218,38 @@ class TestRunPipeline:
             assert "City of Morgan Hill" not in summary.split("Needs Review", 1)[-1]
         finally:
             os.chdir(orig)
+
+    def test_validated_zero_suppresses_suspicious_zero(self, tmp_path):
+        import os
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+
+            def _empty_inventory(_t, failures=None):
+                return []
+
+            targets = [
+                {
+                    "authority": "City of Campbell",
+                    "url": "https://campbell.example/",
+                    "scraping_measures": "civicplus,delegated_administrator",
+                    "validated_zero": "2026-06-05",
+                    "validated_zero_review_due": "2026-07-05",
+                }
+            ]
+
+            result = RunPipeline().run(
+                targets,
+                db=db,
+                run_target_fn=_empty_inventory,
+                run_id="validated-zero-test",
+            )
+
+            assert result.suspicious_zero_authorities == []
+            summary = Path("daily_summary.md").read_text(encoding="utf-8")
+            assert "Suspicious zero" not in summary
+        finally:
+            os.chdir(orig)

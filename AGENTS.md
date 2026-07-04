@@ -216,7 +216,7 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 
 ## Architecture decisions (ADRs)
 
-Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTEXT.md` (Freshness & output, Operational review). **Suspicious Zero detection** (ADR-0002/0004) is implemented in `suspicious_zero.py` + `pipeline.py` + `outputs.py`. **Validated Zero** metadata in `TARGETS.md` (ADR-0003) is not yet implemented.
+Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTEXT.md` (Freshness & output, Operational review). **Suspicious Zero** (ADR-0002/0004) lives in `suspicious_zero.py`; **Validated Zero** metadata (ADR-0003) is curated in `TARGETS.md` (`Validated Zero` / `Review Due` columns) and read via `validated_zero.py` + `registry.py`.
 
 | ADR | Decision |
 |-----|----------|

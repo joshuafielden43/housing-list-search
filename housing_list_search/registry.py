@@ -11,6 +11,7 @@ import sqlite3
 
 from housing_list_search.schema import init_schema
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
+from housing_list_search.validated_zero import parse_validated_zero_date
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ MAX_AUTHORITY_LEN = 150
 MAX_URL_LEN = 2048
 MAX_NOTES_LEN = 800
 MAX_ADMIN_LEN = 200
+MAX_VALIDATED_ZERO_LEN = 40
 
 ALLOWED_URL_SCHEMES = ("http://", "https://")
 
@@ -154,6 +156,18 @@ def sanitize_target(raw: dict) -> dict:
             f"Sanitizer: notes for '{authority}' contained patterns that look like prompt injection attempts. They have been kept but should be reviewed by a human."
         )
 
+    for key in ("validated_zero", "validated_zero_review_due"):
+        raw_val = _clean_text(raw.get(key, ""), MAX_VALIDATED_ZERO_LEN)
+        if raw_val and parse_validated_zero_date(raw_val) is None:
+            logger.warning(
+                "Sanitizer: %s for '%s' has no parseable ISO date — cleared: %s",
+                key,
+                authority,
+                raw_val[:40],
+            )
+            raw_val = ""
+        out[key] = raw_val
+
     return out
 
 
@@ -190,6 +204,8 @@ def load_targets_to_db():
                     "administrator_url": parts[7] if len(parts) > 7 else "",
                     "administrator_phone": parts[8] if len(parts) > 8 else "",
                     "administrator_contact": parts[9] if len(parts) > 9 else "",
+                    "validated_zero": parts[10] if len(parts) > 10 else "",
+                    "validated_zero_review_due": parts[11] if len(parts) > 11 else "",
                 }
 
                 cleaned = sanitize_target(raw)
@@ -205,8 +221,9 @@ def load_targets_to_db():
                 c.execute(
                     """INSERT INTO targets 
                     (authority, url, notes, scraping_measures, priority, last_seen,
-                     administrator, administrator_url, administrator_phone, administrator_contact)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     administrator, administrator_url, administrator_phone, administrator_contact,
+                     validated_zero, validated_zero_review_due)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         cleaned["authority"],
                         cleaned["url"],
@@ -218,6 +235,8 @@ def load_targets_to_db():
                         cleaned["administrator_url"],
                         cleaned["administrator_phone"],
                         cleaned["administrator_contact"],
+                        cleaned["validated_zero"],
+                        cleaned["validated_zero_review_due"],
                     ),
                 )
                 sanitized_count += 1
@@ -240,7 +259,8 @@ def get_all_targets():
     c = conn.cursor()
     c.execute("""
         SELECT authority, url, notes, scraping_measures, priority, last_seen,
-               administrator, administrator_url, administrator_phone, administrator_contact
+               administrator, administrator_url, administrator_phone, administrator_contact,
+               validated_zero, validated_zero_review_due
         FROM targets
         ORDER BY priority DESC, authority
     """)
@@ -256,7 +276,8 @@ def get_active_targets():
     c = conn.cursor()
     c.execute("""
         SELECT authority, url, notes, scraping_measures, priority, last_seen,
-               administrator, administrator_url, administrator_phone, administrator_contact
+               administrator, administrator_url, administrator_phone, administrator_contact,
+               validated_zero, validated_zero_review_due
         FROM targets
         WHERE scraping_measures IS NULL 
            OR scraping_measures NOT LIKE '%no_public_list%'
@@ -274,7 +295,8 @@ def get_skipped_targets():
     c = conn.cursor()
     c.execute("""
         SELECT authority, url, notes, scraping_measures, priority, last_seen,
-               administrator, administrator_url, administrator_phone, administrator_contact
+               administrator, administrator_url, administrator_phone, administrator_contact,
+               validated_zero, validated_zero_review_due
         FROM targets
         WHERE scraping_measures LIKE '%no_public_list%'
         ORDER BY authority

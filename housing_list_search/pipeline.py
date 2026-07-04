@@ -29,6 +29,7 @@ from housing_list_search.outputs import (
     generate_daily_summary,
 )
 from housing_list_search.suspicious_zero import find_suspicious_zeros
+from housing_list_search.validated_zero import find_reverification_due
 
 logger = logging.getLogger("housing_list_search")
 
@@ -59,6 +60,7 @@ class RunResult:
     diff_counts: dict[str, int] = field(default_factory=dict)
     failed_targets: list[str] = field(default_factory=list)
     suspicious_zero_authorities: list[str] = field(default_factory=list)
+    reverification_due_authorities: list[str] = field(default_factory=list)
     targets_attempted: int = 0
     partial_run: bool = False
     scrape_failed_n: int = 0
@@ -87,12 +89,19 @@ class RunPipeline:
         suspicious_zero_authorities = find_suspicious_zeros(
             targets, listings_by_authority, failed_targets
         )
+        reverification_due_authorities = find_reverification_due(targets)
         if suspicious_zero_authorities:
             logger.warning(
                 "%d suspicious zero(s) — property-inventory target(s) returned no property "
                 "records: %s",
                 len(suspicious_zero_authorities),
                 ", ".join(suspicious_zero_authorities),
+            )
+        if reverification_due_authorities:
+            logger.warning(
+                "%d Validated Zero(s) past review date — reverification due: %s",
+                len(reverification_due_authorities),
+                ", ".join(reverification_due_authorities),
             )
 
         all_listings = deduplicate_listings(all_listings)
@@ -151,6 +160,7 @@ class RunPipeline:
             "targets_succeeded": len(targets) - len(failed_targets),
             "failed_authorities": failed_targets,
             "suspicious_zero_authorities": suspicious_zero_authorities,
+            "reverification_due_authorities": reverification_due_authorities,
         }
 
         if partial_run:
@@ -194,6 +204,7 @@ class RunPipeline:
             diff_counts=diff_counts,
             failed_targets=failed_targets,
             suspicious_zero_authorities=suspicious_zero_authorities,
+            reverification_due_authorities=reverification_due_authorities,
             targets_attempted=len(targets),
             partial_run=partial_run,
             scrape_failed_n=scrape_failed_n,

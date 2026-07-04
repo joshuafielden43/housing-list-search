@@ -40,12 +40,18 @@ def init_targets_schema(cursor: sqlite3.Cursor) -> None:
             administrator_contact TEXT
         )
     """)
-    _migrate_columns(cursor, "targets", [
-        ("administrator", "TEXT"),
-        ("administrator_url", "TEXT"),
-        ("administrator_phone", "TEXT"),
-        ("administrator_contact", "TEXT"),
-    ])
+    _migrate_columns(
+        cursor,
+        "targets",
+        [
+            ("administrator", "TEXT"),
+            ("administrator_url", "TEXT"),
+            ("administrator_phone", "TEXT"),
+            ("administrator_contact", "TEXT"),
+            ("validated_zero", "TEXT"),
+            ("validated_zero_review_due", "TEXT"),
+        ],
+    )
 
 
 def init_housing_records_schema(cursor: sqlite3.Cursor) -> None:
@@ -82,20 +88,24 @@ def init_housing_records_schema(cursor: sqlite3.Cursor) -> None:
             UNIQUE(authority, property_name, url)
         )
     """)
-    _migrate_columns(cursor, "housing_records", [
-        ("listing_status", "TEXT"),
-        ("bedrooms", "TEXT"),
-        ("income_limits", "TEXT"),
-        ("unit_types", "TEXT"),
-        ("eligibility_flags", "TEXT"),
-        ("confidence", "TEXT"),
-        ("administrator", "TEXT"),
-        ("administrator_url", "TEXT"),
-        ("administrator_phone", "TEXT"),
-        ("administrator_contact", "TEXT"),
-        ("last_run_id", "TEXT"),
-        ("first_run_id", "TEXT"),
-    ])
+    _migrate_columns(
+        cursor,
+        "housing_records",
+        [
+            ("listing_status", "TEXT"),
+            ("bedrooms", "TEXT"),
+            ("income_limits", "TEXT"),
+            ("unit_types", "TEXT"),
+            ("eligibility_flags", "TEXT"),
+            ("confidence", "TEXT"),
+            ("administrator", "TEXT"),
+            ("administrator_url", "TEXT"),
+            ("administrator_phone", "TEXT"),
+            ("administrator_contact", "TEXT"),
+            ("last_run_id", "TEXT"),
+            ("first_run_id", "TEXT"),
+        ],
+    )
 
 
 def init_run_history_schema(cursor: sqlite3.Cursor) -> None:

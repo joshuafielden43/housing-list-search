@@ -68,20 +68,33 @@ def _format_needs_review(run_stats: dict | None) -> str:
         return ""
 
     suspicious = list(run_stats.get("suspicious_zero_authorities") or [])
-    if not suspicious:
+    reverification = list(run_stats.get("reverification_due_authorities") or [])
+    if not suspicious and not reverification:
         return ""
 
     lines = ["## Needs Review\n\n"]
-    lines.append(
-        f"- **Suspicious zero:** {len(suspicious)} property-inventory target(s) "
-        "returned no property records this run\n"
-    )
-    lines.append(f"- **Authorities:** {', '.join(suspicious)}\n")
-    lines.append(
-        "- This is not a confirmed closure — the adapter may have broken, the source "
-        "may have changed, or the inventory may genuinely be empty. Review the source "
-        "and mark a Validated Zero in TARGETS.md when appropriate (ADR-0003).\n\n"
-    )
+    if suspicious:
+        lines.append(
+            f"- **Suspicious zero:** {len(suspicious)} property-inventory target(s) "
+            "returned no property records this run\n"
+        )
+        lines.append(f"- **Authorities:** {', '.join(suspicious)}\n")
+        lines.append(
+            "- This is not a confirmed closure — the adapter may have broken, the source "
+            "may have changed, or the inventory may genuinely be empty. Review the source "
+            "and mark a Validated Zero in TARGETS.md when appropriate (ADR-0003).\n"
+        )
+    if reverification:
+        lines.append(
+            f"- **Reverification due:** {len(reverification)} Validated Zero(s) past "
+            "review date in TARGETS.md\n"
+        )
+        lines.append(f"- **Authorities:** {', '.join(reverification)}\n")
+        lines.append(
+            "- Re-confirm the source is still empty, update the Validated Zero dates, "
+            "or remove the metadata if inventory has returned.\n"
+        )
+    lines.append("\n")
     return "".join(lines)
 
 

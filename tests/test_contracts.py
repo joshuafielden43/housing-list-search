@@ -207,6 +207,21 @@ class TestSummaryOpenDetection:
         )
         assert "Needs Review" not in md
 
+    def test_needs_review_shows_reverification_due(self):
+        md = self._run(
+            [],
+            run_stats={
+                "targets_attempted": 18,
+                "targets_succeeded": 18,
+                "failed_authorities": [],
+                "suspicious_zero_authorities": [],
+                "reverification_due_authorities": ["City of Campbell"],
+            },
+        )
+        assert "## Needs Review" in md
+        assert "Reverification due" in md
+        assert "City of Campbell" in md
+
 
 # ---------------------------------------------------------------------------
 # bloom_housing.py — listing_status field on HousingRecord

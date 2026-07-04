@@ -80,6 +80,30 @@ class TestSanitizeTarget:
         )
         assert "ignore previous" in cleaned["notes"].lower()
 
+    def test_validated_zero_dates_preserved(self):
+        cleaned = sanitize_target(
+            {
+                "authority": "City of Test",
+                "url": "https://example.gov/housing",
+                "validated_zero": "2026-06-05 jcf",
+                "validated_zero_review_due": "2026-07-05",
+            }
+        )
+        assert cleaned["validated_zero"] == "2026-06-05 jcf"
+        assert cleaned["validated_zero_review_due"] == "2026-07-05"
+
+    def test_invalid_validated_zero_date_cleared(self):
+        cleaned = sanitize_target(
+            {
+                "authority": "City of Test",
+                "url": "https://example.gov/housing",
+                "validated_zero": "soon",
+                "validated_zero_review_due": "2026-07-05",
+            }
+        )
+        assert cleaned["validated_zero"] == ""
+        assert cleaned["validated_zero_review_due"] == "2026-07-05"
+
 
 class TestLoadTargetsToDb:
     def _write_targets(self, workspace: Path, body: str) -> None:
@@ -101,6 +125,16 @@ class TestLoadTargetsToDb:
         assert rows[0]["authority"] == "City of Example"
         assert rows[0]["url"] == "https://example.gov/housing"
         assert rows[0]["scraping_measures"] == "housekeys"
+
+    def test_validated_zero_columns_load(self, registry_workspace):
+        self._write_targets(
+            registry_workspace,
+            "Empty City | https://empty.example.gov/ | No inventory | civicplus | Medium | 2026-06-01 |  |  |  |  | 2026-06-05 | 2026-07-05\n",
+        )
+        load_targets_to_db()
+        row = get_all_targets()[0]
+        assert row["validated_zero"] == "2026-06-05"
+        assert row["validated_zero_review_due"] == "2026-07-05"
 
     def test_no_public_list_row_is_skipped_from_active_targets(self, registry_workspace):
         self._write_targets(

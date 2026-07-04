@@ -7,6 +7,7 @@ ADR-0004: flag for operator attention; do not fail the run.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from housing_list_search.coverage import classify_record_kind
@@ -15,6 +16,7 @@ from housing_list_search.dispatch import (
     MEASURE_ALIASES,
     SKIP_MEASURES,
 )
+from housing_list_search.validated_zero import has_current_validated_zero
 
 INVENTORY_MEASURES = frozenset(
     {
@@ -69,12 +71,16 @@ def find_suspicious_zeros(
     targets: list[dict[str, Any]],
     listings_by_authority: dict[str, list[dict[str, Any]]],
     failed_authorities: list[str],
+    *,
+    today: date | None = None,
 ) -> list[str]:
     """
     Authorities that succeeded but returned zero property inventory.
 
     Failed authorities are excluded — their absence is already SCRAPE_FAILED.
+    Targets with a current Validated Zero (ADR-0003) are excluded.
     """
+    today = today or date.today()
     failed = set(failed_authorities)
     suspicious: list[str] = []
 
@@ -85,6 +91,9 @@ def find_suspicious_zeros(
 
         measures = parse_target_measures(target.get("scraping_measures") or "")
         if not expects_property_inventory(measures):
+            continue
+
+        if has_current_validated_zero(target, today=today):
             continue
 
         listings = listings_by_authority.get(authority, [])
