@@ -92,6 +92,15 @@ class TestSanitizeTarget:
         assert cleaned["validated_zero"] == "2026-06-05 jcf"
         assert cleaned["validated_zero_review_due"] == "2026-07-05"
 
+    def test_private_ip_url_cleared(self):
+        cleaned = sanitize_target(
+            {
+                "authority": "City of Test",
+                "url": "http://127.0.0.1/housing",
+            }
+        )
+        assert cleaned["url"] == ""
+
     def test_invalid_validated_zero_date_cleared(self):
         cleaned = sanitize_target(
             {

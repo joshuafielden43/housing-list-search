@@ -11,6 +11,7 @@ import sqlite3
 
 from housing_list_search.schema import init_schema
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
+from housing_list_search.url_policy import is_safe_http_url
 from housing_list_search.validated_zero import parse_validated_zero_date
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,13 @@ def sanitize_target(raw: dict) -> dict:
                 f"Sanitizer: URL for '{authority}' has disallowed scheme or is malformed: {original_url[:100]}"
             )
         url = ""  # Will cause the row to be effectively inert
+    elif not is_safe_http_url(url, resolve_dns=False):
+        logger.warning(
+            "Sanitizer: URL for '%s' failed outbound policy (SSRF/private) — cleared: %s",
+            authority,
+            original_url[:100],
+        )
+        url = ""
 
     if len(url) > MAX_URL_LEN:
         logger.warning(
@@ -144,6 +152,12 @@ def sanitize_target(raw: dict) -> dict:
                 len(admin_url),
             )
             admin_url = admin_url[:MAX_URL_LEN]
+        elif not is_safe_http_url(admin_url, resolve_dns=False):
+            logger.warning(
+                "Sanitizer: administrator_url for '%s' failed outbound policy — cleared",
+                authority,
+            )
+            admin_url = ""
     out["administrator_url"] = admin_url
 
     # Detect potential prompt-injection style content in notes (future-proofing)

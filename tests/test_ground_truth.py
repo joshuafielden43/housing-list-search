@@ -33,15 +33,15 @@ def test_ground_truth_record_counts(case):
 
     if method == "extract_target":
         from housing_list_search.extraction import extract_target
+
         records = extract_target(case["url"], case.get("authority", ""))
         count = len(records)
     elif method == "run_target":
         from housing_list_search.runner import run_target
+
         records = run_target(case["target"])
         count = len(records)
     else:
         pytest.fail(f"Unknown ground-truth method: {method}")
 
-    assert min_n <= count <= max_n, (
-        f"{case['name']}: expected {min_n}–{max_n} records, got {count}"
-    )
+    assert min_n <= count <= max_n, f"{case['name']}: expected {min_n}–{max_n} records, got {count}"

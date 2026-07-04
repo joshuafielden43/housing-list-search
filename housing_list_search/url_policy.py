@@ -18,11 +18,13 @@ logger = logging.getLogger(__name__)
 ALLOWED_SCHEMES = ("http", "https")
 
 # Hostnames that must never be fetched, even if DNS would return a public IP.
-_BLOCKED_HOSTNAMES = frozenset({
-    "localhost",
-    "metadata.google.internal",
-    "metadata.goog",
-})
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "metadata.google.internal",
+        "metadata.goog",
+    }
+)
 
 # Substrings that indicate link-local / metadata hosts.
 _BLOCKED_HOST_SUBSTRINGS = (
@@ -75,9 +77,7 @@ def _check_resolved_addresses(hostname: str) -> None:
         except ValueError:
             continue
         if not _ip_is_public(ip):
-            raise URLPolicyError(
-                f"URL host {hostname!r} resolves to non-public address {addr}"
-            )
+            raise URLPolicyError(f"URL host {hostname!r} resolves to non-public address {addr}")
 
 
 def validate_http_url(url: str, *, resolve_dns: bool = True) -> str:

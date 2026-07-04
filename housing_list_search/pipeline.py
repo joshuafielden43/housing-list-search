@@ -161,6 +161,9 @@ class RunPipeline:
             "failed_authorities": failed_targets,
             "suspicious_zero_authorities": suspicious_zero_authorities,
             "reverification_due_authorities": reverification_due_authorities,
+            "stale_n": stale_n,
+            "scrape_failed_n": scrape_failed_n,
+            "stale_warn_threshold": DEFAULT_STALE_WARN_THRESHOLD,
         }
 
         if partial_run:

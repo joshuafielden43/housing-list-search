@@ -86,6 +86,13 @@ def main():
             f"\n✅ Run complete! {len(result.listings)} listings this run "
             f"({result.inserted} new, {result.updated} updated)."
         )
+        if result.scrape_failed_n:
+            print(
+                f"   ⚠️  SCRAPE_FAILED: {result.scrape_failed_n} record(s) in diff.csv "
+                "(scrape errors, not confirmed closures)"
+            )
+        if result.stale_n:
+            print(f"   ⚠️  STALE: {result.stale_n} record(s) in diff.csv (not confirmed this run)")
         if skipped_targets:
             print(f"   ⚠️  Skipped {len(skipped_targets)} targets marked no_public_list")
         if partial_run:

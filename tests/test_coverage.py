@@ -37,7 +37,11 @@ class TestSummarizeCoverage:
     def test_mixed_run_counts(self):
         listings = [
             {"property_name": "Oak Manor", "source": "midpen:find_housing", "address": "1 Oak St"},
-            {"property_name": "Milpitas BMR (via HouseKeys)", "source": "housekeys:city_of_milpitas", "administrator": "HouseKeys"},
+            {
+                "property_name": "Milpitas BMR (via HouseKeys)",
+                "source": "housekeys:city_of_milpitas",
+                "administrator": "HouseKeys",
+            },
             {"property_name": "HOUSING ASSISTANCE", "source": "civicplus:gilroy"},
         ]
         s = summarize_coverage(listings)

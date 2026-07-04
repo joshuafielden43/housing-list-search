@@ -3,6 +3,9 @@ import re
 
 from bs4 import BeautifulSoup
 
+from housing_list_search.playwright_nav import safe_goto
+from housing_list_search.url_policy import URLPolicyError
+
 
 def playwright_scrape(authority: str, url: str):
     print(f"   → Using Playwright for dynamic site: {url}")
@@ -13,7 +16,7 @@ def playwright_scrape(authority: str, url: str):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            safe_goto(page, url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(8000)
 
             content = page.content()
@@ -70,6 +73,8 @@ def playwright_scrape(authority: str, url: str):
                 listings.append(listing)
 
             browser.close()
+    except URLPolicyError as e:
+        print(f"   Playwright blocked URL policy: {e}")
     except Exception as e:
         print(f"   Playwright error: {e}")
 

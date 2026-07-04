@@ -219,6 +219,50 @@ class TestRunPipeline:
         finally:
             os.chdir(orig)
 
+    def test_partial_run_scopes_reverification_to_matched_targets(self, tmp_path):
+        import os
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+
+            def _empty(_t, failures=None):
+                return []
+
+            targets = [
+                {
+                    "authority": "City of Campbell",
+                    "url": "https://campbell.example/",
+                    "scraping_measures": "civicplus",
+                    "validated_zero": "2026-06-05",
+                    "validated_zero_review_due": "2026-06-01",
+                },
+                {
+                    "authority": "City of Cupertino",
+                    "url": "https://cupertino.example/",
+                    "scraping_measures": "gis",
+                    "validated_zero": "2026-06-05",
+                    "validated_zero_review_due": "2026-06-01",
+                },
+            ]
+
+            RunPipeline().run(
+                [targets[0]],
+                db=db,
+                partial_run=True,
+                target_filter="Campbell",
+                run_target_fn=_empty,
+                run_id="partial-reverify-test",
+            )
+
+            summary = Path("daily_summary_partial.md").read_text(encoding="utf-8")
+            assert "Campbell" in summary
+            assert "Cupertino" not in summary.split("Needs Review", 1)[-1]
+        finally:
+            os.chdir(orig)
+
     def test_validated_zero_suppresses_suspicious_zero(self, tmp_path):
         import os
 

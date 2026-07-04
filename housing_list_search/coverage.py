@@ -13,11 +13,13 @@ from typing import Any, Literal
 RecordKind = Literal["property", "portal", "program"]
 
 _PORTAL_SOURCE_PREFIXES = ("housekeys:",)
-_PROGRAM_NAME_EXACT = frozenset({
-    "housing assistance",
-    "rental housing",
-    "unknown property",
-})
+_PROGRAM_NAME_EXACT = frozenset(
+    {
+        "housing assistance",
+        "rental housing",
+        "unknown property",
+    }
+)
 
 
 def classify_record_kind(item: dict[str, Any]) -> RecordKind:

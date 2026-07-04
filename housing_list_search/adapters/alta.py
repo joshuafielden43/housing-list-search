@@ -77,6 +77,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
+from housing_list_search.playwright_nav import safe_goto
 from housing_list_search.scraper import polite_get
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,7 @@ def scrape_alta(authority: str, url: str, timeout: int = 60000) -> list[dict[str
 
         try:
             _jitter(0.6)
-            page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            safe_goto(page, url, wait_until="domcontentloaded", timeout=timeout)
             _jitter(1.0)
 
             # Try to wait for network to settle

@@ -80,6 +80,7 @@ def check_requirements() -> bool:
 
 def check_package_imports() -> bool:
     import importlib
+    import sys
 
     # Side-effect imports: verify each adapter module loads without ImportError.
     modules = (
@@ -92,24 +93,15 @@ def check_package_imports() -> bool:
         "housing_list_search.adapters.civicplus",
         "housing_list_search.adapters.alta",
     )
-    try:
-        for name in modules:
-            importlib.import_module(name)
-        print("✅ housing_list_search package imports cleanly")
-        return True
-    except ImportError:
-        pass
-
-    # Development mode: allow running directly from the repo root
-    # without having the package installed in site-packages.
-    import sys
 
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
     try:
-        print("✅ housing_list_search imports successfully (development mode)")
+        for name in modules:
+            importlib.import_module(name)
+        print("✅ housing_list_search package imports cleanly")
         return True
     except Exception as e:
         print(f"❌ Failed to import housing_list_search: {e}")

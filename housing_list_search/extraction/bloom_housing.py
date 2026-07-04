@@ -636,6 +636,8 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
             "filter": [],
         }
 
+        # Narrow SOUL.md exception: Bloom REST rejects non-browser clients; endpoint URL
+        # is validated above and this is a public JSON API (not HTML page fetch).
         try:
             resp = _requests.post(endpoint, json=body, headers=headers, timeout=30)
         except Exception as exc:
@@ -774,6 +776,8 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
     """
     try:
         from playwright.sync_api import sync_playwright
+
+        from housing_list_search.playwright_nav import safe_goto
     except ImportError:
         logger.error(
             "[Bloom] Playwright not installed. Cannot run fallback. "
@@ -813,7 +817,7 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
         # /listings is the SSR route; if we're here it may have changed to CSR,
         # so we load it and wait for the browser to fetch the data via XHR.
         try:
-            page.goto(listings_url, wait_until="domcontentloaded", timeout=45_000)
+            safe_goto(page, listings_url, wait_until="domcontentloaded", timeout=45_000)
             page.wait_for_timeout(3_000)  # allow XHR without networkidle (SPAs never settle)
             try:
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")

@@ -418,13 +418,22 @@ def parse_housing_line(
 
 def normalize_docaccess_url(url: str) -> tuple[str, str]:
     """Unwrap docaccess.com viewer URLs; returns (real_url, wrapper_url)."""
+    from housing_list_search.url_policy import URLPolicyError, validate_http_url
+
     parsed = urlparse(url)
     if parsed.hostname in {"docaccess.com", "www.docaccess.com"} and "docviewer" in parsed.path:
         query = parse_qs(parsed.query)
         wrapped = query.get("url", [""])[0]
         if wrapped:
-            return unquote(wrapped), url
-    return url, ""
+            unwrapped = unquote(wrapped)
+            try:
+                return validate_http_url(unwrapped), url
+            except URLPolicyError as exc:
+                raise ValueError(f"docaccess wrapper target failed URL policy: {exc}") from exc
+    try:
+        return validate_http_url(url), ""
+    except URLPolicyError as exc:
+        raise ValueError(f"PDF URL failed URL policy: {exc}") from exc
 
 
 def _extract_flyer_page(

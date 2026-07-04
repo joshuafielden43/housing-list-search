@@ -5,6 +5,7 @@ from housing_list_search.coverage import summarize_coverage
 
 PARTIAL_DAILY_SUMMARY_PATH = "daily_summary_partial.md"
 STAFF_DAILY_SUMMARY_PATH = "daily_summary.md"
+OPEN_LISTING_DISPLAY_CAP = 25
 
 
 def _listing_is_open(listing: dict) -> bool:
@@ -98,6 +99,32 @@ def _format_needs_review(run_stats: dict | None) -> str:
     return "".join(lines)
 
 
+def _format_integrity_summary(run_stats: dict | None) -> str:
+    if not run_stats:
+        return ""
+
+    stale_n = int(run_stats.get("stale_n") or 0)
+    scrape_failed_n = int(run_stats.get("scrape_failed_n") or 0)
+    if not stale_n and not scrape_failed_n:
+        return ""
+
+    lines = ["## Integrity signals (diff.csv)\n\n"]
+    if stale_n:
+        lines.append(f"- **STALE:** {stale_n} record(s) not confirmed this run\n")
+    if scrape_failed_n:
+        lines.append(
+            f"- **SCRAPE_FAILED:** {scrape_failed_n} record(s) from failed authority scrapes "
+            "(not confirmed closures)\n"
+        )
+    if stale_n >= int(run_stats.get("stale_warn_threshold") or 5):
+        lines.append(
+            "- Review `diff.csv`, then prune when appropriate: "
+            "`python scripts/db_manage.py prune --not-seen-since 45`\n"
+        )
+    lines.append("\n")
+    return "".join(lines)
+
+
 def _format_coverage_summary(listings) -> str:
     cov = summarize_coverage(listings)
     if cov.total == 0:
@@ -149,6 +176,7 @@ def generate_daily_summary(
         f.write(f"**Run:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
         f.write(_format_run_status(run_stats))
         f.write(_format_needs_review(run_stats))
+        f.write(_format_integrity_summary(run_stats))
         f.write(_format_coverage_summary(listings))
 
         seen = {}
@@ -183,7 +211,8 @@ def generate_daily_summary(
 
         if unique_opens:
             f.write("## 🔥 CURRENTLY OPEN / ACCEPTING APPLICATIONS\n\n")
-            for listing in unique_opens[:10]:
+            display = unique_opens[:OPEN_LISTING_DISPLAY_CAP]
+            for listing in display:
                 name = listing["property_name"][:85] + (
                     "..." if len(listing["property_name"]) > 85 else ""
                 )
@@ -198,6 +227,12 @@ def generate_daily_summary(
                     or ""
                 )
                 f.write(f"Link: {link}\n\n")
+            if open_count > len(display):
+                remaining = open_count - len(display)
+                f.write(
+                    f"_+ {remaining} more open listing(s) in this run — "
+                    "filter `current_full.csv` for open/accepting status._\n\n"
+                )
         elif cov.total > 0:
             f.write(
                 "**No open or accepting listings in this run.** "

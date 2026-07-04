@@ -222,6 +222,29 @@ class TestSummaryOpenDetection:
         assert "Reverification due" in md
         assert "City of Campbell" in md
 
+    def test_integrity_summary_shows_stale_and_scrape_failed(self):
+        md = self._run(
+            [],
+            run_stats={
+                "targets_attempted": 18,
+                "targets_succeeded": 18,
+                "failed_authorities": [],
+                "stale_n": 12,
+                "scrape_failed_n": 3,
+                "stale_warn_threshold": 5,
+            },
+        )
+        assert "Integrity signals" in md
+        assert "STALE" in md
+        assert "SCRAPE_FAILED" in md
+        assert "db_manage.py prune" in md
+
+    def test_open_listings_show_more_cue_when_truncated(self):
+        listings = [_listing(f"Open Home {i}", status="Open", source="bloom:x") for i in range(30)]
+        md = self._run(listings)
+        assert "30 open or accepting applications" in md
+        assert "+ 5 more open listing" in md
+
 
 # ---------------------------------------------------------------------------
 # bloom_housing.py — listing_status field on HousingRecord

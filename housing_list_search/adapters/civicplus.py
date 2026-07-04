@@ -43,6 +43,9 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
+from housing_list_search.playwright_nav import safe_goto
+from housing_list_search.url_policy import is_safe_http_url
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -108,7 +111,7 @@ def _is_document_candidate(url: str) -> bool:
         return False
     if any(host in lower for host in EXCLUDED_HOSTS):
         return False
-    return True
+    return is_safe_http_url(url, resolve_dns=False)
 
 
 def _dedupe_document_urls(urls: list[str]) -> list[str]:
@@ -254,7 +257,9 @@ def _discover_document_links(soup, page_url: str) -> list[str]:
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if any(hint in href.lower() for hint in DOCUMENT_LINK_HINTS):
-            found.append(urljoin(page_url, href))
+            abs_url = urljoin(page_url, href)
+            if _is_document_candidate(abs_url):
+                found.append(abs_url)
     return found
 
 
@@ -385,7 +390,7 @@ def extract_underlying_records(
             # --- 1. Landing page: availability blocks, tables, flyer links ---
             if not direct_document_mode:
                 _jitter(0.8)
-                page.goto(source, wait_until="domcontentloaded", timeout=timeout)
+                safe_goto(page, source, wait_until="domcontentloaded", timeout=timeout)
                 _jitter(1.0)
 
                 # Human-like scroll passes help Froala/lazy content render.
@@ -434,7 +439,7 @@ def extract_underlying_records(
             for doc_url in html_doc_urls[:max_documents]:
                 _jitter(0.9)
                 try:
-                    page.goto(doc_url, wait_until="domcontentloaded", timeout=timeout)
+                    safe_goto(page, doc_url, wait_until="domcontentloaded", timeout=timeout)
                     _jitter(1.0)
                     doc_soup = BeautifulSoup(page.content(), "html.parser")
 

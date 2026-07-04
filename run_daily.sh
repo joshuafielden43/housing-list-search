@@ -24,6 +24,16 @@ _acquire_lock() {
 
   # Portable fallback when flock is unavailable (e.g. stock macOS).
   LOCK_DIR="${ROOT}/.run_daily.lock.d"
+  if [[ -d "$LOCK_DIR" ]]; then
+    # Recover stale locks left after kill -9 (stock macOS has no flock).
+    lock_mtime="$(stat -f %m "$LOCK_DIR" 2>/dev/null || stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0)"
+    now_epoch="$(date +%s)"
+    lock_age=$((now_epoch - lock_mtime))
+    if (( lock_age > 7200 )); then
+      echo "$(date -Iseconds) Removing stale run_daily lock (${lock_age}s old)" | tee -a "$LOG_FILE"
+      rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+    fi
+  fi
   if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     return 1
   fi
@@ -45,6 +55,15 @@ if [[ ! -f "${ROOT}/.venv/bin/activate" ]]; then
 fi
 # shellcheck source=/dev/null
 source "${ROOT}/.venv/bin/activate"
+
+if ! python scripts/doctor.py --dry-run >>"$LOG_FILE" 2>&1; then
+  echo "$(date -Iseconds) ERROR: doctor --dry-run failed; aborting run" | tee -a "$LOG_FILE"
+  exit 1
+fi
+
+if ! python -c "from playwright.sync_api import sync_playwright" >>"$LOG_FILE" 2>&1; then
+  echo "$(date -Iseconds) WARNING: Playwright import failed — browser adapters may fail" | tee -a "$LOG_FILE"
+fi
 
 {
   echo "=== Housing List Run started at $(date -Iseconds) ==="

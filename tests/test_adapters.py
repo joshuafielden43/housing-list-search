@@ -43,6 +43,7 @@ class TestJohnStewartAdapter:
 
         with patch("housing_list_search.adapters.john_stewart.polite_get", return_value=mock_resp):
             from housing_list_search.adapters.john_stewart import scrape_john_stewart
+
             records = scrape_john_stewart(
                 "https://www.scchousingauthority.org/section-8/for-participants/"
                 "for-new-applicants/properties-list/"
@@ -83,8 +84,11 @@ class TestGisExtractionAdapter:
         mock_resp = MagicMock()
         mock_resp.text = CUpertino_UNITS_JS
 
-        with patch("housing_list_search.adapters.gis_extraction.polite_get", return_value=mock_resp):
+        with patch(
+            "housing_list_search.adapters.gis_extraction.polite_get", return_value=mock_resp
+        ):
             from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
+
             records = extract_gis_portfolio(
                 "https://gis.cupertino.org/bmr_units/units.js",
                 "City of Cupertino BMR (Rental)",
@@ -128,6 +132,7 @@ class TestCdnAdapter:
         assert wheeler["available_units"] == "3"
         assert wheeler["phone"] == "(408) 555-1212"
         assert wheeler["email"] == "leasing@example.org"
+
 
 # ---------------------------------------------------------------------------
 # Property-manager portfolio adapters (alta, charities_housing, midpen,
