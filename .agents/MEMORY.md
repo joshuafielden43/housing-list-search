@@ -138,10 +138,22 @@ Pipeline: pdfplumber tables → flyer heuristics → line-regex → marker fallb
 
 ---
 
+## Deployment posture (2026-07-04)
+
+**Local-first, not a public release.** Primary operator is Joshua on Hermes/cron. If shared at all, audience is **one person** — not a forkable OSS onboarding story. Revisit onboarding fixtures (#412) only if release posture changes or something novel warrants wider distribution.
+
+Implications:
+- Skip committed baseline snapshots, release assets, and fork-oriented README paths unless scope changes.
+- Existing local tooling is enough: `db_manage.py snapshot`, runtime `current_full.csv` / `housing_registry.db`, `doctor --fix`.
+- Docs should describe operator workflow, not "clone and import baseline."
+
+---
+
 ## Open Vikunja — needs Joshua
 
 | Task | Why |
 |------|-----|
-| **#412** | Baseline snapshot policy (what to commit, gitignore) |
 | **#720 / #737** | Vikunja reverification task automation shape |
 | **#407, #423** | Exploratory scoping conclusions (allowlist tightness, PR live tests) |
+
+**Deferred:** **#412** — baseline snapshot for onboarding; not worth build while local/single-audience (2026-07-04).
