@@ -8,6 +8,8 @@ from housing_list_search.freshness import (
     compute_run_diff,
     listing_identity,
     load_diff_csv_rows,
+    partition_removed_by_scrape_failure,
+    scrape_failed_from_db_rows,
     stale_from_db_rows,
 )
 
@@ -77,12 +79,14 @@ def generate_changelog(
     skipped_targets=None,
     *,
     diff_csv_path: str = "diff.csv",
+    scrape_failed_authorities: list[str] | None = None,
 ):
     """
-    Diff run_prev against this run's listing set; enrich with STALE rows from diff.csv.
+    Diff run_prev against this run's listing set; project disappearance from diff.csv.
 
     current: deduped listing dicts from this run.
-    diff_csv_path: machine diff written by RunPipeline (optional alignment source).
+    diff_csv_path: machine diff written by RunPipeline (source of truth for STALE/SCRAPE_FAILED).
+    scrape_failed_authorities: authorities whose adapters failed this run (ADR-0001).
     """
     skipped_targets = skipped_targets or []
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -92,7 +96,15 @@ def generate_changelog(
     is_first_run = not prev_items
 
     diff_rows = load_diff_csv_rows(diff_csv_path)
-    removed_keys = set(run_diff.removed)
+    staff_removed, scrape_failed_snapshot = partition_removed_by_scrape_failure(
+        run_diff.removed,
+        scrape_failed_authorities,
+    )
+    removed_keys = set(staff_removed) | set(scrape_failed_snapshot)
+    scrape_failed_keys = list(scrape_failed_snapshot) + scrape_failed_from_db_rows(
+        diff_rows,
+        excluded_keys=removed_keys,
+    )
     stale_keys = stale_from_db_rows(diff_rows, removed_keys=removed_keys)
 
     # --- Markdown ---
@@ -107,9 +119,18 @@ def generate_changelog(
             for key in sorted(run_diff.added):
                 md += f"- {_format_key(key)}\n"
             md += "\n"
-        if run_diff.removed:
-            md += f"## ❌ Removed ({len(run_diff.removed)})\n"
-            for key in sorted(run_diff.removed):
+        if staff_removed:
+            md += f"## ❌ Removed ({len(staff_removed)})\n"
+            for key in sorted(staff_removed):
+                md += f"- {_format_key(key)}\n"
+            md += "\n"
+        if scrape_failed_keys:
+            md += f"## ⚠️ Scrape failed ({len(scrape_failed_keys)})\n"
+            md += (
+                "These records were not confirmed because the authority scrape failed — "
+                "not evidence of closure. See diff.csv SCRAPE_FAILED.\n\n"
+            )
+            for key in sorted(scrape_failed_keys):
                 md += f"- {_format_key(key)}\n"
             md += "\n"
         if run_diff.status_changed:
@@ -129,7 +150,8 @@ def generate_changelog(
             md += "\n"
         if (
             not run_diff.added
-            and not run_diff.removed
+            and not staff_removed
+            and not scrape_failed_keys
             and not run_diff.status_changed
             and not stale_keys
         ):
@@ -158,8 +180,10 @@ def generate_changelog(
     else:
         for auth, name, url in run_diff.added:
             csv_rows.append(("ADDED", auth, name, url, timestamp))
-        for auth, name, url in run_diff.removed:
+        for auth, name, url in staff_removed:
             csv_rows.append(("REMOVED", auth, name, url, timestamp))
+        for auth, name, url in scrape_failed_keys:
+            csv_rows.append(("SCRAPE_FAILED", auth, name, url, "authority scrape failed this run"))
         for (auth, name, url), old, new in run_diff.status_changed:
             csv_rows.append(("STATUS_CHANGE", auth, name, url, f"{old} → {new}"))
         for auth, name, url in stale_keys:
@@ -179,6 +203,6 @@ def generate_changelog(
 
     print(
         f"✅ Generated changelog_diffs.md (+{len(run_diff.added)} added, "
-        f"-{len(run_diff.removed)} removed, {len(run_diff.status_changed)} status changes, "
-        f"{len(stale_keys)} stale)"
+        f"-{len(staff_removed)} removed, {len(scrape_failed_keys)} scrape_failed, "
+        f"{len(run_diff.status_changed)} status changes, {len(stale_keys)} stale)"
     )

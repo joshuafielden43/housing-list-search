@@ -5,13 +5,14 @@ Listing identity: (authority, property_name, url) — same key the DB uses.
 
 Vocabulary:
   diff.csv (machine):     NEW | UPDATED | STALE | SCRAPE_FAILED
-  changelog (staff):      ADDED | REMOVED | STATUS_CHANGE | STALE | NO_CHANGE | ...
+  changelog (staff):      ADDED | REMOVED | STATUS_CHANGE | STALE | SCRAPE_FAILED | NO_CHANGE | ...
 
 Mapping:
   ADDED         — in current run set, absent from run_prev snapshot
-  REMOVED       — in run_prev snapshot, absent from current run set
+  REMOVED       — in run_prev snapshot, absent from current run set after successful authority scrape
   STATUS_CHANGE — same identity in both, display status differs
   STALE         — in DB diff.csv as STALE (not confirmed this run); staff alert
+  SCRAPE_FAILED — authority scrape failed; projects diff.csv / failed_authorities (not a closure)
 """
 
 from __future__ import annotations
@@ -75,6 +76,32 @@ def compute_run_diff(
     return RunDiff(added=added, removed=removed, status_changed=changed)
 
 
+def _key_from_diff_row(row: dict[str, str]) -> ListingKey:
+    return listing_identity(
+        {
+            "authority": row.get("source_authority") or row.get("authority") or "",
+            "property_name": row.get("property_name") or "",
+            "url": row.get("url") or "",
+        }
+    )
+
+
+def partition_removed_by_scrape_failure(
+    removed: list[ListingKey],
+    scrape_failed_authorities: list[str] | None,
+) -> tuple[list[ListingKey], list[ListingKey]]:
+    """Split snapshot REMOVED keys into staff REMOVED vs SCRAPE_FAILED by authority."""
+    failed = set(scrape_failed_authorities or [])
+    staff_removed: list[ListingKey] = []
+    scrape_failed: list[ListingKey] = []
+    for key in removed:
+        if key[0] in failed:
+            scrape_failed.append(key)
+        else:
+            staff_removed.append(key)
+    return staff_removed, scrape_failed
+
+
 def stale_from_db_rows(
     diff_rows: list[dict[str, str]],
     *,
@@ -87,14 +114,26 @@ def stale_from_db_rows(
     for row in diff_rows:
         if row.get("change_type") != "STALE":
             continue
-        key = listing_identity({
-            "authority": row.get("source_authority") or row.get("authority") or "",
-            "property_name": row.get("property_name") or "",
-            "url": row.get("url") or "",
-        })
+        key = _key_from_diff_row(row)
         if key not in removed_keys:
             stale.append(key)
     return stale
+
+
+def scrape_failed_from_db_rows(
+    diff_rows: list[dict[str, str]],
+    *,
+    excluded_keys: set[ListingKey],
+) -> list[ListingKey]:
+    """SCRAPE_FAILED rows from diff.csv not already projected from the run snapshot."""
+    keys: list[ListingKey] = []
+    for row in diff_rows:
+        if row.get("change_type") != "SCRAPE_FAILED":
+            continue
+        key = _key_from_diff_row(row)
+        if key not in excluded_keys:
+            keys.append(key)
+    return keys
 
 
 def load_diff_csv_rows(path: str = "diff.csv") -> list[dict[str, str]]:

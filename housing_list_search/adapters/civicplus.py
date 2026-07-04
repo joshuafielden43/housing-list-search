@@ -295,7 +295,12 @@ def _looks_like_flyer(url: str) -> bool:
     return "flyer" in lower or any(hint in lower for hint in ("50ami", "60ami", "ami"))
 
 
-def _process_pdfs(pdf_urls: list[str], authority: str) -> list[dict]:
+def _process_pdfs(
+    pdf_urls: list[str],
+    authority: str,
+    *,
+    extraction_errors: list[bool] | None = None,
+) -> list[dict]:
     """Run discovered PDF flyers through the PDF extraction layer."""
     from housing_list_search.extraction.pdf import extract_records_from_pdf
 
@@ -318,6 +323,8 @@ def _process_pdfs(pdf_urls: list[str], authority: str) -> list[dict]:
 
                 records.append(r)
         except Exception as exc:
+            if extraction_errors is not None:
+                extraction_errors[0] = True
             logger.warning("[civicplus] Failed to extract PDF %s: %s", pdf_url, exc)
     return records
 
@@ -347,6 +354,7 @@ def extract_underlying_records(
     logger.info("[civicplus] Starting extract_underlying_records for %s", authority or source)
 
     records: list[dict[str, Any]] = []
+    extraction_errors = [False]
     document_urls: list[str] = list(known_document_urls or [])
 
     host = urlparse(source).netloc.lower()
@@ -448,16 +456,22 @@ def extract_underlying_records(
                             records.append(record)
 
                 except PlaywrightTimeout:
+                    extraction_errors[0] = True
                     logger.warning("[civicplus] Timeout on document page: %s", doc_url)
                 except Exception as exc:
                     if "Download is starting" in str(exc):
                         # Navigation triggered a file download — treat as a PDF.
                         pdf_urls.append(doc_url)
                     else:
+                        extraction_errors[0] = True
                         logger.warning("[civicplus] Error on document page %s: %s", doc_url, exc)
 
             records.extend(
-                _process_pdfs(_dedupe_document_urls(pdf_urls)[:max_documents], authority)
+                _process_pdfs(
+                    _dedupe_document_urls(pdf_urls)[:max_documents],
+                    authority,
+                    extraction_errors=extraction_errors,
+                )
             )
 
             # --- 3. Merge list-page property names into PDF-derived records ---
@@ -494,8 +508,14 @@ def extract_underlying_records(
             logger.exception(
                 "[civicplus] Error during extraction for %s: %s", authority or source, exc
             )
+            raise
         finally:
             browser.close()
+
+    if not records and extraction_errors[0]:
+        raise RuntimeError(
+            f"[civicplus] {authority or source}: zero records after extraction errors"
+        )
 
     logger.info(
         "[civicplus] Extracted %d underlying records from %s", len(records), authority or source

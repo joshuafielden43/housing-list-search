@@ -180,7 +180,11 @@ class RunPipeline:
                 STAFF_DAILY_SUMMARY_PATH,
             )
         else:
-            generate_changelog(all_listings, skipped_targets=skipped)
+            generate_changelog(
+                all_listings,
+                skipped_targets=skipped,
+                scrape_failed_authorities=failed_targets,
+            )
             generate_daily_summary(
                 all_listings,
                 skipped_targets=skipped,
