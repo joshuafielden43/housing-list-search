@@ -214,12 +214,26 @@ Bad rows are logged as warnings and skipped. `scripts/doctor.py --fix` validates
 
 ---
 
+## Architecture decisions (ADRs)
+
+Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTEXT.md` (Freshness & output, Operational review). **Not yet implemented in code** — ADRs describe the target behavior for Suspicious Zero handling.
+
+| ADR | Decision |
+|-----|----------|
+| [0001](docs/adr/0001-diff-csv-disappearance-semantics.md) | `diff.csv` is the source of truth for disappearance semantics (`REMOVED` / `STALE` / `SCRAPE_FAILED`) |
+| [0002](docs/adr/0002-zero-results-are-suspicious.md) | Zero-record property-inventory runs are suspicious unless a Validated Zero exists |
+| [0003](docs/adr/0003-store-validated-zero-in-targets.md) | Validated Zero state is curated metadata in `TARGETS.md`, not transient DB state |
+| [0004](docs/adr/0004-suspicious-zero-does-not-fail-run.md) | Suspicious Zero surfaces Needs Review; it does not make a full run exit nonzero |
+
+---
+
 ## Key files
 
 | File | Purpose |
 |---|---|
 | `TARGETS.md` | Source of truth: all targets, measures, admin contacts, WAF notes |
 | `CONTEXT.md` | Domain glossary for agents and architecture reviews |
+| `docs/adr/` | Architecture decision records (disappearance semantics, Suspicious Zero) |
 | `housing_list_search/dispatch.py` | Unified dispatch registry (measures + URL extractors) |
 | `housing_list_search/runner.py` | Thin wrapper: `run_target()` → `dispatch_target()` |
 | `housing_list_search/pipeline.py` | Run orchestration: scrape → dedupe → persist → export → changelog |

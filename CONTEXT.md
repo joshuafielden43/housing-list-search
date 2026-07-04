@@ -23,11 +23,23 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | Term | Meaning |
 |------|---------|
 | **STALE** | DB record not confirmed in current `run_id` |
+| **SCRAPE_FAILED** | DB record not confirmed because the authority scrape failed in current `run_id`; not evidence of closure or removal |
+| **REMOVED** | Staff-facing changelog event for a record absent after a successful scrape of its authority; do not emit for failed authorities |
+| **Disappearance semantics** | How the system explains records absent from this run. `diff.csv` is the source of truth: staff-facing outputs project these labels rather than deriving closure/removal independently |
 | **Partial run** | `--target "City"` — scopes `diff.csv` STALE; preserves global `run_prev.csv` |
 | **diff.csv** | DB-backed delta (`NEW` / `UPDATED` / `STALE` / `SCRAPE_FAILED`) |
-| **Freshness** | `freshness.py` — listing identity `(authority, property_name, url)`; changelog reads STALE from diff.csv |
+| **Freshness** | `freshness.py` — listing identity `(authority, property_name, url)`; changelog reads disappearance semantics from `diff.csv` |
 | **Coverage** | `coverage.py` — `record_kind`: `property` / `portal` / `program`; UEO-style count excludes portals |
 | **current_full.csv** | Full `housing_records` export |
+
+## Operational review
+
+| Term | Meaning |
+|------|---------|
+| **Suspicious Zero** | A zero-record result from an authority or adapter that normally represents property inventory; it requires human attention unless already covered by a current validation |
+| **Validated Zero** | A zero-record authority state that a person has confirmed as real for a dated review window |
+| **Needs Review** | A run or authority state that should be surfaced to an operator without treating otherwise confirmed records as unusable |
+| **Reverification Task** | A recurring human review prompt to confirm whether a Validated Zero is still true; use this term instead of "ticket" in project docs |
 
 ## Ethics & access
 
