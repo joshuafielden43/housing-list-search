@@ -181,6 +181,32 @@ class TestSummaryOpenDetection:
         assert "18 succeeded (of 18 attempted)" in md
         assert "failed" not in md.lower().split("run status", 1)[-1][:120]
 
+    def test_needs_review_shows_suspicious_zero(self):
+        md = self._run(
+            [],
+            run_stats={
+                "targets_attempted": 18,
+                "targets_succeeded": 18,
+                "failed_authorities": [],
+                "suspicious_zero_authorities": ["City of Campbell", "MidPen Housing"],
+            },
+        )
+        assert "## Needs Review" in md
+        assert "Suspicious zero" in md
+        assert "City of Campbell, MidPen Housing" in md
+
+    def test_needs_review_omitted_when_clean(self):
+        md = self._run(
+            [_listing("Open Homes", status="Open", source="bloom:x")],
+            run_stats={
+                "targets_attempted": 18,
+                "targets_succeeded": 18,
+                "failed_authorities": [],
+                "suspicious_zero_authorities": [],
+            },
+        )
+        assert "Needs Review" not in md
+
 
 # ---------------------------------------------------------------------------
 # bloom_housing.py — listing_status field on HousingRecord

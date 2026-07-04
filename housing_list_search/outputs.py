@@ -23,8 +23,14 @@ def _listing_is_summary_candidate(listing: dict) -> bool:
     name = listing.get("property_name", "")
     name_lower = name.lower()
     nav_prefixes = [
-        "quick links", "skip to", "home /", "your city /", "in this section",
-        "select this as", "housing open side", "/ your city",
+        "quick links",
+        "skip to",
+        "home /",
+        "your city /",
+        "in this section",
+        "select this as",
+        "housing open side",
+        "/ your city",
     ]
     if "closed" in name_lower:
         return False
@@ -57,6 +63,28 @@ def _format_run_status(run_stats: dict | None) -> str:
     return "".join(lines)
 
 
+def _format_needs_review(run_stats: dict | None) -> str:
+    if not run_stats:
+        return ""
+
+    suspicious = list(run_stats.get("suspicious_zero_authorities") or [])
+    if not suspicious:
+        return ""
+
+    lines = ["## Needs Review\n\n"]
+    lines.append(
+        f"- **Suspicious zero:** {len(suspicious)} property-inventory target(s) "
+        "returned no property records this run\n"
+    )
+    lines.append(f"- **Authorities:** {', '.join(suspicious)}\n")
+    lines.append(
+        "- This is not a confirmed closure — the adapter may have broken, the source "
+        "may have changed, or the inventory may genuinely be empty. Review the source "
+        "and mark a Validated Zero in TARGETS.md when appropriate (ADR-0003).\n\n"
+    )
+    return "".join(lines)
+
+
 def _format_coverage_summary(listings) -> str:
     cov = summarize_coverage(listings)
     if cov.total == 0:
@@ -64,8 +92,7 @@ def _format_coverage_summary(listings) -> str:
 
     lines = ["## Coverage breakdown\n\n"]
     lines.append(
-        f"- **Property inventory:** {cov.property_count} "
-        f"(per-property or per-unit records)\n"
+        f"- **Property inventory:** {cov.property_count} (per-property or per-unit records)\n"
     )
     if cov.portal_count:
         lines.append(
@@ -108,6 +135,7 @@ def generate_daily_summary(
         f.write("# 🏠 Santa Clara County Housing Waitlist Summary\n")
         f.write(f"**Run:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
         f.write(_format_run_status(run_stats))
+        f.write(_format_needs_review(run_stats))
         f.write(_format_coverage_summary(listings))
 
         seen = {}
@@ -167,19 +195,33 @@ def generate_daily_summary(
             f.write("**No listings extracted in this run.**\n\n")
 
         f.write("## 📊 Full Dataset for Import\n")
-        f.write("- `current_full.csv` — full DB snapshot (all ever-seen rows; may exceed this run's count)\n")
-        f.write("- `diff.csv` — this run's delta: NEW / UPDATED / STALE / SCRAPE_FAILED rows (use for incremental imports)\n")
-        f.write("- `changelog_diffs.md` / `changelog_diffs.csv` — human/machine changelog vs last run\n\n")
+        f.write(
+            "- `current_full.csv` — full DB snapshot (all ever-seen rows; may exceed this run's count)\n"
+        )
+        f.write(
+            "- `diff.csv` — this run's delta: NEW / UPDATED / STALE / SCRAPE_FAILED rows (use for incremental imports)\n"
+        )
+        f.write(
+            "- `changelog_diffs.md` / `changelog_diffs.csv` — human/machine changelog vs last run\n\n"
+        )
         f.write("**Note:** Some city sites block automated access.\n")
         f.write("\nReady for internal tech mailing list.\n")
 
         # Human-readable report of intentionally skipped targets (never in CSV)
         if skipped_targets:
             f.write("\n## ⚠️  Intentionally Skipped Targets (no_public_list)\n\n")
-            f.write("These targets are documented in TARGETS.md with the `no_public_list` marker.\n")
-            f.write("They are skipped automatically to avoid wasting research effort on cities without\n")
-            f.write("public structured BMR lists, waitlists, or extractable portals. When a usable public\n")
-            f.write("source appears, a human removes the marker and the target becomes active again.\n\n")
+            f.write(
+                "These targets are documented in TARGETS.md with the `no_public_list` marker.\n"
+            )
+            f.write(
+                "They are skipped automatically to avoid wasting research effort on cities without\n"
+            )
+            f.write(
+                "public structured BMR lists, waitlists, or extractable portals. When a usable public\n"
+            )
+            f.write(
+                "source appears, a human removes the marker and the target becomes active again.\n\n"
+            )
             for auth, note in skipped_targets:
                 f.write(f"- **{auth}**\n")
                 if note:

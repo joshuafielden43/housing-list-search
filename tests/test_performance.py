@@ -28,7 +28,9 @@ class TestRobotsCache:
         mock_resp.status_code = 200
         mock_resp.iter_content.return_value = [b"User-agent: *\nDisallow:\n"]
 
-        with patch("housing_list_search.robots_cache.requests.get", return_value=mock_resp) as mock_get:
+        with patch(
+            "housing_list_search.robots_cache.requests.get", return_value=mock_resp
+        ) as mock_get:
             get_robots_entry("https://example.gov", "https://example.gov/robots.txt")
             get_robots_entry("https://example.gov", "https://example.gov/robots.txt")
 
@@ -42,7 +44,9 @@ class TestRobotsCache:
         entry = RobotsEntry(parser=mock_rp, treat_as_allowed=False)
 
         with (
-            patch("housing_list_search.scraper.validate_http_url", side_effect=lambda url, **_: url),
+            patch(
+                "housing_list_search.scraper.validate_http_url", side_effect=lambda url, **_: url
+            ),
             patch("housing_list_search.scraper.get_robots_entry", return_value=entry) as mock_cache,
         ):
             assert is_allowed_by_robots("https://example.gov/page") is True
@@ -102,7 +106,7 @@ class TestParallelTargets:
         targets = [{"authority": f"City {i}", "url": f"https://{i}.example/"} for i in range(4)]
 
         with patch("housing_list_search.pipeline.max_target_workers", return_value=4):
-            listings, failed = RunPipeline._scrape_targets(targets, slow_scrape)
+            listings, failed, _by_auth = RunPipeline._scrape_targets(targets, slow_scrape)
 
         assert len(listings) == 4
         assert failed == []

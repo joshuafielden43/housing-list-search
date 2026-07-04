@@ -28,6 +28,7 @@ from housing_list_search.outputs import (
     STAFF_DAILY_SUMMARY_PATH,
     generate_daily_summary,
 )
+from housing_list_search.suspicious_zero import find_suspicious_zeros
 
 logger = logging.getLogger("housing_list_search")
 
@@ -57,6 +58,7 @@ class RunResult:
     n_diff: int = 0
     diff_counts: dict[str, int] = field(default_factory=dict)
     failed_targets: list[str] = field(default_factory=list)
+    suspicious_zero_authorities: list[str] = field(default_factory=list)
     targets_attempted: int = 0
     partial_run: bool = False
     scrape_failed_n: int = 0
@@ -81,7 +83,17 @@ class RunPipeline:
         skipped = skipped_targets or []
         target_authorities = [t["authority"] for t in targets] if partial_run else None
 
-        all_listings, failed_targets = self._scrape_targets(targets, scrape)
+        all_listings, failed_targets, listings_by_authority = self._scrape_targets(targets, scrape)
+        suspicious_zero_authorities = find_suspicious_zeros(
+            targets, listings_by_authority, failed_targets
+        )
+        if suspicious_zero_authorities:
+            logger.warning(
+                "%d suspicious zero(s) — property-inventory target(s) returned no property "
+                "records: %s",
+                len(suspicious_zero_authorities),
+                ", ".join(suspicious_zero_authorities),
+            )
 
         all_listings = deduplicate_listings(all_listings)
         run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -138,6 +150,7 @@ class RunPipeline:
             "targets_attempted": len(targets),
             "targets_succeeded": len(targets) - len(failed_targets),
             "failed_authorities": failed_targets,
+            "suspicious_zero_authorities": suspicious_zero_authorities,
         }
 
         if partial_run:
@@ -180,6 +193,7 @@ class RunPipeline:
             n_diff=n_diff,
             diff_counts=diff_counts,
             failed_targets=failed_targets,
+            suspicious_zero_authorities=suspicious_zero_authorities,
             targets_attempted=len(targets),
             partial_run=partial_run,
             scrape_failed_n=scrape_failed_n,
@@ -190,8 +204,9 @@ class RunPipeline:
     def _scrape_targets(
         targets: list[dict[str, Any]],
         scrape: TargetFn,
-    ) -> tuple[list[dict], list[str]]:
+    ) -> tuple[list[dict], list[str], dict[str, list[dict]]]:
         all_listings: list[dict] = []
+        listings_by_authority: dict[str, list[dict]] = {}
         failed_targets: list[str] = []
         failures_lock = threading.Lock()
         listings_lock = threading.Lock()
@@ -202,10 +217,12 @@ class RunPipeline:
         def _run_one(target: dict[str, Any]) -> None:
             authority = target.get("authority", "")
             local_failures: list[str] = []
+            recs: list[dict] = []
             try:
                 recs = scrape(target, failures=local_failures)
                 with listings_lock:
                     all_listings.extend(recs)
+                    listings_by_authority[authority] = recs
             except Exception as exc:
                 logger.error("Error on %s: %s", authority, exc)
                 local_failures.append(authority)
@@ -218,14 +235,14 @@ class RunPipeline:
         if workers == 1 or len(targets) <= 1:
             for t in targets:
                 _run_one(t)
-            return all_listings, failed_targets
+            return all_listings, failed_targets, listings_by_authority
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [pool.submit(_run_one, t) for t in targets]
             for fut in as_completed(futures):
                 fut.result()
 
-        return all_listings, failed_targets
+        return all_listings, failed_targets, listings_by_authority
 
     @staticmethod
     def _write_partial_changelog(target_filter: str) -> None:

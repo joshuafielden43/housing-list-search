@@ -176,3 +176,45 @@ class TestRunPipeline:
             assert result.failed_targets == ["City A"]
         finally:
             os.chdir(orig)
+
+    def test_suspicious_zero_detected_without_failing_run(self, tmp_path):
+        import os
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+
+            def _empty_inventory(t, failures=None):
+                return []
+
+            targets = [
+                {
+                    "authority": "MidPen Housing",
+                    "url": "https://midpen.example/",
+                    "scraping_measures": "midpen,native_requests",
+                },
+                {
+                    "authority": "City of Morgan Hill",
+                    "url": "https://mh.example/",
+                    "scraping_measures": "housekeys",
+                },
+            ]
+
+            result = RunPipeline().run(
+                targets,
+                db=db,
+                run_target_fn=_empty_inventory,
+                run_id="suspicious-zero-test",
+            )
+
+            assert result.suspicious_zero_authorities == ["MidPen Housing"]
+            assert result.failed_targets == []
+            assert Path("daily_summary.md").exists()
+            summary = Path("daily_summary.md").read_text(encoding="utf-8")
+            assert "## Needs Review" in summary
+            assert "MidPen Housing" in summary
+            assert "City of Morgan Hill" not in summary.split("Needs Review", 1)[-1]
+        finally:
+            os.chdir(orig)
