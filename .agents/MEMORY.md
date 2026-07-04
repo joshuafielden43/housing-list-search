@@ -50,7 +50,7 @@ Epic **#389** (portable routing + record identity) — **complete** as of 2026-0
 | `785df5e` | measure_registry, TARGETS shape check, ground_truth vendor bounds | #716, #724 (partial) |
 | `71247c6` | needs_review webhook, measure registry unify, #725 tests | #713, #740, #725, #741 |
 
-**Next autonomous batch (2026-07-04):** #413 pdfplumber default (ADR-0005), #416 lockfiles, #723 Playwright throttle — see latest commit on `main`.
+| `320c453` | #413 pdfplumber default (ADR-0005), #416 lockfiles, #723 Playwright throttle | #413, #416, #723 |
 
 ---
 
