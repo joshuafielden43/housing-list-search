@@ -40,7 +40,7 @@ Menlo Park and Half Moon Bay were removed from `TARGETS.md`; they are San Mateo 
 
 ---
 
-## Current state (v0.8.7, 2026-07-01)
+## Current state (v0.8.7, 2026-07-04)
 
 Six first-class adapters, all named after the recurring **platform or vendor** (never the city):
 
@@ -193,7 +193,9 @@ All adapter output crosses `listing_to_row()` at persistence time (`db.upsert_li
 
 ## PDF extraction (extraction/pdf.py)
 
-Sole PDF adapter. Path order: pdfplumber tables → flyer heuristics → line-regex → optional `marker-pdf` fallback (`requirements-ocr.txt`, disable with `HLS_DISABLE_MARKER_PDF=1`). `pdf_scraper.py` is a deprecated shim.
+Sole PDF adapter. **Default stack:** pdfplumber only (no PyMuPDF — see ADR-0005 / Vikunja #413). Path order: pdfplumber tables → flyer heuristics → line-regex → optional `marker-pdf` fallback (`requirements-ocr.txt`, disable with `HLS_DISABLE_MARKER_PDF=1`). `pdf_scraper.py` is a deprecated shim.
+
+Playwright navigation uses `playwright_nav.safe_goto()` — URL policy + per-host throttle (same seam as `polite_get`).
 
 ## Freshness (freshness.py + changelog.py)
 
@@ -224,6 +226,7 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | [0002](docs/adr/0002-zero-results-are-suspicious.md) | Zero-record property-inventory runs are suspicious unless a Validated Zero exists |
 | [0003](docs/adr/0003-store-validated-zero-in-targets.md) | Validated Zero state is curated metadata in `TARGETS.md`, not transient DB state |
 | [0004](docs/adr/0004-suspicious-zero-does-not-fail-run.md) | Suspicious Zero surfaces Needs Review; it does not make a full run exit nonzero |
+| [0005](docs/adr/0005-pdfplumber-default-marker-ocr-tier.md) | Default PDF: pdfplumber only; marker-pdf in OCR tier; PyMuPDF removed |
 
 ---
 

@@ -38,6 +38,22 @@ Epic **#389** (portable routing + record identity) — **complete** as of 2026-0
 
 ---
 
+## Backlog sprint (2026-07-04) — shipped on `main`
+
+| Commit | Work | Vikunja |
+|--------|------|---------|
+| `0e154df` | ADRs 0001–0004 + CONTEXT operational-review vocabulary | — |
+| `7af6c3b` | Suspicious Zero detection + Needs Review in `daily_summary.md` | ADR-0002/0004 |
+| `19184f3` | Validated Zero metadata in TARGETS.md | ADR-0003 |
+| `2d11dc7` | Changelog SCRAPE_FAILED alignment; civicplus failure propagation | #653, #654 |
+| `dcfcabc` | Staff outputs, ops hardening, URL policy, CI ruff/pip-audit | #655, #656, #711–#730 |
+| `785df5e` | measure_registry, TARGETS shape check, ground_truth vendor bounds | #716, #724 (partial) |
+| `71247c6` | needs_review webhook, measure registry unify, #725 tests | #713, #740, #725, #741 |
+
+**Next autonomous batch (2026-07-04):** #413 pdfplumber default (ADR-0005), #416 lockfiles, #723 Playwright throttle — see latest commit on `main`.
+
+---
+
 ## GitHub ↔ Vikunja crosswalk (audit trail only)
 
 | GitHub issue | Vikunja task(s) | Topic |
@@ -52,11 +68,11 @@ Epic **#389** (portable routing + record identity) — **complete** as of 2026-0
 
 ---
 
-## Vikunja housekeeping (2026-07-01)
+## Vikunja housekeeping
 
-**Deleted duplicates:** #424 (dup #394), #425 (dup #401), #426 (dup #402), #427 (dup #405), #428 (dup #409), #429 (dup #422).
+**Deleted duplicates (2026-07-01):** #424–#429.
 
-**#410** marked **[SUPERSEDED]** — pdfplumber-only migration cancelled; unified `extraction/pdf.py` + optional marker (#624, #625).
+**#410** — historical pdfplumber-only spike; superseded by unified `extraction/pdf.py` + marker (#624, #625). **Implemented 2026-07-04:** pdfplumber-only default per ADR-0005 (#413).
 
 ---
 
@@ -65,25 +81,67 @@ Epic **#389** (portable routing + record identity) — **complete** as of 2026-0
 | Metric | Value |
 |--------|-------|
 | Deduped listings this run | 437 |
-| `current_full.csv` rows | 547 |
+| `current_full.csv` rows | 435 (post-prune) |
 | Targets in TARGETS.md | 24 (20 active, 4 `no_public_list`) |
-| One-time STALE churn | ~112 (authority + surrogate-url migration) |
 
-**Pruned 2026-07-01:** 112 migration STALE rows via `python scripts/db_manage.py prune --from-diff`. DB now **435 rows** (matches ~437 run_prev). Do **not** use `--not-seen-since 45` for migration churn (last_seen still recent); do **not** use `--all-stale` (deletes everything).
+**Pruned 2026-07-01:** migration STALE via `python scripts/db_manage.py prune --from-diff`. Do **not** use `--not-seen-since 45` for migration churn; do **not** use `--all-stale`.
 
 ---
 
 ## Dev shortcuts
 
-- Hooks: `npm install` after clone (Husky → `.husky/pre-commit` + `pre-push`; Vikunja **#650**)
+- Hooks: `npm install` after clone (Husky; Vikunja **#650**)
+- **Prod deps:** `uv pip install -r requirements.txt` (or `requirements.lock` for pinned installs)
+- **Dev/CI deps:** `uv pip install -r requirements-dev.txt` (pytest, ruff)
+- **OCR tier:** `uv pip install -r requirements-ocr.txt` (marker-pdf, GPL — hard PDFs only)
 - Full local gate: `npm run check` (ruff + `doctor --dry-run` + unit tests)
 - Unit tests: `HLS_DISABLE_MARKER_PDF=1 .venv/bin/python -m pytest tests/ -m "not integration"`
-- Parallel targets: `HLS_MAX_TARGET_WORKERS=3` (default); set `1` for serial. Per-host robots cache + throttle in `robots_cache.py` / `host_throttle.py`.
+- Parallel targets: `HLS_MAX_TARGET_WORKERS=3` (default); per-host robots cache + throttle in `robots_cache.py` / `host_throttle.py`; Playwright uses `playwright_nav.safe_goto()` throttle
 - Single-target smoke: `python main.py --run --target "Gilroy"`
 - Re-ingest targets: `python scripts/doctor.py --fix`
+- Needs Review webhook (optional): `HLS_NEEDS_REVIEW_WEBHOOK`
 
 ---
 
 ## Session preferences
 
 Joshua prefers fewer permission prompts during active dev (`/always-approve` in Claude Code). See `AGENTS.md` session friction note.
+
+### How to respond to Joshua's ideas (2026-07-04)
+
+**Contract:** Joshua brings ideas; the agent stress-tests them. Say yes, no, or "yes but only if X" — **without making Joshua defend having the idea**, and **without citing "the current thing already works" as a veto** on forward-looking design or license decisions.
+
+**Failure modes to avoid:**
+
+| Don't | Do instead |
+|-------|------------|
+| Offer a replacement, then argue the incumbent wins because today's smoke test passes | Name the **decision frame** (license fix vs architecture vs ops) and answer **only** that frame |
+| Present multiple tracks and argue against whichever is convenient | Pick a default recommendation; list tradeoffs once |
+| Conflate "Gilroy integration test green" with "don't change the PDF stack" | Separate **observed state** from **what we ship tomorrow** |
+
+When Joshua asks "replace X?" or "why not Y?", answer the replacement question directly. Incumbent success is relevant only if they asked "should we change anything at all?"
+
+---
+
+## PDF stack (ADR-0005, implemented 2026-07-04, Vikunja #413)
+
+| Tier | Package | Role |
+|------|---------|------|
+| **Default** (`requirements.txt`) | **pdfplumber only** | Tables, text lines, flyer heuristics |
+| **Hard PDFs** (`requirements-ocr.txt`) | **marker-pdf** (last resort) | Scanned/scrambled PDFs; GPL; OCR host — not daily-cron default |
+
+Pipeline: pdfplumber tables → flyer heuristics → line-regex → marker fallback.
+
+**Do not** put marker or pymupdf in default `requirements.txt` for license reasons.
+
+**Do not** use crawl4ai / searxng for core `--run` — curated `TARGETS.md` + platform adapters. Fine for out-of-band human research when adding cities.
+
+---
+
+## Open Vikunja — needs Joshua
+
+| Task | Why |
+|------|-----|
+| **#412** | Baseline snapshot policy (what to commit, gitignore) |
+| **#720 / #737** | Vikunja reverification task automation shape |
+| **#407, #423** | Exploratory scoping conclusions (allowlist tightness, PR live tests) |

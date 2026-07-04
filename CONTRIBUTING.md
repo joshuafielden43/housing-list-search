@@ -35,7 +35,7 @@ Thanks for helping. This project exists to make affordable housing data accessib
 git clone https://github.com/joshuafielden43/housing-list-search.git
 cd housing-list-search
 uv venv && source .venv/bin/activate
-uv pip install -r requirements-dev.txt
+uv pip install -r requirements-dev.txt   # or requirements-dev.lock for pinned installs
 npm install   # Husky pre-commit / pre-push hooks (secrets, ruff, doctor, pytest)
 playwright install chromium
 python scripts/doctor.py --fix

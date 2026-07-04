@@ -50,7 +50,7 @@ def check_requirements() -> bool:
     for line in req_file.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
-            # Handle things like "beautifulsoup4" or "pymupdf"
+            # Handle things like "beautifulsoup4" or "pdfplumber"
             pkg = line.split("==")[0].split(">=")[0].split("[")[0].strip()
             if pkg:
                 required.append(pkg.lower())
@@ -60,7 +60,6 @@ def check_requirements() -> bool:
         # Some packages have different import names
         import_name = {
             "beautifulsoup4": "bs4",
-            "pymupdf": "fitz",
             "pdfplumber": "pdfplumber",
             "playwright": "playwright",
             "pyyaml": "yaml",

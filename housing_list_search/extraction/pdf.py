@@ -23,11 +23,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 logger = logging.getLogger(__name__)
 
 try:
-    import fitz  # PyMuPDF
-except ImportError:
-    fitz = None
-
-try:
     import pdfplumber
 except ImportError:
     pdfplumber = None
@@ -112,40 +107,33 @@ def _fetch_pdf(url: str, timeout: int = 30) -> bytes:
     return resp.content
 
 
+def _iter_pdf_page_text(pdf_bytes: bytes) -> list[tuple[int, str]]:
+    """Extract (page_number, page_text) via pdfplumber."""
+    if pdfplumber is None:
+        return []
+    pages: list[tuple[int, str]] = []
+    try:
+        with pdfplumber.open(stream=pdf_bytes) as pdf:
+            for page_idx, page in enumerate(pdf.pages, start=1):
+                pages.append((page_idx, page.extract_text() or ""))
+    except Exception:
+        return []
+    return pages
+
+
 def extract_text_lines_from_pdf(pdf_bytes: bytes) -> list[tuple[int, str]]:
-    """
-    Extract text from a PDF as (page_number, line) tuples.
-    Uses PyMuPDF first (fast + reliable), falls back to pdfplumber.
-    """
+    """Extract text from a PDF as (page_number, line) tuples (pdfplumber)."""
     lines: list[tuple[int, str]] = []
+    for page_idx, text in _iter_pdf_page_text(pdf_bytes):
+        for line in text.splitlines():
+            clean = " ".join(line.strip().split())
+            if clean:
+                lines.append((page_idx, clean))
 
-    if fitz:
-        try:
-            with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                for page_idx, page in enumerate(doc, start=1):
-                    text = page.get_text("text") or ""
-                    for line in text.splitlines():
-                        clean = " ".join(line.strip().split())
-                        if clean:
-                            lines.append((page_idx, clean))
-            return lines
-        except Exception:
-            pass  # fall through to pdfplumber
+    if not lines and pdfplumber is None:
+        raise RuntimeError("No PDF text extraction library available (need pdfplumber)")
 
-    if pdfplumber:
-        try:
-            with pdfplumber.open(stream=pdf_bytes) as pdf:
-                for page_idx, page in enumerate(pdf.pages, start=1):
-                    text = page.extract_text() or ""
-                    for line in text.splitlines():
-                        clean = " ".join(line.strip().split())
-                        if clean:
-                            lines.append((page_idx, clean))
-            return lines
-        except Exception:
-            pass
-
-    raise RuntimeError("No PDF text extraction library available (need PyMuPDF or pdfplumber)")
+    return lines
 
 
 # ------------------------------------------------------------------
@@ -551,18 +539,13 @@ def _extract_flyer_pages_from_pdf(
     authority: str,
     document_url: str,
 ) -> list[HousingRecord]:
-    """Try whole-page flyer extraction for each page."""
-    if not fitz:
-        return []
-
+    """Try whole-page flyer extraction for each page (pdfplumber)."""
     records: list[HousingRecord] = []
     try:
-        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            for page_idx, page in enumerate(doc, start=1):
-                text = page.get_text("text") or ""
-                page_records = _extract_flyer_page(authority, document_url, page_idx, text)
-                if page_records:
-                    records.extend(page_records)
+        for page_idx, text in _iter_pdf_page_text(pdf_bytes):
+            page_records = _extract_flyer_page(authority, document_url, page_idx, text)
+            if page_records:
+                records.extend(page_records)
     except Exception as exc:
         logger.warning("[pdf] Flyer extraction failed for %s: %s", document_url, exc)
     return records

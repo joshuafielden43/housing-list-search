@@ -16,7 +16,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Measure** | Token in `scraping_measures` routing to an adapter (`bloom`, `housekeys`, `civicplus`, `waf_blocked`, …) |
 | **DispatchRegistry** | `dispatch.py` — measures → adapter handlers; URL predicates → extraction handlers |
 | **Adapter** | Platform-scoped scraper in `adapters/` or `extraction/` — named after vendor, never city |
-| **marker fallback** | Optional `marker-pdf` path in `extraction/marker_pdf.py` when table/flyer/line extractors yield zero |
+| **PDF default stack** | pdfplumber for tables, text, and flyer heuristics (ADR-0005); no PyMuPDF in default install |
+| **marker fallback** | Optional GPL `marker-pdf` path in `extraction/marker_pdf.py` (`requirements-ocr.txt`) when pdfplumber paths yield zero |
 
 ## Freshness & output
 
@@ -38,7 +39,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 |------|---------|
 | **Suspicious Zero** | A zero-record result from an authority or adapter that normally represents property inventory; it requires human attention unless already covered by a current validation |
 | **Validated Zero** | A zero-record authority state that a person has confirmed as real for a dated review window |
-| **Needs Review** | A run or authority state that should be surfaced to an operator without treating otherwise confirmed records as unusable |
+| **Needs Review** | A run or authority state that should be surfaced to an operator without treating otherwise confirmed records as unusable; logs `NEEDS_REVIEW` and optional `HLS_NEEDS_REVIEW_WEBHOOK` POST (`needs_review.py`) |
 | **Reverification Task** | A recurring human review prompt to confirm whether a Validated Zero is still true; use this term instead of "ticket" in project docs |
 
 ## Ethics & access
