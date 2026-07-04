@@ -6,6 +6,8 @@ Read this before writing any code. Read `SOUL.md` for the mission guardrails.
 
 **Tracker & session memory:** Vikunja project **#9** (“Housing Search”) is the canonical task board. Repo-local agent notes (project ID, sprint crosswalks, housekeeping) live in `.agents/MEMORY.md` — read it when filing or closing work.
 
+**Deployment posture (2026-07-04):** Local-first operator tool (Hermes/`run_daily.sh`). Not positioned as a public OSS release; at most a single downstream consumer. Docs describe **operator workflow**, not fork onboarding. Skip committed baseline snapshots (#412 deferred). County portability remains in code shape, not product packaging.
+
 ---
 
 ## Session friction note
@@ -24,7 +26,7 @@ UEO maintains an impressive volunteer-curated, county-wide database (**~560 prop
 
 **Our goal:** Complement their work — match property coverage using only public, ethically accessible sources, and add automated daily freshness via `STALE` diff labelling and `db_manage.py prune`. The two approaches reinforce each other: their curation gives breadth and human judgement; automation keeps availability current.
 
-**Current gap (honest, 2026-07-01):** Full `--run` yields **~437 deduped listings** (`run_prev.csv`); **~430 property inventory** after excluding HouseKeys portal pointers (`coverage.py` / `record_kind` in CSV exports). `current_full.csv` holds **~435 rows** post-prune. Vendor portfolios (jsco.net 67, charities 48, midpen 46, San José Bloom 97, Sunnyvale GIS 40, …) close much of the breadth gap vs UEO (~560). Remaining gaps: HouseKeys cities are registration pointers (counted separately); some civicplus PDF paths return program docs not property rows; per-property availability freshness still lags hand-curated UEO on edge cases.
+**Coverage baseline (last full `--run`, 2026-07-01; refresh after major TARGETS/adapter changes):** **~437 deduped listings** (`run_prev.csv`); **~430 property inventory** after excluding HouseKeys portal pointers (`coverage.py` / `record_kind`). `current_full.csv` **~435 rows** post-prune. Vendor portfolios (jsco.net 67, charities 48, midpen 46, San José Bloom 97, Sunnyvale GIS 40, …) close much of the breadth gap vs UEO (~560). Remaining gaps: HouseKeys cities are registration pointers; some civicplus PDF paths return program docs not property rows; per-property freshness can lag hand-curated UEO on edge cases. Re-run `python main.py --run` and `coverage.py` summary logs to refresh these numbers — do not treat this paragraph as live telemetry.
 
 **Do not close the gap by:**
 - Fabricating "delegate" or "See administrator" placeholder records when a portal has no listings
@@ -263,7 +265,7 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 
 | File | What it is | When to use |
 |---|---|---|
-| `current_full.csv` | Full DB snapshot — all ever-seen records | Complete view for reference; import baseline |
+| `current_full.csv` | Full DB snapshot — all ever-seen records | Operator reference; local import/export |
 | `diff.csv` | Delta view: NEW / UPDATED / STALE per `run_id` | Incremental imports; drive upserts without re-processing everything |
 | `run_prev.csv` | This run's listing set (written at end of run) | Used internally as changelog diff baseline; ignore in downstream tools |
 | `daily_summary.md` | Human-readable open listings + skipped targets | Nonprofit staff, mailing list |

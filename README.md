@@ -1,8 +1,8 @@
 # housing-list-search
 
-**Modular affordable-housing waitlist aggregator for Santa Clara County — portable to any county.**
+**Daily affordable-housing inventory scraper for Santa Clara County.**
 
-Built for nonprofits that need a daily, structured picture of what low/no-income housing is open, closing, or on waitlist across a fragmented landscape of city portals, delegated administrators, and vendor platforms.
+Built to produce a structured, fresh picture of what low/no-income housing is open, closing, or on waitlist across city portals, delegated administrators, and vendor platforms. **Local-first:** runs on a single operator machine (Hermes/cron via `run_daily.sh`), not a public release or multi-tenant service.
 
 Current scope: **24 Santa Clara County targets** in `TARGETS.md` (20 active scrape targets; 4 `no_public_list` monitors).  
 Current version: **v0.8.7**
@@ -19,19 +19,26 @@ Current version: **v0.8.7**
 
 ---
 
-## Quick start
+## Operator setup (local / Hermes)
 
 ```bash
-git clone https://github.com/joshuafielden43/housing-list-search.git
 cd housing-list-search
 uv venv && source .venv/bin/activate
-uv pip install -r requirements.txt
-playwright install chromium          # only needed for Playwright fallback paths
-python scripts/doctor.py --fix      # validates environment + TARGETS.md ingestion
-python main.py --run                 # normal daily extraction
+uv pip install -r requirements-dev.txt   # prod: requirements.txt; dev adds pytest + ruff
+playwright install chromium              # Playwright adapter paths
+python scripts/doctor.py --fix           # env check + TARGETS.md → SQLite
+python main.py --run                     # full daily scrape
+# or cron:
+./run_daily.sh                           # doctor preflight, lock, logs under logs/
 ```
 
-Outputs land in the repo root: `current_full.csv`, `diff.csv`, `daily_summary.md`, `changelog_diffs.md`.
+**After each run:** read `daily_summary.md` (staff) and `diff.csv` (machine delta). Check **Needs Review** in the summary when suspicious-zero or reverification-due signals fire. Optional alert: set `HLS_NEEDS_REVIEW_WEBHOOK`.
+
+**Outputs** (gitignored runtime artifacts in repo root): `current_full.csv`, `diff.csv`, `daily_summary.md`, `changelog_diffs.md`, `housing_registry.db`.
+
+**Checkpoints:** `python scripts/db_manage.py snapshot --name <label>` archives DB + CSV under `snapshots/` (local only — not committed).
+
+**Quality gate:** `npm run check` (ruff + doctor dry-run + unit tests).
 
 ---
 
@@ -94,15 +101,12 @@ PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibilit
 
 ---
 
-## Branch / contribution discipline
+## Run discipline
 
-- `main` is protected: force-pushes and branch deletion are blocked (GitHub branch protection, enforced for admins too). Feature work happens on branches and lands via PR.
-- PR titles follow `type: short description` — `feat:`, `fix:`, `docs:`, `chore:`.
-- Commits in PRs should be atomic and have a subject line under 72 characters.
-- CI runs unit tests only (`pytest -m "not integration"`). Live portal tests are opt-in: `pytest -m integration`.
 - After each `--run`, check `diff.csv` for `STALE` rows; when the count is high, prune with `scripts/db_manage.py prune`.
-- `python main.py --run --target "City Name"` is a partial diagnostic run: `diff.csv` is scoped to the selected authority, `run_prev.csv` is not updated, staff-facing `daily_summary.md` is preserved, and a diagnostic `daily_summary_partial.md` is written instead.
-- See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+- `python main.py --run --target "City Name"` is a partial diagnostic run: `diff.csv` scoped to matched authorities; `run_prev.csv` and staff `daily_summary.md` unchanged; writes `daily_summary_partial.md`.
+- CI runs unit tests only (`pytest -m "not integration"`). Weekly live smoke: `.github/workflows/integration-weekly.yml`.
+- See [AGENTS.md](AGENTS.md) for architecture handoff and [CONTRIBUTING.md](CONTRIBUTING.md) if you change adapters.
 
 ---
 

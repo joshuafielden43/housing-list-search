@@ -154,6 +154,9 @@ Implications:
 | Task | Why |
 |------|-----|
 | **#720 / #737** | Vikunja reverification task automation shape |
-| **#407, #423** | Exploratory scoping conclusions (allowlist tightness, PR live tests) |
 
-**Deferred:** **#412** — baseline snapshot for onboarding; not worth build while local/single-audience (2026-07-04).
+**Deferred (local-first):** **#412** onboarding baseline; **#423** PR live integration tests.
+
+**Exploratory (optional):** **#407** Playwright host allowlist — scope memo only unless Joshua wants tightening.
+
+**Closed epics (2026-07-04 doc groom):** **#388** docs/onboarding (#412 deferred, README operator-focused); **#390** operability (run_daily, throttle, needs_review webhook, CI, integration-weekly).

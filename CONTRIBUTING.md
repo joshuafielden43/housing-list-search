@@ -31,8 +31,9 @@ Thanks for helping. This project exists to make affordable housing data accessib
 
 ## Development setup
 
+Local operator / maintainer workflow (see `README.md` for daily `run_daily.sh` cron). Not packaged for public fork onboarding.
+
 ```bash
-git clone https://github.com/joshuafielden43/housing-list-search.git
 cd housing-list-search
 uv venv && source .venv/bin/activate
 uv pip install -r requirements-dev.txt   # or requirements-dev.lock for pinned installs
