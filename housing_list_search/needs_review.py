@@ -2,8 +2,11 @@
 needs_review.py — optional operator notification when review signals fire.
 
 ADR-0004: suspicious zero and reverification due must not fail the run, but
-operators need a hook to notice. Set HLS_NEEDS_REVIEW_WEBHOOK to a POST URL
-(Hermes, n8n, etc.); when unset, only structured logs are emitted.
+operators need a hook to notice.
+
+- Logs `NEEDS_REVIEW` at WARNING
+- Optional `HLS_NEEDS_REVIEW_WEBHOOK` POST (Hermes, n8n, …)
+- Optional Vikunja sync: `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` (+ `HLS_VIKUNJA_PROJECT_ID`, default 9)
 """
 
 from __future__ import annotations
@@ -62,3 +65,13 @@ def notify_needs_review(
         logger.info("Posted Needs Review payload to %s", webhook)
     except Exception as exc:
         logger.warning("Needs Review webhook POST failed (%s): %s", webhook, exc)
+
+    from housing_list_search.vikunja_reverification import sync_reverification_tasks
+
+    sync_reverification_tasks(
+        run_id=run_id,
+        suspicious_zero_authorities=suspicious_zero_authorities,
+        reverification_due_authorities=reverification_due_authorities,
+        stale_n=stale_n,
+        scrape_failed_n=scrape_failed_n,
+    )

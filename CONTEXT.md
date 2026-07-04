@@ -40,7 +40,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Suspicious Zero** | A zero-record result from an authority or adapter that normally represents property inventory; it requires human attention unless already covered by a current validation |
 | **Validated Zero** | A zero-record authority state that a person has confirmed as real for a dated review window |
 | **Needs Review** | A run or authority state that should be surfaced to an operator without treating otherwise confirmed records as unusable; logs `NEEDS_REVIEW` and optional `HLS_NEEDS_REVIEW_WEBHOOK` POST (`needs_review.py`) |
-| **Reverification Task** | A recurring human review prompt to confirm whether a Validated Zero is still true; use this term instead of "ticket" in project docs |
+| **Reverification Task** | Vikunja task `[Reverify] {authority}` — auto-created/updated when suspicious zero or reverification due fires (`vikunja_reverification.py`); human closes after TARGETS.md update |
 
 ## Ethics & access
 

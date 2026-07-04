@@ -230,6 +230,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | [0004](docs/adr/0004-suspicious-zero-does-not-fail-run.md) | Suspicious Zero surfaces Needs Review; it does not make a full run exit nonzero |
 | [0005](docs/adr/0005-pdfplumber-default-marker-ocr-tier.md) | Default PDF: pdfplumber only; marker-pdf in OCR tier; PyMuPDF removed |
 
+**Needs Review automation:** `needs_review.py` logs + optional webhook; `vikunja_reverification.py` upserts `[Reverify]` tasks when `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set (ADR-0004).
+
 ---
 
 ## Key files

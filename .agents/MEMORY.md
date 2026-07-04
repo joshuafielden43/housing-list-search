@@ -149,11 +149,17 @@ Implications:
 
 ---
 
+## Vikunja reverification sync (#720, #737 — implemented)
+
+When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` upserts open `[Reverify] {authority}` tasks in project **#9** (default). One task per authority; updates description on repeat signals. Does not auto-close — operator closes after TARGETS.md fix.
+
+---
+
 ## Open Vikunja — needs Joshua
 
 | Task | Why |
 |------|-----|
-| **#720 / #737** | Vikunja reverification task automation shape |
+| *(none — backlog clear for autonomous work)* |
 
 **Deferred (local-first):** **#412** onboarding baseline; **#423** PR live integration tests.
 

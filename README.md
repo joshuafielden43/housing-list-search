@@ -32,7 +32,11 @@ python main.py --run                     # full daily scrape
 ./run_daily.sh                           # doctor preflight, lock, logs under logs/
 ```
 
-**After each run:** read `daily_summary.md` (staff) and `diff.csv` (machine delta). Check **Needs Review** in the summary when suspicious-zero or reverification-due signals fire. Optional alert: set `HLS_NEEDS_REVIEW_WEBHOOK`.
+**After each run:** read `daily_summary.md` (staff) and `diff.csv` (machine delta). Check **Needs Review** when suspicious-zero or reverification-due signals fire.
+
+Optional alerts (env):
+- `HLS_NEEDS_REVIEW_WEBHOOK` — JSON POST to Hermes/n8n
+- `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` — create/update `[Reverify] {authority}` tasks in Vikunja project **#9**
 
 **Outputs** (gitignored runtime artifacts in repo root): `current_full.csv`, `diff.csv`, `daily_summary.md`, `changelog_diffs.md`, `housing_registry.db`.
 
