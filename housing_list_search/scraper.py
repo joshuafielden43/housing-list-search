@@ -134,3 +134,73 @@ def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_B
         return None
     finally:
         mark_host_fetched(url)
+
+
+def polite_post(
+    url: str,
+    *,
+    json: dict | list | None = None,
+    headers: dict[str, str] | None = None,
+    delay: int = 3,
+    max_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
+):
+    """
+    Polite HTTP POST with URL policy, robots.txt check, rate limiting, and
+    bounded response size.
+
+    Bloom REST and similar JSON APIs use POST; this mirrors polite_get policy
+    without treating POST as exempt from outbound trust checks.
+    """
+    try:
+        validate_http_url(url)
+    except URLPolicyError as exc:
+        logger.warning("URL policy blocked POST for %s: %s", url, exc)
+        return None
+
+    if not is_allowed_by_robots(url):
+        return None
+
+    req_headers = {"User-Agent": USER_AGENT}
+    if headers:
+        req_headers.update(headers)
+
+    try:
+        wait_for_host(url, delay)
+        logger.debug("POST: %s", url)
+        resp = requests.post(url, json=json, headers=req_headers, timeout=30, stream=True)
+
+        if resp.status_code == 404:
+            logger.warning(
+                "404 Not Found on POST %s — endpoint may have moved. Update adapter config.",
+                url,
+            )
+            return None
+        if resp.status_code == 403:
+            logger.warning(
+                "403 Forbidden on POST %s — likely WAF/bot-protection.",
+                url,
+            )
+            return None
+
+        resp.raise_for_status()
+        content = _read_bounded_content(resp, max_bytes)
+        if content is None:
+            logger.warning(
+                "POST response body exceeded %d-byte cap for %s — discarding",
+                max_bytes,
+                url,
+            )
+            return None
+
+        resp._content = content
+        logger.debug("POST success: %s (%d bytes)", url, len(content))
+        return resp
+
+    except requests.exceptions.HTTPError as exc:
+        logger.warning("HTTP error on POST %s: %s", url, exc)
+        return None
+    except Exception as exc:
+        logger.warning("POST failed for %s: %s", url, exc)
+        return None
+    finally:
+        mark_host_fetched(url)

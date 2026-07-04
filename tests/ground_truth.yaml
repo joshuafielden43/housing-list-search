@@ -67,3 +67,17 @@ targets:
       administrator_url: ""
       administrator_phone: ""
       administrator_contact: ""
+
+  - name: charities_portfolio
+    method: run_target
+    min_records: 40
+    max_records: 55
+    target:
+      authority: Charities Housing (Santa Clara County portfolio)
+      url: https://www.charitieshousing.org/find-a-home/
+      scraping_measures: charities_housing,native_requests
+      notes: ""
+      administrator: ""
+      administrator_url: ""
+      administrator_phone: ""
+      administrator_contact: ""

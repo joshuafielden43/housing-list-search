@@ -23,6 +23,7 @@ from housing_list_search.coverage import summarize_coverage
 from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_listings
+from housing_list_search.needs_review import notify_needs_review
 from housing_list_search.outputs import (
     PARTIAL_DAILY_SUMMARY_PATH,
     STAFF_DAILY_SUMMARY_PATH,
@@ -104,8 +105,9 @@ class RunPipeline:
                 ", ".join(reverification_due_authorities),
             )
 
-        all_listings = deduplicate_listings(all_listings)
         run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
+
+        all_listings = deduplicate_listings(all_listings)
 
         counts = db.upsert_listings(all_listings, run_id=run_id)
         logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
@@ -165,6 +167,14 @@ class RunPipeline:
             "scrape_failed_n": scrape_failed_n,
             "stale_warn_threshold": DEFAULT_STALE_WARN_THRESHOLD,
         }
+
+        notify_needs_review(
+            run_id=run_id,
+            suspicious_zero_authorities=suspicious_zero_authorities,
+            reverification_due_authorities=reverification_due_authorities,
+            stale_n=stale_n,
+            scrape_failed_n=scrape_failed_n,
+        )
 
         if partial_run:
             self._write_partial_changelog(target_filter or "")

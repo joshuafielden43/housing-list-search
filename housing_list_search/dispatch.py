@@ -12,50 +12,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from housing_list_search.measure_registry import KNOWN_MEASURES, MEASURE_ALIASES
+
 logger = logging.getLogger(__name__)
 
 Record = dict[str, Any]
 Handler = Callable[["TargetContext"], list[Record]]
 UrlPredicate = Callable[[str, str], bool]
 UrlExtractor = Callable[[str, str], list[Any]]
-
-INFORMATIONAL_MEASURES = frozenset(
-    {
-        "native_requests",
-        "js_heavy",
-        "table_based",
-        "html_cards",
-        "playwright_needed",
-        "robots_respect",
-        "delegated_administrator",
-        "notification_based",
-        "monitor_housing_element",
-    }
-)
-
-SKIP_MEASURES = frozenset({"waf_blocked", "no_public_list"})
-
-KNOWN_MEASURES = frozenset(
-    {
-        "john_stewart",
-        "gis",
-        "housekeys",
-        "civicplus",
-        "cdn",
-        "alta",
-        "charities_housing",
-        "midpen",
-        "eden",
-        "eah",
-        "first_housing",
-        "bloom",
-        "pdf",
-        *SKIP_MEASURES,
-        *INFORMATIONAL_MEASURES,
-    }
-)
-
-MEASURE_ALIASES = {"cdn": "civicplus"}
 
 _MEASURE_HANDLERS: dict[str, Handler] = {}
 _URL_EXTRACTORS: list[tuple[str, frozenset[str], UrlPredicate, UrlExtractor]] = []
@@ -75,6 +39,11 @@ class TargetContext:
 
 def register_measure(measure: str, handler: Handler) -> None:
     _MEASURE_HANDLERS[measure] = handler
+
+
+def registered_handler_measures() -> frozenset[str]:
+    """Measures with a registered adapter handler (for drift checks vs measure_registry)."""
+    return frozenset(_MEASURE_HANDLERS)
 
 
 def register_url_extractor(

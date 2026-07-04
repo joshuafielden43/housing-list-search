@@ -579,9 +579,7 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
     """
     from urllib.parse import urlparse
 
-    import requests as _requests
-
-    from housing_list_search.scraper import DEFAULT_MAX_RESPONSE_BYTES
+    from housing_list_search.scraper import polite_post
     from housing_list_search.url_policy import URLPolicyError, validate_http_url
 
     parsed = urlparse(listings_url)
@@ -636,21 +634,10 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
             "filter": [],
         }
 
-        # Narrow SOUL.md exception: Bloom REST rejects non-browser clients; endpoint URL
-        # is validated above and this is a public JSON API (not HTML page fetch).
-        try:
-            resp = _requests.post(endpoint, json=body, headers=headers, timeout=30)
-        except Exception as exc:
+        resp = polite_post(endpoint, json=body, headers=headers)
+        if resp is None:
             logger.warning(
-                "[Bloom] API path: request to %s page %d failed: %s", endpoint, page, exc
-            )
-            pagination_complete = False
-            break
-
-        if len(resp.content) > DEFAULT_MAX_RESPONSE_BYTES:
-            logger.warning(
-                "[Bloom] API path: response exceeded size cap (%d bytes) from %s page %d",
-                DEFAULT_MAX_RESPONSE_BYTES,
+                "[Bloom] API path: request to %s page %d failed or was blocked",
                 endpoint,
                 page,
             )

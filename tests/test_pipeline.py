@@ -263,6 +263,110 @@ class TestRunPipeline:
         finally:
             os.chdir(orig)
 
+    def test_partial_run_mixed_failure_scrape_failed_not_stale_for_failed_authority(self, tmp_path):
+        """Failed authority in partial run → SCRAPE_FAILED, not STALE for unselected."""
+        import os
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+            db.upsert_listings(
+                [
+                    {
+                        "authority": "City A",
+                        "property_name": "A Prop",
+                        "url": "https://a",
+                        "listing_status": "open",
+                    },
+                    {
+                        "authority": "City B",
+                        "property_name": "B Prop",
+                        "url": "https://b",
+                        "listing_status": "open",
+                    },
+                ],
+                run_id="prior-full",
+            )
+
+            def _mixed(t, failures=None):
+                failures = failures if failures is not None else []
+                if t["authority"] == "City A":
+                    failures.append("City A")
+                    raise RuntimeError("adapter down")
+                return [
+                    {
+                        "authority": "City B",
+                        "property_name": "B Prop",
+                        "url": "https://b",
+                        "listing_status": "open",
+                    }
+                ]
+
+            targets = [
+                {"authority": "City A", "url": "https://a", "scraping_measures": ""},
+                {"authority": "City B", "url": "https://b", "scraping_measures": ""},
+            ]
+
+            result = RunPipeline().run(
+                targets,
+                db=db,
+                partial_run=True,
+                target_filter="City",
+                run_target_fn=_mixed,
+                run_id="partial-mixed-fail",
+            )
+
+            with open("diff.csv", newline="", encoding="utf-8") as f:
+                diff_rows = list(csv.DictReader(f))
+
+            assert result.failed_targets == ["City A"]
+            assert {r["source_authority"] for r in diff_rows} == {"City A", "City B"}
+            by_auth = {
+                (r["source_authority"], r["property_name"]): r["change_type"] for r in diff_rows
+            }
+            assert by_auth[("City A", "A Prop")] == "SCRAPE_FAILED"
+            assert by_auth[("City B", "B Prop")] == "UPDATED"
+            assert result.diff_counts.get("STALE", 0) == 0
+        finally:
+            os.chdir(orig)
+
+    def test_exception_excludes_authority_from_suspicious_zero(self, tmp_path):
+        """Scrape exception → failed_targets; must not also flag suspicious zero."""
+        import os
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+
+            def _boom(t, failures=None):
+                failures = failures if failures is not None else []
+                failures.append(t["authority"])
+                raise RuntimeError("down")
+
+            targets = [
+                {
+                    "authority": "MidPen Housing",
+                    "url": "https://midpen.example/",
+                    "scraping_measures": "midpen,native_requests",
+                }
+            ]
+
+            result = RunPipeline().run(
+                targets,
+                db=db,
+                run_target_fn=_boom,
+                run_id="exception-not-suspicious",
+            )
+
+            assert result.failed_targets == ["MidPen Housing"]
+            assert result.suspicious_zero_authorities == []
+        finally:
+            os.chdir(orig)
+
     def test_validated_zero_suppresses_suspicious_zero(self, tmp_path):
         import os
 

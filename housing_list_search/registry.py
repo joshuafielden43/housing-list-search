@@ -206,6 +206,14 @@ def load_targets_to_db():
             continue
         if in_table and "|" in line and not line.startswith("---"):
             parts = [p.strip() for p in line.split("|")]
+            if len(parts) >= 6 and "|" in parts[2]:
+                logger.warning(
+                    "Sanitizer rejected row for authority='%s' — pipe character in notes "
+                    "breaks column alignment; escape or rephrase notes",
+                    parts[0][:60],
+                )
+                skipped_count += 1
+                continue
             if len(parts) >= 6:
                 raw = {
                     "authority": parts[0],

@@ -1,16 +1,54 @@
 """
 measure_registry.py — single source for measure classification.
 
-Handlers live in dispatch.py; this module owns inventory vs portal semantics
-used by suspicious_zero and coverage routing.
+Handler registration lives in dispatch.py; this module owns measure sets
+used by dispatch, suspicious_zero, coverage routing, and doctor drift checks.
 """
 
 from __future__ import annotations
 
-from housing_list_search.dispatch import (
-    INFORMATIONAL_MEASURES,
-    MEASURE_ALIASES,
-    SKIP_MEASURES,
+INFORMATIONAL_MEASURES = frozenset(
+    {
+        "native_requests",
+        "js_heavy",
+        "table_based",
+        "html_cards",
+        "playwright_needed",
+        "robots_respect",
+        "delegated_administrator",
+        "notification_based",
+        "monitor_housing_element",
+    }
+)
+
+SKIP_MEASURES = frozenset({"waf_blocked", "no_public_list"})
+
+MEASURE_ALIASES = {"cdn": "civicplus"}
+
+HANDLER_MEASURES = frozenset(
+    {
+        "john_stewart",
+        "gis",
+        "housekeys",
+        "civicplus",
+        "alta",
+        "charities_housing",
+        "midpen",
+        "eden",
+        "eah",
+        "first_housing",
+    }
+)
+
+URL_EXTRACTOR_MEASURES = frozenset({"bloom", "pdf"})
+
+KNOWN_MEASURES = frozenset(
+    {
+        *HANDLER_MEASURES,
+        *URL_EXTRACTOR_MEASURES,
+        *SKIP_MEASURES,
+        *INFORMATIONAL_MEASURES,
+    }
 )
 
 INVENTORY_MEASURES = frozenset(
