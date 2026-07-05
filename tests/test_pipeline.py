@@ -112,7 +112,7 @@ class TestRunPipeline:
         finally:
             os.chdir(orig)
 
-    def test_dedupe_runs_before_upsert(self, tmp_path):
+    def test_canonicalize_and_dedupe_before_upsert(self, tmp_path):
         import os
 
         orig = os.getcwd()

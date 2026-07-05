@@ -3,8 +3,7 @@ Deduplication utilities for housing opportunity records.
 
 When multiple sources (San José portal, SCCHA properties directory, Gilroy PDFs,
 other county lists) are combined, the same physical property often appears in
-more than one place. This module provides conservative, high-precision deduping
-so the final CSV / daily deltas / public table stay clean and actionable.
+more than one place. Operates on canonical Listing rows (post listing_to_row).
 
 Naming note: deduping is a cross-source concern, not tied to any one city or tool.
 """
@@ -14,6 +13,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from housing_list_search.freshness import ListingKey, listing_identity
+from housing_list_search.listing import canonicalize_listings, norm_address
+
+_CROSS_URL_PREFIX = "hls:addr:"
+
 
 def _norm_name(name: str) -> str:
     """Aggressive but safe normalization for matching across sources."""
@@ -21,7 +25,6 @@ def _norm_name(name: str) -> str:
         return ""
     n = name.lower()
 
-    # Remove very common varying suffixes (order matters — longer first)
     suffixes = [
         " senior apartments",
         " family apartments",
@@ -49,112 +52,81 @@ def _norm_name(name: str) -> str:
         else:
             n = n.replace(s, " ")
 
-    # Collapse multiple spaces and remove non-alphanum
     n = re.sub(r"\s+", " ", n)
     n = re.sub(r"[^a-z0-9]", "", n)
     return n.strip()
 
 
-def _norm_address(addr: str) -> str:
-    """Robust street-level key tolerant of real-world formatting differences."""
-    if not addr:
-        return ""
-    a = addr.lower()
-
-    # Normalize common street suffixes
-    a = re.sub(r"\b(st|street)\b", "st", a)
-    a = re.sub(r"\b(ave|avenue)\b", "ave", a)
-    a = re.sub(r"\b(dr|drive)\b", "dr", a)
-    a = re.sub(r"\b(rd|road)\b", "rd", a)
-    a = re.sub(r"\b(blvd|boulevard)\b", "blvd", a)
-    a = re.sub(r"\b(ln|lane)\b", "ln", a)
-    a = re.sub(r"\b(ct|court)\b", "ct", a)
-    a = re.sub(r"\b(pl|place)\b", "pl", a)
-    a = re.sub(r"\b(way)\b", "way", a)
-
-    # Capture street number + up to two following words (handles 'De Rose', 'South Bascom', 'Branham Lane')
-    m = re.search(r"(\d{1,5})\s+([a-z][a-z0-9\-]*(?:\s+[a-z][a-z0-9\-]*)?)", a)
-    if m:
-        num = m.group(1)
-        street = re.sub(r"\s+", "", m.group(2))[:18]
-        return f"{num}{street}"
-
-    # Fallback
-    return re.sub(r"[^a-z0-9]", "", a)[:30]
-
-
-def _make_key(rec: dict[str, Any]) -> tuple[str, str, str]:
-    """Return (name_key, addr_key, addr_only_key).
-    We treat a strong address match as sufficient for dedup even if names differ.
-
-    URLs are NOT used as address fallbacks: many distinct properties can share
-    the same source URL (e.g. a HouseKeys portal or a Housing Group page), so
-    treating the URL as an address key incorrectly deduplicates unrelated records.
+def _cross_source_key(row: dict[str, Any]) -> tuple[str, str] | None:
     """
-    name_key = _norm_name(rec.get("property_name") or rec.get("name", ""))
-    addr_key = _norm_address(rec.get("address", ""))
-    # Pure address key only when the address is a real street address: it must
-    # contain a street number. City-only addresses ("San Jose, CA") normalize
-    # to identical keys and would collapse every property in that city.
-    addr_only = addr_key if len(addr_key) >= 6 and any(c.isdigit() for c in addr_key) else ""
-    return (name_key, addr_key, addr_only)
+    Key for merging the same physical property across authorities.
 
-
-def deduplicate_listings(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    Canonical rows share hls:addr: URLs when street addresses match; otherwise
+    fall back to normalized street number + name pairing.
     """
-    Remove duplicate properties across sources.
+    url = (row.get("url") or "").strip()
+    if url.startswith(_CROSS_URL_PREFIX):
+        return ("url", url)
 
-    Keeps the record that came from the "highest authority" source when possible
-    (currently just the first one seen after a stable sort by confidence + source).
-    Conservative: only drops obvious duplicates.
+    addr_key = norm_address(row.get("address") or "")
+    if len(addr_key) >= 6 and any(c.isdigit() for c in addr_key):
+        return ("addr", addr_key)
+
+    name_key = _norm_name(row.get("property_name") or "")
+    if name_key and addr_key:
+        return ("name_addr", f"{name_key}:{addr_key}")
+
+    return None
+
+
+def deduplicate_listings(
+    listings: list[Any],
+    *,
+    canonical: bool = False,
+) -> list[dict[str, Any]]:
+    """
+    Remove duplicate properties across sources on canonical Listing rows.
+
+    Exact duplicates share a ListingKey (authority, property_name, url).
+    Cross-source mirrors merge on shared hls:addr: URL or street-level address.
+
+    When canonical=False, listing_to_row() runs first (backward-compatible entry).
     """
     if not listings:
         return []
 
-    # Coerce dataclass instances (e.g. HousingRecord from pdf_scraper / extraction)
-    # to plain dicts so all downstream .get() calls are safe.
-    plain: list[dict[str, Any]] = []
-    for rec in listings:
-        if isinstance(rec, dict):
-            plain.append(rec)
-        elif hasattr(rec, "to_dict"):
-            plain.append(rec.to_dict())
-        else:
-            plain.append(vars(rec))
-    listings = plain
+    rows = listings if canonical else canonicalize_listings(listings)
 
-    # Prefer records with higher confidence and more complete contact info
-    def score(rec):
+    def score(rec: dict[str, Any]) -> tuple[float, bool, bool]:
         raw_c = rec.get("confidence", 0.5)
         if isinstance(raw_c, str):
             raw_c = {"high": 0.9, "medium": 0.7, "low": 0.4}.get(raw_c.lower(), 0.5)
         c = float(raw_c)
         has_contact = bool(rec.get("phone") or rec.get("email"))
-        has_url = bool(rec.get("url") or rec.get("document_url"))
+        has_url = bool(rec.get("url"))
         return (c, has_contact, has_url)
 
-    # Stable order: highest score first
-    sorted_listings = sorted(listings, key=score, reverse=True)
+    sorted_rows = sorted(rows, key=score, reverse=True)
 
-    seen: set = set()
+    seen_identity: set[ListingKey] = set()
+    seen_cross: set[tuple[str, str]] = set()
     unique: list[dict[str, Any]] = []
 
-    for rec in sorted_listings:
-        name_k, addr_k, addr_only = _make_key(rec)
+    for rec in sorted_rows:
+        ident = listing_identity(rec)
+        cross = _cross_source_key(rec)
 
-        # Primary key: prefer strong address when available
-        primary = addr_only if addr_only else (name_k, addr_k)
-
-        if primary in seen:
+        if ident in seen_identity:
+            continue
+        if cross and cross in seen_cross:
             continue
 
-        seen.add(primary)
-        # Also block on the composite to be extra safe
-        if name_k and addr_k:
-            seen.add((name_k, addr_k))
+        seen_identity.add(ident)
+        if cross:
+            seen_cross.add(cross)
         unique.append(rec)
 
-    dropped = len(listings) - len(unique)
+    dropped = len(rows) - len(unique)
     if dropped > 0:
         print(f"   [dedupe] Removed {dropped} duplicate properties across sources")
     return unique

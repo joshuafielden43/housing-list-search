@@ -1,7 +1,33 @@
 """Tests for the canonical Listing persistence seam."""
 
 from housing_list_search.extraction.pdf import HousingRecord
-from housing_list_search.listing import coerce_listing, listing_to_row
+from housing_list_search.listing import canonicalize_listings, coerce_listing, listing_to_row
+
+
+class TestCanonicalizeListings:
+    def test_skips_incomplete_rows(self):
+        rows = canonicalize_listings(
+            [
+                {"authority": "City", "property_name": "OK", "url": "https://x"},
+                {"authority": "", "property_name": "Skip", "url": ""},
+            ]
+        )
+        assert len(rows) == 1
+        assert rows[0]["property_name"] == "OK"
+        assert rows[0]["url"] == "https://x"
+
+    def test_surrogate_url_before_dedupe(self):
+        rows = canonicalize_listings(
+            [
+                {
+                    "authority": "SCCHA",
+                    "property_name": "Oak Creek",
+                    "address": "100 Oak St, San Jose, CA",
+                    "url": "",
+                },
+            ]
+        )
+        assert rows[0]["url"].startswith("hls:addr:")
 
 
 class TestCoerceListing:

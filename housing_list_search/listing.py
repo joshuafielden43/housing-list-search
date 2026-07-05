@@ -8,13 +8,38 @@ save_current_full(), and any future export surfaces.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
-from housing_list_search.dedupe import _norm_address
 from housing_list_search.status_labels import resolve_status_label
 
 _SURROGATE_PREFIX = "hls:"
+
+
+def norm_address(addr: str) -> str:
+    """Robust street-level key tolerant of real-world formatting differences."""
+    if not addr:
+        return ""
+    a = addr.lower()
+
+    a = re.sub(r"\b(st|street)\b", "st", a)
+    a = re.sub(r"\b(ave|avenue)\b", "ave", a)
+    a = re.sub(r"\b(dr|drive)\b", "dr", a)
+    a = re.sub(r"\b(rd|road)\b", "rd", a)
+    a = re.sub(r"\b(blvd|boulevard)\b", "blvd", a)
+    a = re.sub(r"\b(ln|lane)\b", "ln", a)
+    a = re.sub(r"\b(ct|court)\b", "ct", a)
+    a = re.sub(r"\b(pl|place)\b", "pl", a)
+    a = re.sub(r"\b(way)\b", "way", a)
+
+    m = re.search(r"(\d{1,5})\s+([a-z][a-z0-9\-]*(?:\s+[a-z][a-z0-9\-]*)?)", a)
+    if m:
+        num = m.group(1)
+        street = re.sub(r"\s+", "", m.group(2))[:18]
+        return f"{num}{street}"
+
+    return re.sub(r"[^a-z0-9]", "", a)[:30]
 
 
 def persistence_url(raw: dict[str, Any]) -> str:
@@ -29,7 +54,7 @@ def persistence_url(raw: dict[str, Any]) -> str:
         return url
 
     address = (raw.get("address") or "").strip()
-    addr_key = _norm_address(address)
+    addr_key = norm_address(address)
     if addr_key and len(addr_key) >= 6 and any(c.isdigit() for c in addr_key):
         return f"{_SURROGATE_PREFIX}addr:{addr_key}"
 
@@ -40,6 +65,20 @@ def persistence_url(raw: dict[str, Any]) -> str:
     if name:
         return f"{_SURROGATE_PREFIX}prop:{name}"
     return ""
+
+
+def canonicalize_listings(
+    listings: list[Any],
+    *,
+    now: str | None = None,
+) -> list[dict[str, Any]]:
+    """Apply listing_to_row() to every adapter record before dedupe or identity checks."""
+    out: list[dict[str, Any]] = []
+    for item in listings:
+        row = listing_to_row(item, now=now)
+        if row.get("authority") and row.get("property_name"):
+            out.append(row)
+    return out
 
 
 def coerce_listing(item: Any) -> dict[str, Any]:
