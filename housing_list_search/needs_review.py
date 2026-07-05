@@ -51,20 +51,18 @@ def notify_needs_review(
     )
 
     webhook = (os.environ.get(_WEBHOOK_ENV) or "").strip()
-    if not webhook:
-        return
-
-    try:
-        resp = requests.post(
-            webhook,
-            data=json.dumps(payload),
-            headers={"Content-Type": "application/json"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        logger.info("Posted Needs Review payload to %s", webhook)
-    except Exception as exc:
-        logger.warning("Needs Review webhook POST failed (%s): %s", webhook, exc)
+    if webhook:
+        try:
+            resp = requests.post(
+                webhook,
+                data=json.dumps(payload),
+                headers={"Content-Type": "application/json"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            logger.info("Posted Needs Review payload to webhook")
+        except Exception as exc:
+            logger.warning("Needs Review webhook POST failed: %s", exc)
 
     from housing_list_search.vikunja_reverification import sync_reverification_tasks
 

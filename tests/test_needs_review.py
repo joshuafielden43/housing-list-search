@@ -50,3 +50,25 @@ def test_notify_webhook_post(monkeypatch):
     assert posted[0]["url"] == "https://example.com/hook"
     assert "City B" in posted[0]["json"]
     assert "City C" in posted[0]["json"]
+
+
+def test_vikunja_sync_without_webhook(monkeypatch):
+    """Vikunja reverification must run when only HLS_VIKUNJA_* is set (#756)."""
+    synced: list[str] = []
+
+    def fake_sync(**kwargs):
+        synced.append(kwargs.get("run_id", ""))
+
+    monkeypatch.delenv("HLS_NEEDS_REVIEW_WEBHOOK", raising=False)
+    monkeypatch.setattr(
+        "housing_list_search.vikunja_reverification.sync_reverification_tasks",
+        fake_sync,
+    )
+
+    notify_needs_review(
+        run_id="run-vikunja",
+        suspicious_zero_authorities=["City X"],
+        reverification_due_authorities=[],
+    )
+
+    assert synced == ["run-vikunja"]
