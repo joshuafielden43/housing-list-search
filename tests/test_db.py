@@ -259,3 +259,11 @@ def test_run_history_is_populated(temp_db):
     mgr.prune(all_stale=True)  # should log
     count = mgr._count_table("run_history")
     assert count >= 1
+
+
+def test_full_run_id_round_trip(temp_db):
+    mgr = temp_db
+    assert mgr.get_previous_full_run_id() is None
+    mgr.log_full_run("20260704T120000", rows_after=10)
+    mgr.log_full_run("20260704T130000", rows_after=12)
+    assert mgr.get_previous_full_run_id() == "20260704T130000"

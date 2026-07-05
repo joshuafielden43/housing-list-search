@@ -24,6 +24,13 @@ class TestInitSchema:
         count = conn.execute("SELECT COUNT(*) FROM targets").fetchone()[0]
         assert count == 0
 
+    def test_run_history_run_id_column(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        conn = connect_sqlite(db_path)
+        init_schema(conn)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(run_history)").fetchall()}
+        assert "run_id" in cols
+
     def test_database_manager_uses_same_schema(self, tmp_path):
         from housing_list_search.db import DatabaseManager
 

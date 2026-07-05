@@ -1297,17 +1297,48 @@ class TestDatabaseManager:
 
 
 class TestChangelogRoundTrip:
-    """generate_changelog must diff against run_prev.csv and snapshot correctly."""
+    """generate_changelog must project from diff.csv and snapshot run_prev for STATUS_CHANGE."""
 
-    def _run_changelog(self, tmp_path, current, skipped=None):
+    _run_counter = 0
+
+    def setup_method(self):
+        TestChangelogRoundTrip._run_counter = 0
+
+    def _run_changelog(self, tmp_path, current, skipped=None, diff_rows=None):
+        import csv
         import os
 
         from housing_list_search.changelog import generate_changelog
 
+        TestChangelogRoundTrip._run_counter += 1
+        run_id = f"run{TestChangelogRoundTrip._run_counter}"
+        previous_run_id = (
+            f"run{TestChangelogRoundTrip._run_counter - 1}"
+            if TestChangelogRoundTrip._run_counter > 1
+            else None
+        )
+
         orig = os.getcwd()
         os.chdir(tmp_path)
         try:
-            generate_changelog(current, skipped_targets=skipped or [])
+            if diff_rows is not None:
+                fieldnames = [
+                    "change_type",
+                    "source_authority",
+                    "property_name",
+                    "url",
+                    "last_run_id",
+                ]
+                with open("diff.csv", "w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(diff_rows)
+            generate_changelog(
+                current,
+                skipped_targets=skipped or [],
+                run_id=run_id,
+                previous_run_id=previous_run_id,
+            )
         finally:
             os.chdir(orig)
 
@@ -1361,7 +1392,18 @@ class TestChangelogRoundTrip:
                 "listing_status": "open",
             }
         ]
-        self._run_changelog(tmp_path, run2)
+        self._run_changelog(
+            tmp_path,
+            run2,
+            diff_rows=[
+                {
+                    "change_type": "NEW",
+                    "source_authority": "City",
+                    "property_name": "New Prop",
+                    "url": "hls:prop:New Prop",
+                },
+            ],
+        )
 
         md = self._read_file(tmp_path, "changelog_diffs.md")
         assert "New Prop" in md
@@ -1395,7 +1437,19 @@ class TestChangelogRoundTrip:
                 "listing_status": "open",
             }
         ]
-        self._run_changelog(tmp_path, run2)
+        self._run_changelog(
+            tmp_path,
+            run2,
+            diff_rows=[
+                {
+                    "change_type": "STALE",
+                    "source_authority": "City",
+                    "property_name": "Gone Prop",
+                    "url": "hls:prop:Gone Prop",
+                    "last_run_id": "run1",
+                },
+            ],
+        )
 
         md = self._read_file(tmp_path, "changelog_diffs.md")
         assert "Gone Prop" in md
@@ -1429,10 +1483,22 @@ class TestChangelogRoundTrip:
                 "listing_status": "open",
             }
         ]
-        self._run_changelog(tmp_path, run2)
+        self._run_changelog(
+            tmp_path,
+            run2,
+            diff_rows=[
+                {
+                    "change_type": "STALE",
+                    "source_authority": "City",
+                    "property_name": "Gone Prop",
+                    "url": "hls:prop:Gone Prop",
+                    "last_run_id": "run1",
+                },
+            ],
+        )
 
         # run3: same as run2 — Gone Prop should NOT appear again
-        self._run_changelog(tmp_path, run2)
+        self._run_changelog(tmp_path, run2, diff_rows=[])
 
         rows = self._read_csv(tmp_path, "changelog_diffs.csv")
         removed = [r for r in rows if r["change_type"] == "REMOVED"]
