@@ -49,9 +49,21 @@ def test_run_daily_flock_blocks_second_instance(tmp_path):
     script_copy.chmod(script_copy.stat().st_mode | stat.S_IEXEC)
     (tmp_path / ".venv" / "bin").mkdir(parents=True)
     (tmp_path / ".venv" / "bin" / "activate").write_text("# stub\n", encoding="utf-8")
+    (tmp_path / "scripts").mkdir(parents=True)
+    (tmp_path / "scripts" / "doctor.py").write_text(
+        "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n",
+        encoding="utf-8",
+    )
 
     # Replace python invocation with a slow no-op so the lock stays held.
     text = script_copy.read_text(encoding="utf-8")
+    text = text.replace("python scripts/doctor.py --dry-run", "python scripts/doctor.py")
+    text = text.replace(
+        'if ! python -c "from playwright.sync_api import sync_playwright" >>"$LOG_FILE" 2>&1; then\n'
+        '  echo "$(date -Iseconds) WARNING: Playwright import failed — browser adapters may fail" | tee -a "$LOG_FILE"\n'
+        "fi\n",
+        "",
+    )
     text = text.replace("python main.py --run", "sleep 2")
     script_copy.write_text(text, encoding="utf-8")
 
