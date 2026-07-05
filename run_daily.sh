@@ -9,6 +9,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+if [[ -f "${ROOT}/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${ROOT}/.env"
+  set +a
+fi
+
 LOCK_FILE="${ROOT}/.run_daily.lock"
 LOG_DIR="${ROOT}/logs"
 LOG_FILE="${LOG_DIR}/run_$(date +%Y%m%d).log"
