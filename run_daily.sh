@@ -9,6 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+# Hermes cron: env from ~/.hermes/.env (inherited). Local override: repo .env if present.
 if [[ -f "${ROOT}/.env" ]]; then
   set -a
   # shellcheck source=/dev/null

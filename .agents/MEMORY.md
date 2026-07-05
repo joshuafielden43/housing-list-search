@@ -99,7 +99,7 @@ Epic **#389** (portable routing + record identity) — **complete** as of 2026-0
 - Parallel targets: `HLS_MAX_TARGET_WORKERS=3` (default); per-host robots cache + throttle in `robots_cache.py` / `host_throttle.py`; Playwright uses `playwright_nav.safe_goto()` throttle
 - Single-target smoke: `python main.py --run --target "Gilroy"`
 - Re-ingest targets: `python scripts/doctor.py --fix`
-- Optional env: copy `.env.example` → `.env` (gitignored); `run_daily.sh` sources it. Vikunja: `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN`; webhook: `HLS_NEEDS_REVIEW_WEBHOOK`
+- **Secrets:** `~/.hermes/.env` (canonical for cron/Hermes). Repo `.env` optional for local runs; `run_daily.sh` sources repo `.env` if present. Vars: `HLS_VIKUNJA_URL`, `HLS_VIKUNJA_TOKEN`, `HLS_NEEDS_REVIEW_WEBHOOK`
 
 ---
 

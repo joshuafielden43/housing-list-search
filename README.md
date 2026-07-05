@@ -34,7 +34,7 @@ python main.py --run                     # full daily scrape
 
 **After each run:** read `daily_summary.md` (staff) and `diff.csv` (machine delta). Check **Needs Review** when suspicious-zero or reverification-due signals fire.
 
-Optional alerts: copy `.env.example` → `.env` (gitignored). `run_daily.sh` sources `.env` automatically.
+Optional alerts — **canonical:** `~/.hermes/.env` (Hermes injects into scheduled runs). Repo `.env` is optional for local manual runs; `run_daily.sh` sources it if present.
 
 - `HLS_NEEDS_REVIEW_WEBHOOK` — JSON POST to Hermes/n8n
 - `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` — create/update `[Reverify] {authority}` tasks in Vikunja project **#9**
