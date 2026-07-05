@@ -80,3 +80,8 @@ fi
   echo "Output files in ${ROOT}:"
   ls -l *.csv *.md 2>/dev/null || echo "(no csv/md outputs yet)"
 } 2>&1 | tee -a "$LOG_FILE"
+# tee succeeds even when main.py fails — propagate the run exit code for cron/Hermes.
+run_exit="${PIPESTATUS[0]:-0}"
+if (( run_exit != 0 )); then
+  exit "$run_exit"
+fi

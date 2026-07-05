@@ -21,6 +21,7 @@ def test_run_daily_contract():
     assert "flock" in text
     assert "LOG_DIR" in text
     assert "tee -a" in text
+    assert "PIPESTATUS[0]" in text
 
 
 def test_run_daily_exits_when_venv_missing(tmp_path):
@@ -67,3 +68,40 @@ def test_run_daily_flock_blocks_second_instance(tmp_path):
 
     assert second.returncode == 1
     assert "already running" in (second.stdout + second.stderr).lower()
+
+
+def test_run_daily_propagates_main_exit_code(tmp_path):
+    """Cron must see non-zero when main.py --run fails, not tee's exit 0 (#757)."""
+    script_copy = tmp_path / "run_daily.sh"
+    shutil.copy(SCRIPT, script_copy)
+    script_copy.chmod(script_copy.stat().st_mode | stat.S_IEXEC)
+    (tmp_path / ".venv" / "bin").mkdir(parents=True)
+    (tmp_path / ".venv" / "bin" / "activate").write_text("# stub\n", encoding="utf-8")
+    (tmp_path / "scripts").mkdir(parents=True)
+    (tmp_path / "scripts" / "doctor.py").write_text(
+        "#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "main.py").write_text(
+        "#!/usr/bin/env python3\nimport sys\nsys.exit(7)\n", encoding="utf-8"
+    )
+
+    text = script_copy.read_text(encoding="utf-8")
+    text = text.replace("python scripts/doctor.py --dry-run", "python scripts/doctor.py")
+    text = text.replace(
+        'if ! python -c "from playwright.sync_api import sync_playwright" >>"$LOG_FILE" 2>&1; then\n'
+        '  echo "$(date -Iseconds) WARNING: Playwright import failed — browser adapters may fail" | tee -a "$LOG_FILE"\n'
+        "fi\n",
+        "",
+    )
+    script_copy.write_text(text, encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", str(script_copy)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 7, (result.stdout, result.stderr)
