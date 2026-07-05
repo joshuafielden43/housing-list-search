@@ -193,11 +193,15 @@ class RunPipeline:
                 STAFF_DAILY_SUMMARY_PATH,
             )
         else:
+            previous_run_id = db.get_previous_full_run_id()
             generate_changelog(
                 all_listings,
                 skipped_targets=skipped,
+                run_id=run_id,
+                previous_run_id=previous_run_id,
                 scrape_failed_authorities=failed_targets,
             )
+            db.log_full_run(run_id, rows_after=counts["inserted"] + counts["updated"])
             generate_daily_summary(
                 all_listings,
                 skipped_targets=skipped,

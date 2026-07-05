@@ -29,7 +29,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Disappearance semantics** | How the system explains records absent from this run. `diff.csv` is the source of truth: staff-facing outputs project these labels rather than deriving closure/removal independently |
 | **Partial run** | `--target "City"` — scopes `diff.csv` STALE; preserves global `run_prev.csv` |
 | **diff.csv** | DB-backed delta (`NEW` / `UPDATED` / `STALE` / `SCRAPE_FAILED`) |
-| **Freshness** | `freshness.py` — listing identity `(authority, property_name, url)`; changelog reads disappearance semantics from `diff.csv` |
+| **Freshness** | `freshness.py` — listing identity `(authority, property_name, url)` |
+| **Disappearance** | `disappearance.py` — projects staff ADDED/REMOVED/STALE/SCRAPE_FAILED from `diff.csv`; `run_prev.csv` used only for STATUS_CHANGE (ADR-0001) |
 | **Coverage** | `coverage.py` — `record_kind`: `property` / `portal` / `program`; UEO-style count excludes portals |
 | **current_full.csv** | Full `housing_records` export |
 

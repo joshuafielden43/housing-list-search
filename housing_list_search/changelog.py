@@ -3,15 +3,8 @@ import csv
 from datetime import datetime
 
 from housing_list_search.csv_safety import sanitize_csv_field
-from housing_list_search.freshness import (
-    ListingKey,
-    compute_run_diff,
-    listing_identity,
-    load_diff_csv_rows,
-    partition_removed_by_scrape_failure,
-    scrape_failed_from_db_rows,
-    stale_from_db_rows,
-)
+from housing_list_search.disappearance import DisappearanceResult, project_disappearance
+from housing_list_search.freshness import ListingKey, listing_identity, load_diff_csv_rows
 
 
 def _load_run_prev(path: str) -> list[dict]:
@@ -40,7 +33,7 @@ def _snapshot_path() -> str:
 
 
 def _write_run_snapshot(current: list) -> None:
-    """Write the current run's listing set to run_prev.csv for next-run diffing."""
+    """Write the current run's listing set to run_prev.csv for next-run STATUS_CHANGE diff."""
     with open(_snapshot_path(), "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(
@@ -74,86 +67,62 @@ def _format_key(key: ListingKey) -> str:
     return f"{auth} — {name}"
 
 
-def generate_changelog(
-    current: list,
-    skipped_targets=None,
+def render_changelog_markdown(
+    result: DisappearanceResult,
     *,
-    diff_csv_path: str = "diff.csv",
-    scrape_failed_authorities: list[str] | None = None,
-):
-    """
-    Diff run_prev against this run's listing set; project disappearance from diff.csv.
-
-    current: deduped listing dicts from this run.
-    diff_csv_path: machine diff written by RunPipeline (source of truth for STALE/SCRAPE_FAILED).
-    scrape_failed_authorities: authorities whose adapters failed this run (ADR-0001).
-    """
-    skipped_targets = skipped_targets or []
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    prev_items = _load_run_prev(_snapshot_path())
-    run_diff = compute_run_diff(prev_items, current)
-    is_first_run = not prev_items
-
-    diff_rows = load_diff_csv_rows(diff_csv_path)
-    staff_removed, scrape_failed_snapshot = partition_removed_by_scrape_failure(
-        run_diff.removed,
-        scrape_failed_authorities,
-    )
-    removed_keys = set(staff_removed) | set(scrape_failed_snapshot)
-    scrape_failed_keys = list(scrape_failed_snapshot) + scrape_failed_from_db_rows(
-        diff_rows,
-        excluded_keys=removed_keys,
-    )
-    stale_keys = stale_from_db_rows(diff_rows, removed_keys=removed_keys)
-
-    # --- Markdown ---
+    current_count: int,
+    skipped_targets: list[tuple[str, str]],
+    timestamp: str,
+) -> str:
+    """Render staff-facing changelog_diffs.md from a DisappearanceResult."""
     md = f"# Housing List Changelog\nRun: {timestamp}\n\n"
 
-    if is_first_run:
-        md += f"First run — {len(current)} listings loaded as baseline.\n\n"
+    if result.is_first_run:
+        md += f"First run — {current_count} listings loaded as baseline.\n\n"
     else:
-        md += f"Previous: {len(prev_items)} listings | Current: {len(current)} listings\n\n"
-        if run_diff.added:
-            md += f"## ✅ New ({len(run_diff.added)})\n"
-            for key in sorted(run_diff.added):
+        md += (
+            f"Previous: {result.prev_count} listings | Current: {result.current_count} listings\n\n"
+        )
+        if result.added:
+            md += f"## ✅ New ({len(result.added)})\n"
+            for key in sorted(result.added):
                 md += f"- {_format_key(key)}\n"
             md += "\n"
-        if staff_removed:
-            md += f"## ❌ Removed ({len(staff_removed)})\n"
-            for key in sorted(staff_removed):
+        if result.removed:
+            md += f"## ❌ Removed ({len(result.removed)})\n"
+            for key in sorted(result.removed):
                 md += f"- {_format_key(key)}\n"
             md += "\n"
-        if scrape_failed_keys:
-            md += f"## ⚠️ Scrape failed ({len(scrape_failed_keys)})\n"
+        if result.scrape_failed:
+            md += f"## ⚠️ Scrape failed ({len(result.scrape_failed)})\n"
             md += (
                 "These records were not confirmed because the authority scrape failed — "
                 "not evidence of closure. See diff.csv SCRAPE_FAILED.\n\n"
             )
-            for key in sorted(scrape_failed_keys):
+            for key in sorted(result.scrape_failed):
                 md += f"- {_format_key(key)}\n"
             md += "\n"
-        if run_diff.status_changed:
-            md += f"## 🔄 Status changed ({len(run_diff.status_changed)})\n"
-            for key, old, new in sorted(run_diff.status_changed):
+        if result.status_changed:
+            md += f"## 🔄 Status changed ({len(result.status_changed)})\n"
+            for key, old, new in sorted(result.status_changed):
                 auth, name, _url = key
                 md += f"- {auth} — {name}: {old} → {new}\n"
             md += "\n"
-        if stale_keys:
-            md += f"## ⏳ Stale in DB ({len(stale_keys)})\n"
+        if result.stale_lingering:
+            md += f"## ⏳ Stale in DB ({len(result.stale_lingering)})\n"
             md += (
                 "These records were not confirmed this run (see diff.csv STALE). "
                 "They may have closed or been removed from source.\n\n"
             )
-            for key in sorted(stale_keys):
+            for key in sorted(result.stale_lingering):
                 md += f"- {_format_key(key)}\n"
             md += "\n"
         if (
-            not run_diff.added
-            and not staff_removed
-            and not scrape_failed_keys
-            and not run_diff.status_changed
-            and not stale_keys
+            not result.added
+            and not result.removed
+            and not result.scrape_failed
+            and not result.status_changed
+            and not result.stale_lingering
         ):
             md += "_No changes detected since last run._\n\n"
 
@@ -170,30 +139,86 @@ def generate_changelog(
             md += "\n"
         md += "\n"
 
-    with open("changelog_diffs.md", "w", encoding="utf-8") as f:
-        f.write(md)
+    return md
 
-    # --- CSV ---
+
+def render_changelog_csv_rows(
+    result: DisappearanceResult,
+    *,
+    current_count: int,
+    skipped_targets: list[tuple[str, str]],
+    timestamp: str,
+) -> list[tuple[str, str, str, str, str]]:
+    """Render changelog_diffs.csv rows from a DisappearanceResult."""
     csv_rows: list[tuple[str, str, str, str, str]] = []
-    if is_first_run:
+    if result.is_first_run:
         csv_rows.append(("INITIAL_RUN", "All Targets", "", "Initial population", timestamp))
     else:
-        for auth, name, url in run_diff.added:
+        for auth, name, url in result.added:
             csv_rows.append(("ADDED", auth, name, url, timestamp))
-        for auth, name, url in staff_removed:
+        for auth, name, url in result.removed:
             csv_rows.append(("REMOVED", auth, name, url, timestamp))
-        for auth, name, url in scrape_failed_keys:
+        for auth, name, url in result.scrape_failed:
             csv_rows.append(("SCRAPE_FAILED", auth, name, url, "authority scrape failed this run"))
-        for (auth, name, url), old, new in run_diff.status_changed:
+        for (auth, name, url), old, new in result.status_changed:
             csv_rows.append(("STATUS_CHANGE", auth, name, url, f"{old} → {new}"))
-        for auth, name, url in stale_keys:
+        for auth, name, url in result.stale_lingering:
             csv_rows.append(("STALE", auth, name, url, "not confirmed this run"))
         if not csv_rows:
-            csv_rows.append(("NO_CHANGE", "", "", "", f"{len(current)} listings unchanged"))
+            csv_rows.append(("NO_CHANGE", "", "", "", f"{current_count} listings unchanged"))
 
     for auth, _ in skipped_targets:
         csv_rows.append(("SKIPPED", "no_public_list", auth, "", timestamp))
 
+    return csv_rows
+
+
+def generate_changelog(
+    current: list,
+    skipped_targets=None,
+    *,
+    run_id: str = "",
+    previous_run_id: str | None = None,
+    diff_csv_path: str = "diff.csv",
+    scrape_failed_authorities: list[str] | None = None,
+):
+    """
+    Project disappearance from diff.csv; render staff changelog artifacts.
+
+    current: deduped listing dicts from this run.
+    run_id / previous_run_id: drive REMOVED vs lingering STALE (from run_history).
+    diff_csv_path: machine diff written by RunPipeline (source of truth per ADR-0001).
+    """
+    skipped_targets = skipped_targets or []
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    prev_items = _load_run_prev(_snapshot_path())
+    diff_rows = load_diff_csv_rows(diff_csv_path)
+
+    result = project_disappearance(
+        run_id=run_id,
+        previous_run_id=previous_run_id,
+        diff_rows=diff_rows,
+        current_listings=current,
+        prev_snapshot=prev_items,
+        scrape_failed_authorities=scrape_failed_authorities,
+    )
+
+    md = render_changelog_markdown(
+        result,
+        current_count=len(current),
+        skipped_targets=skipped_targets,
+        timestamp=timestamp,
+    )
+    with open("changelog_diffs.md", "w", encoding="utf-8") as f:
+        f.write(md)
+
+    csv_rows = render_changelog_csv_rows(
+        result,
+        current_count=len(current),
+        skipped_targets=skipped_targets,
+        timestamp=timestamp,
+    )
     with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["change_type", "authority", "property_name", "url", "details"])
@@ -202,7 +227,7 @@ def generate_changelog(
     _write_run_snapshot(current)
 
     print(
-        f"✅ Generated changelog_diffs.md (+{len(run_diff.added)} added, "
-        f"-{len(staff_removed)} removed, {len(scrape_failed_keys)} scrape_failed, "
-        f"{len(run_diff.status_changed)} status changes, {len(stale_keys)} stale)"
+        f"✅ Generated changelog_diffs.md (+{len(result.added)} added, "
+        f"-{len(result.removed)} removed, {len(result.scrape_failed)} scrape_failed, "
+        f"{len(result.status_changed)} status changes, {len(result.stale_lingering)} stale)"
     )

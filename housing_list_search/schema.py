@@ -117,9 +117,11 @@ def init_run_history_schema(cursor: sqlite3.Cursor) -> None:
             authority_filter TEXT,
             rows_before INTEGER,
             rows_after INTEGER,
-            notes TEXT
+            notes TEXT,
+            run_id TEXT
         )
     """)
+    _migrate_columns(cursor, "run_history", [("run_id", "TEXT")])
 
 
 def init_schema(conn: sqlite3.Connection) -> None:

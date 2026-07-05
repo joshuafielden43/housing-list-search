@@ -114,17 +114,38 @@ class DatabaseManager:
         rows_before: int = 0,
         rows_after: int = 0,
         notes: str = "",
+        *,
+        run_id: str = "",
     ):
         conn = self.connect()
         c = conn.cursor()
         c.execute(
             """
-            INSERT INTO run_history (command, authority_filter, rows_before, rows_after, notes)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO run_history (command, authority_filter, rows_before, rows_after, notes, run_id)
+            VALUES (?, ?, ?, ?, ?, ?)
         """,
-            (command, authority_filter, rows_before, rows_after, notes),
+            (command, authority_filter, rows_before, rows_after, notes, run_id or None),
         )
         conn.commit()
+
+    def get_previous_full_run_id(self) -> str | None:
+        """run_id of the most recent full --run logged before the current invocation."""
+        self.init_db()
+        conn = self.connect()
+        row = conn.execute(
+            """
+            SELECT run_id FROM run_history
+            WHERE command = '--run' AND run_id IS NOT NULL AND run_id != ''
+            ORDER BY id DESC LIMIT 1
+            """
+        ).fetchone()
+        if not row or not row[0]:
+            return None
+        return str(row[0])
+
+    def log_full_run(self, run_id: str, *, rows_after: int = 0, notes: str = "") -> None:
+        """Record a completed full --run for disappearance previous_run_id lookup."""
+        self._log_run("--run", "", 0, rows_after, notes, run_id=run_id)
 
     def prune(
         self,
@@ -639,6 +660,7 @@ class DatabaseManager:
                     notes,
                     last_seen,
                     first_seen,
+                    last_run_id,
                     source,
                     source_url,
                     expires_at
@@ -675,6 +697,7 @@ class DatabaseManager:
                     notes,
                     last_seen,
                     first_seen,
+                    last_run_id,
                     source,
                     source_url,
                     expires_at
