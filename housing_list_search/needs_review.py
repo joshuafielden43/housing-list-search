@@ -18,9 +18,39 @@ from typing import Any
 
 import requests
 
+from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD
+from housing_list_search.url_policy import URLPolicyError, validate_http_url
+
 logger = logging.getLogger(__name__)
 
 _WEBHOOK_ENV = "HLS_NEEDS_REVIEW_WEBHOOK"
+
+
+def _safe_operator_url(url: str, *, label: str) -> str | None:
+    """Validate operator-configured egress URL; return None when policy blocks."""
+    try:
+        return validate_http_url(url.strip(), resolve_dns=False)
+    except URLPolicyError as exc:
+        logger.warning("%s URL blocked by policy: %s", label, exc)
+        return None
+
+
+def should_notify_needs_review(
+    *,
+    suspicious_zero_authorities: list[str],
+    reverification_due_authorities: list[str],
+    stale_n: int = 0,
+    scrape_failed_n: int = 0,
+    stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
+) -> bool:
+    """True when any Needs Review signal is present."""
+    if suspicious_zero_authorities or reverification_due_authorities:
+        return True
+    if scrape_failed_n > 0:
+        return True
+    if stale_n >= stale_warn_threshold:
+        return True
+    return False
 
 
 def notify_needs_review(
@@ -30,9 +60,16 @@ def notify_needs_review(
     reverification_due_authorities: list[str],
     stale_n: int = 0,
     scrape_failed_n: int = 0,
+    stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
 ) -> None:
     """Log and optionally POST when Needs Review signals are present."""
-    if not suspicious_zero_authorities and not reverification_due_authorities:
+    if not should_notify_needs_review(
+        suspicious_zero_authorities=suspicious_zero_authorities,
+        reverification_due_authorities=reverification_due_authorities,
+        stale_n=stale_n,
+        scrape_failed_n=scrape_failed_n,
+        stale_warn_threshold=stale_warn_threshold,
+    ):
         return
 
     payload: dict[str, Any] = {
@@ -44,13 +81,16 @@ def notify_needs_review(
     }
 
     logger.warning(
-        "NEEDS_REVIEW run_id=%s suspicious_zero=%s reverification_due=%s",
+        "NEEDS_REVIEW run_id=%s suspicious_zero=%s reverification_due=%s stale_n=%s scrape_failed_n=%s",
         run_id,
         suspicious_zero_authorities,
         reverification_due_authorities,
+        stale_n,
+        scrape_failed_n,
     )
 
-    webhook = (os.environ.get(_WEBHOOK_ENV) or "").strip()
+    webhook_raw = (os.environ.get(_WEBHOOK_ENV) or "").strip()
+    webhook = _safe_operator_url(webhook_raw, label="Needs Review webhook") if webhook_raw else None
     if webhook:
         try:
             resp = requests.post(

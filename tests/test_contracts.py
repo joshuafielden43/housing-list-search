@@ -240,9 +240,9 @@ class TestSummaryOpenDetection:
         assert "db_manage.py prune" in md
 
     def test_open_listings_show_more_cue_when_truncated(self):
-        listings = [_listing(f"Open Home {i}", status="Open", source="bloom:x") for i in range(30)]
+        listings = [_listing(f"Open Home {i}", status="Open", source="bloom:x") for i in range(105)]
         md = self._run(listings)
-        assert "30 open or accepting applications" in md
+        assert "105 open or accepting applications" in md
         assert "+ 5 more open listing" in md
 
 
@@ -682,8 +682,8 @@ class TestBloomAPIPagination:
         assert len(open_items) == 1
         assert open_items[0]["name"] == "Monroe Commons"
 
-    def test_partial_pagination_abort_discards_results(self):
-        """Mid-pagination HTTP failure must not return a partial item set."""
+    def test_partial_pagination_returns_collected_items_on_failure(self):
+        """Mid-pagination HTTP failure returns items collected so far (#760)."""
         page1_items = [
             {"id": str(i), "name": f"Prop {i}", "listingsBuildingAddress": {"city": "San Jose"}}
             for i in range(100)
@@ -711,7 +711,8 @@ class TestBloomAPIPagination:
         finally:
             bh._API_INSTANCES = orig
 
-        assert open_items == []
+        assert len(open_items) == 100
+        assert open_items[0]["name"] == "Prop 0"
         assert closed_items == []
 
 

@@ -1,6 +1,6 @@
 # scraper.py
 import logging
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -16,6 +16,55 @@ from housing_list_search.robots_cache import get_robots_entry
 from housing_list_search.url_policy import URLPolicyError, validate_http_url
 
 logger = logging.getLogger(__name__)
+
+_MAX_REDIRECT_HOPS = 10
+_REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
+
+
+def _request_with_redirect_policy(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str],
+    timeout: int,
+    stream: bool = True,
+    json: dict | list | None = None,
+):
+    """Issue HTTP request(s), validating each redirect target through url_policy."""
+    current = url
+    for _ in range(_MAX_REDIRECT_HOPS + 1):
+        try:
+            validate_http_url(current)
+        except URLPolicyError as exc:
+            logger.warning("URL policy blocked redirect target %s: %s", current, exc)
+            return None
+
+        kwargs: dict = {
+            "headers": headers,
+            "timeout": timeout,
+            "stream": stream,
+            "allow_redirects": False,
+        }
+        if json is not None:
+            kwargs["json"] = json
+
+        if method == "POST":
+            resp = requests.post(current, **kwargs)
+        else:
+            resp = requests.get(current, **kwargs)
+
+        if resp.status_code not in _REDIRECT_STATUS:
+            return resp
+
+        location = resp.headers.get("Location") or resp.headers.get("location")
+        resp.close()
+        if not location:
+            logger.warning("Redirect from %s missing Location header", current)
+            return None
+        current = urljoin(current, location)
+
+    logger.warning("Redirect hop limit exceeded for %s", url)
+    return None
 
 
 def is_allowed_by_robots(url: str) -> bool:
@@ -95,7 +144,9 @@ def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_B
     try:
         wait_for_host(url, delay)
         logger.debug("Fetching: %s", url)
-        resp = requests.get(url, headers=headers, timeout=15, stream=True)
+        resp = _request_with_redirect_policy("GET", url, headers=headers, timeout=15, stream=True)
+        if resp is None:
+            return None
 
         if resp.status_code == 404:
             logger.warning(
@@ -167,7 +218,16 @@ def polite_post(
     try:
         wait_for_host(url, delay)
         logger.debug("POST: %s", url)
-        resp = requests.post(url, json=json, headers=req_headers, timeout=30, stream=True)
+        resp = _request_with_redirect_policy(
+            "POST",
+            url,
+            headers=req_headers,
+            timeout=30,
+            stream=True,
+            json=json,
+        )
+        if resp is None:
+            return None
 
         if resp.status_code == 404:
             logger.warning(

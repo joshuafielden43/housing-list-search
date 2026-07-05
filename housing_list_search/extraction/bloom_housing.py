@@ -697,12 +697,18 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
             pagination_complete = False
 
     if not pagination_complete:
-        logger.error(
-            "[Bloom] API path: pagination aborted — discarding %d partial item(s) from %s",
-            len(all_items),
-            endpoint,
-        )
-        return [], []
+        if all_items:
+            logger.warning(
+                "[Bloom] API path: pagination incomplete — returning %d partial item(s) from %s",
+                len(all_items),
+                endpoint,
+            )
+        else:
+            logger.error(
+                "[Bloom] API path: pagination aborted with zero items from %s",
+                endpoint,
+            )
+            return [], []
 
     items = all_items
 

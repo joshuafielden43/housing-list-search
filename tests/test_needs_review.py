@@ -2,7 +2,7 @@
 
 import logging
 
-from housing_list_search.needs_review import notify_needs_review
+from housing_list_search.needs_review import notify_needs_review, should_notify_needs_review
 
 
 def test_notify_noop_when_no_signals():
@@ -11,6 +11,47 @@ def test_notify_noop_when_no_signals():
         suspicious_zero_authorities=[],
         reverification_due_authorities=[],
     )
+
+
+def test_should_notify_on_stale_threshold():
+    assert should_notify_needs_review(
+        suspicious_zero_authorities=[],
+        reverification_due_authorities=[],
+        stale_n=5,
+        scrape_failed_n=0,
+    )
+
+
+def test_should_notify_on_scrape_failed():
+    assert should_notify_needs_review(
+        suspicious_zero_authorities=[],
+        reverification_due_authorities=[],
+        stale_n=0,
+        scrape_failed_n=2,
+    )
+
+
+def test_webhook_blocked_by_url_policy(monkeypatch, caplog):
+    monkeypatch.setenv("HLS_NEEDS_REVIEW_WEBHOOK", "http://169.254.169.254/hook")
+    synced: list[str] = []
+
+    def fake_sync(**kwargs):
+        synced.append("ok")
+
+    monkeypatch.setattr(
+        "housing_list_search.vikunja_reverification.sync_reverification_tasks",
+        fake_sync,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        notify_needs_review(
+            run_id="run-x",
+            suspicious_zero_authorities=["City"],
+            reverification_due_authorities=[],
+        )
+
+    assert "NEEDS_REVIEW" in caplog.text
+    assert "blocked by policy" in caplog.text.lower()
 
 
 def test_notify_logs_warning(caplog):

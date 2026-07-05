@@ -15,6 +15,8 @@ from typing import Any
 
 import requests
 
+from housing_list_search.url_policy import URLPolicyError, validate_http_url
+
 logger = logging.getLogger(__name__)
 
 _REVERIFY_PREFIX = "[Reverify]"
@@ -29,9 +31,14 @@ def reverify_task_title(authority: str) -> str:
 
 
 def _vikunja_config() -> tuple[str, str, int] | None:
-    base = (os.environ.get(_ENV_URL) or "").strip().rstrip("/")
+    base_raw = (os.environ.get(_ENV_URL) or "").strip().rstrip("/")
     token = (os.environ.get(_ENV_TOKEN) or "").strip()
-    if not base or not token:
+    if not base_raw or not token:
+        return None
+    try:
+        base = validate_http_url(base_raw, resolve_dns=False).rstrip("/")
+    except URLPolicyError as exc:
+        logger.warning("Vikunja URL blocked by policy: %s", exc)
         return None
     raw_project = (os.environ.get(_ENV_PROJECT) or "").strip()
     try:

@@ -113,6 +113,79 @@ def test_export_diff_csv_marks_scrape_failed_separate_from_stale(temp_db):
             out.unlink()
 
 
+def test_export_diff_csv_includes_record_kind(temp_db):
+    mgr = temp_db
+    mgr.upsert_listings(
+        [
+            {
+                "authority": "City A",
+                "property_name": "Oak Manor",
+                "url": "https://a/1",
+                "source": "midpen:find_housing",
+                "address": "1 Oak",
+            },
+            {
+                "authority": "City B",
+                "property_name": "City B BMR (via HouseKeys)",
+                "url": "https://hk.example/",
+                "source": "housekeys:city_b",
+                "administrator": "HouseKeys",
+            },
+        ],
+        run_id="run1",
+    )
+
+    out = Path(tempfile.gettempdir()) / "test_diff_record_kind.csv"
+    try:
+        mgr.export_diff_csv(str(out), run_id="run1")
+        import csv
+
+        rows = list(csv.DictReader(out.read_text(encoding="utf-8").splitlines()))
+        kinds = {r["property_name"]: r["record_kind"] for r in rows}
+        assert kinds["Oak Manor"] == "property"
+        assert kinds["City B BMR (via HouseKeys)"] == "portal"
+    finally:
+        if out.exists():
+            out.unlink()
+
+
+def test_export_diff_csv_no_run_id_marks_stale_after_7_days(temp_db):
+    mgr = temp_db
+    conn = mgr.connect()
+    conn.execute(
+        """
+        INSERT INTO housing_records (
+            authority, property_name, url, last_seen, first_seen
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        ("City A", "Fresh", "https://a/fresh", "2026-07-04T12:00:00", "2026-06-01T12:00:00"),
+    )
+    conn.execute(
+        """
+        INSERT INTO housing_records (
+            authority, property_name, url, last_seen, first_seen
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        ("City A", "Stale", "https://a/stale", "2020-01-01T12:00:00", "2019-06-01T12:00:00"),
+    )
+    conn.commit()
+
+    out = Path(tempfile.gettempdir()) / "test_diff_7day_fallback.csv"
+    try:
+        mgr.export_diff_csv(str(out))
+        import csv
+
+        rows = {
+            r["property_name"]: r["change_type"]
+            for r in csv.DictReader(out.read_text(encoding="utf-8").splitlines())
+        }
+        assert rows["Fresh"] == "UPDATED"
+        assert rows["Stale"] == "STALE"
+    finally:
+        if out.exists():
+            out.unlink()
+
+
 def test_export_csv_includes_record_kind(temp_db):
     mgr = temp_db
     mgr.upsert_listings(

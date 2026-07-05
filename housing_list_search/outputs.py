@@ -5,7 +5,7 @@ from housing_list_search.coverage import summarize_coverage
 
 PARTIAL_DAILY_SUMMARY_PATH = "daily_summary_partial.md"
 STAFF_DAILY_SUMMARY_PATH = "daily_summary.md"
-OPEN_LISTING_DISPLAY_CAP = 25
+OPEN_LISTING_DISPLAY_CAP = 100
 
 
 def _listing_is_open(listing: dict) -> bool:

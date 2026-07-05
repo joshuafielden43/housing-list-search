@@ -166,6 +166,51 @@ class TestPoliteGet:
             result = polite_get("https://example.gov/blocked")
         assert result is None
 
+    def test_redirect_to_policy_blocked_target_returns_none(self):
+        from housing_list_search.scraper import polite_get
+        from housing_list_search.url_policy import URLPolicyError
+
+        def allow_public_only(url, **kwargs):
+            if "169.254" in url:
+                raise URLPolicyError("link-local blocked")
+            return url
+
+        first = MagicMock()
+        first.status_code = 302
+        first.headers = {"Location": "http://169.254.169.254/latest/meta-data/"}
+        with (
+            patch("housing_list_search.scraper.validate_http_url", side_effect=allow_public_only),
+            patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
+            patch("housing_list_search.scraper.requests.get", return_value=first) as mock_get,
+            patch("housing_list_search.scraper.wait_for_host"),
+            patch("housing_list_search.scraper.mark_host_fetched"),
+        ):
+            result = polite_get("https://example.gov/start")
+        assert result is None
+        assert mock_get.call_count == 1
+
+    def test_redirect_to_allowed_target_follows(self):
+        from housing_list_search.scraper import polite_get
+
+        redirect = MagicMock()
+        redirect.status_code = 302
+        redirect.headers = {"Location": "/final"}
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.iter_content.return_value = [b"ok"]
+        with (
+            patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
+            patch(
+                "housing_list_search.scraper.requests.get",
+                side_effect=[redirect, ok],
+            ) as mock_get,
+            patch("housing_list_search.scraper.wait_for_host"),
+            patch("housing_list_search.scraper.mark_host_fetched"),
+        ):
+            result = polite_get("https://example.gov/start")
+        assert result is ok
+        assert mock_get.call_count == 2
+
     def test_network_exception_returns_none(self):
         import requests as _req
 

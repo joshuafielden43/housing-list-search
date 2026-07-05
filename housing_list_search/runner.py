@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from housing_list_search.dispatch import TargetContext, dispatch_target, extract_target
+from housing_list_search.measure_registry import parse_target_measures
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,7 @@ def run_target(target: dict[str, Any], *, failures: list[str] | None = None) -> 
 
     Returns a list of plain dicts ready for dedupe + upsert.
     """
-    measures_raw = target.get("scraping_measures") or ""
-    measures = {m.strip() for m in measures_raw.split(",") if m.strip()}
+    measures = parse_target_measures(target.get("scraping_measures") or "")
 
     ctx = TargetContext(
         authority=target.get("authority", ""),
