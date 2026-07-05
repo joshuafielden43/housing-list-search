@@ -33,7 +33,11 @@ jobs:
           pip install pip-audit
           pip-audit -r requirements.lock
           pip-audit -r requirements-dev.lock
-          pip-audit -r requirements-ocr.txt
+
+      # Optional OCR tier (marker-pdf) — not installed in CI; tracked in Vikunja #768.
+      - name: Dependency audit — OCR tier (informational)
+        continue-on-error: true
+        run: pip-audit -r requirements-ocr.txt
 
       - name: Validate imports (dry-run doctor)
         run: python scripts/doctor.py --dry-run
