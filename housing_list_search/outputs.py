@@ -218,6 +218,15 @@ def generate_daily_summary(
                 )
                 f.write(f"**{name}**\n")
                 f.write(f"Deadline: {listing.get('deadline') or 'None listed'}\n")
+                addr = listing.get("address") or ""
+                if addr:
+                    f.write(f"Address: {addr}\n")
+                br = listing.get("unit_types") or listing.get("bedrooms") or ""
+                if br:
+                    f.write(f"Units/BR: {br}\n")
+                status = listing.get("status") or ""
+                if status:
+                    f.write(f"Status: {status}\n")
                 f.write(f"Source: {listing['authority']}\n")
                 link = (
                     listing.get("url")

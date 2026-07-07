@@ -8,11 +8,14 @@ Identity and surrogate logic live here for locality.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any
 
 from housing_list_search.status_labels import resolve_status_label
+
+logger = logging.getLogger(__name__)
 
 ListingKey = tuple[str, str, str]
 
@@ -102,10 +105,22 @@ def canonicalize_listings(
 ) -> list[dict[str, Any]]:
     """Apply listing_to_row() to every adapter record before dedupe or identity checks."""
     out: list[dict[str, Any]] = []
+    dropped = 0
     for item in listings:
         row = listing_to_row(item, now=now)
         if row.get("authority") and row.get("property_name"):
             out.append(row)
+        else:
+            dropped += 1
+            logger.warning(
+                "canonicalize_listings dropped row without authority or property_name: "
+                "authority=%r property_name=%r raw_keys=%s",
+                row.get("authority"),
+                row.get("property_name"),
+                list(coerce_listing(item).keys()) if item else [],
+            )
+    if dropped:
+        logger.warning("canonicalize_listings dropped %d incomplete record(s) — see above", dropped)
     return out
 
 

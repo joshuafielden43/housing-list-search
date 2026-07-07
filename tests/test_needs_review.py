@@ -73,11 +73,11 @@ def test_notify_webhook_post(monkeypatch):
             return None
 
     def fake_post(url, **kwargs):
-        posted.append({"url": url, "json": kwargs.get("data")})
+        posted.append({"url": url, "json": kwargs.get("json")})
         return FakeResp()
 
     monkeypatch.setenv("HLS_NEEDS_REVIEW_WEBHOOK", "https://example.com/hook")
-    monkeypatch.setattr("housing_list_search.needs_review.requests.post", fake_post)
+    monkeypatch.setattr("housing_list_search.needs_review.polite_post", fake_post)
 
     notify_needs_review(
         run_id="run-2",
@@ -89,8 +89,8 @@ def test_notify_webhook_post(monkeypatch):
 
     assert len(posted) == 1
     assert posted[0]["url"] == "https://example.com/hook"
-    assert "City B" in posted[0]["json"]
-    assert "City C" in posted[0]["json"]
+    assert "City B" in str(posted[0]["json"])
+    assert "City C" in str(posted[0]["json"])
 
 
 def test_vikunja_sync_without_webhook(monkeypatch):

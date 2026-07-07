@@ -519,10 +519,11 @@ def _fetch_via_ssr(listings_url: str) -> tuple[list[dict], list[dict]]:
     # data["props"]["pageProps"], NOT data["pageProps"].
     # The top-level "pageProps" key does not exist; accessing it directly
     # returns an empty dict and silently yields zero listings.
-    pp = data.get("props", {}).get("pageProps", {})
+    # Tolerant to minor variations in structure for robustness against site changes.
+    pp = data.get("props", {}).get("pageProps", {}) or data.get("pageProps", {}) or {}
 
-    open_l = pp.get("openListings", [])
-    closed_l = pp.get("closedListings", [])
+    open_l = pp.get("openListings") or pp.get("listings") or []
+    closed_l = pp.get("closedListings") or []
 
     if not isinstance(open_l, list) or not isinstance(closed_l, list):
         logger.warning(

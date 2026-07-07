@@ -56,3 +56,29 @@ def test_housing_record_to_dict_roundtrip():
     assert d["property_name"] == "Example Gardens"
     assert d["address"] == "123 Main St"
     assert d["url"] == ""  # because we didn't set document_url
+
+
+def test_bloom_ssr_extraction_robust(monkeypatch):
+    """Unit regression for Bloom SSR path (tolerant parsing)."""
+    from housing_list_search.extraction.bloom_housing import _fetch_via_ssr
+
+    sample_html = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        '{"props":{"pageProps":{"openListings":[{"id":1,"title":"Test Gardens","address":"123 Main St, San Jose","status":"open"}],"closedListings":[]}}}'
+        "</script>"
+    )
+
+    class FakeResp:
+        status_code = 200
+        text = sample_html
+        url = "https://housing.sanjoseca.gov/listings"
+
+    def fake_polite_get(url):
+        return FakeResp()
+
+    monkeypatch.setattr("housing_list_search.extraction.bloom_housing.polite_get", fake_polite_get)
+
+    open_l, closed_l = _fetch_via_ssr("https://housing.sanjoseca.gov/listings")
+    assert len(open_l) == 1
+    assert open_l[0].get("title") == "Test Gardens"
+    assert len(closed_l) == 0

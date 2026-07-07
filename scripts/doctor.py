@@ -187,14 +187,22 @@ def check_playwright() -> bool:
     try:
         if importlib.util.find_spec("playwright.sync_api") is None:
             raise ImportError("playwright.sync_api not found")
-        # Don't actually launch a browser here — just check import + basic readiness
-        print("✅ Playwright Python package is installed")
-        print("   (Run `playwright install` if you haven't already for browser binaries)")
+        # Verify browser binaries are present by attempting a minimal launch
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            browser.close()
+        print("✅ Playwright Python package and Chromium browser installed")
         return True
     except ImportError:
         print("⚠️  Playwright not installed (some targets require it)")
         print("   pip install playwright && playwright install")
         return True  # Not fatal — some targets work without it
+    except Exception as e:
+        print(f"❌ Playwright package installed but browser launch failed: {e}")
+        print("   Run: playwright install chromium")
+        return False  # Treat as issue for browser-dependent adapters
 
 
 def _prune_snapshots(older_than_days: int):

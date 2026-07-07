@@ -252,14 +252,27 @@ def _name_from_documentcenter_slug(url: str) -> str:
 
 
 def _discover_document_links(soup, page_url: str) -> list[str]:
-    """Collect absolutized published-document links from a rendered page."""
+    """Collect absolutized published-document links from a rendered page.
+    Restricts to same-domain or known doc hosts (docaccess, documentcenter) to
+    limit risk from discovered links (see #407). Non-doc external links are skipped.
+    """
+    base = urlparse(page_url).netloc.lower()
     found: list[str] = []
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if any(hint in href.lower() for hint in DOCUMENT_LINK_HINTS):
             abs_url = urljoin(page_url, href)
             if _is_document_candidate(abs_url):
-                found.append(abs_url)
+                p = urlparse(abs_url)
+                host = p.netloc.lower()
+                if (
+                    host == base
+                    or (host and host.endswith("." + base))
+                    or "documentcenter" in host
+                    or "docaccess" in host
+                    or "showpublisheddocument" in href.lower()
+                ):
+                    found.append(abs_url)
     return found
 
 

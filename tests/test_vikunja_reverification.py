@@ -41,13 +41,12 @@ def test_sync_creates_task(monkeypatch):
         calls.append(("GET", url))
         return FakeResp([])
 
-    def fake_put(url, **kwargs):
-        calls.append(("PUT", url))
+    def fake_post(url, **kwargs):
+        calls.append(("POST", url))
         return FakeResp({"id": 901})
 
-    monkeypatch.setattr("housing_list_search.vikunja_reverification.requests.get", fake_get)
-    monkeypatch.setattr("housing_list_search.vikunja_reverification.requests.put", fake_put)
-    monkeypatch.setattr("housing_list_search.vikunja_reverification.requests.post", fake_put)
+    monkeypatch.setattr("housing_list_search.vikunja_reverification.polite_get", fake_get)
+    monkeypatch.setattr("housing_list_search.vikunja_reverification.polite_post", fake_post)
 
     sync_reverification_tasks(
         run_id="run-99",
@@ -56,7 +55,7 @@ def test_sync_creates_task(monkeypatch):
     )
 
     assert calls[0] == ("GET", "https://vikunja.example/api/v1/projects/9/tasks")
-    assert calls[1][0] == "PUT"
+    assert calls[1][0] == "POST"
     assert "/projects/9/tasks" in calls[1][1]
 
 
@@ -83,8 +82,8 @@ def test_sync_updates_existing_task(monkeypatch):
         posts.append(url)
         return FakeResp({"id": 42})
 
-    monkeypatch.setattr("housing_list_search.vikunja_reverification.requests.get", fake_get)
-    monkeypatch.setattr("housing_list_search.vikunja_reverification.requests.post", fake_post)
+    monkeypatch.setattr("housing_list_search.vikunja_reverification.polite_get", fake_get)
+    monkeypatch.setattr("housing_list_search.vikunja_reverification.polite_post", fake_post)
 
     sync_reverification_tasks(
         run_id="run-100",

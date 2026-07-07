@@ -11,15 +11,12 @@ operators need a hook to notice.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
 
-import requests
-
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD
-from housing_list_search.scraper import URLPolicyError, validate_http_url
+from housing_list_search.scraper import URLPolicyError, polite_post, validate_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -93,14 +90,16 @@ def notify_needs_review(
     webhook = _safe_operator_url(webhook_raw, label="Needs Review webhook") if webhook_raw else None
     if webhook:
         try:
-            resp = requests.post(
+            resp = polite_post(
                 webhook,
-                data=json.dumps(payload),
+                json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=15,
             )
-            resp.raise_for_status()
-            logger.info("Posted Needs Review payload to webhook")
+            if resp is not None:
+                resp.raise_for_status()
+                logger.info("Posted Needs Review payload to webhook")
+            else:
+                logger.warning("Needs Review webhook POST blocked by policy")
         except Exception as exc:
             # Do not log full webhook URL (may embed tokens)
             redacted = webhook_raw[:20] + "..." if len(webhook_raw) > 25 else "***"

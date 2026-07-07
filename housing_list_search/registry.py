@@ -196,10 +196,11 @@ def load_targets_to_db():
     with open("TARGETS.md", encoding="utf-8") as f:
         lines = f.readlines()
 
-    # Robust markdown table parser (column-aware, strict length checks).
-    # Rejects on column count drift or embedded | in notes (to keep alignment).
+    # Robust markdown table parser using header column mapping.
+    # Resilient to column reordering, extra columns (e.g. future fields), and minor alignment issues.
+    # Still rejects on embedded | in notes or missing critical columns.
     # Loud warnings + skips instead of silent partial ingest.
-    expected_cols: int | None = None
+    header_map: dict[str, int] | None = None
     sanitized_count = 0
     skipped_count = 0
     in_table = False
@@ -209,23 +210,22 @@ def load_targets_to_db():
         if not stripped or "|" not in stripped:
             continue
 
-        # Detect header and capture its column width; do not treat header row as data
         if not in_table:
             if "City/Authority" in stripped:
                 in_table = True
-                raw_cells = [p.strip() for p in stripped.split("|") if p.strip()]
-                expected_cols = len(raw_cells)
-                continue  # skip header itself
+                header_cells = [p.strip().lower() for p in stripped.split("|") if p.strip()]
+                header_map = {name: idx for idx, name in enumerate(header_cells)}
+                continue  # skip header
             else:
-                # data before explicit header token: use this line's width
+                # pre-header data row (rare); fall back to positional for first row
                 raw_cells = [p.strip() for p in stripped.split("|")]
                 if raw_cells and raw_cells[0] == "":
                     raw_cells = raw_cells[1:]
                 if raw_cells and raw_cells[-1] == "":
                     raw_cells = raw_cells[:-1]
-                if expected_cols is None:
-                    expected_cols = len(raw_cells)
-                # fall through to validation/ingest for this first data row
+                if header_map is None:
+                    # bootstrap a minimal map from this row length (will be overwritten by header)
+                    header_map = {str(i): i for i in range(len(raw_cells))}
         else:
             if stripped.startswith("---"):
                 continue
@@ -235,27 +235,23 @@ def load_targets_to_db():
             if raw_cells and raw_cells[-1] == "":
                 raw_cells = raw_cells[:-1]
 
-        if expected_cols is None:
-            expected_cols = len(raw_cells) if raw_cells else 6
+        if header_map is None:
+            # fallback
+            header_map = {str(i): i for i in range(len(raw_cells) if raw_cells else 12)}
 
-        if len(raw_cells) < expected_cols:
-            logger.warning(
-                "TARGETS parser: column count mismatch (got %d, expected %d). "
-                "Row skipped to prevent data corruption. Check TARGETS.md alignment. "
-                "First cell: %s",
-                len(raw_cells),
-                expected_cols,
-                (raw_cells[0] if raw_cells else "")[:60],
-            )
-            skipped_count += 1
-            continue
-        # allow len > expected (e.g. test minimal header + extra validated cols, or real extended table)
+        # Use header map for robust access; fall back to positional if key missing
+        def get_cell(key: str, fallback_idx: int) -> str:
+            if key in header_map:
+                idx = header_map[key]
+                return raw_cells[idx] if idx < len(raw_cells) else ""
+            return raw_cells[fallback_idx] if fallback_idx < len(raw_cells) else ""
 
-        # Map by position (stable even if header names evolve slightly)
-        # Expected order from TARGETS.md: authority, url, notes, measures, priority, last_seen,
-        # admin, admin_url, admin_phone, admin_contact, validated_zero, validated_zero_review_due
-        authority = raw_cells[0] if len(raw_cells) > 0 else ""
-        if len(raw_cells) > 2 and "|" in raw_cells[2]:
+        authority = get_cell("city/authority", 0)
+        if not authority:
+            authority = raw_cells[0] if raw_cells else ""
+
+        notes = get_cell("notes", 2)
+        if len(notes) > 2 and "|" in notes:  # still guard embedded |
             logger.warning(
                 "Sanitizer rejected row for authority='%s' — pipe character in notes "
                 "breaks column alignment; escape or rephrase notes",
@@ -266,17 +262,17 @@ def load_targets_to_db():
 
         raw = {
             "authority": authority,
-            "url": raw_cells[1] if len(raw_cells) > 1 else "",
-            "notes": raw_cells[2] if len(raw_cells) > 2 else "",
-            "scraping_measures": raw_cells[3] if len(raw_cells) > 3 else "",
-            "priority": raw_cells[4] if len(raw_cells) > 4 else "",
-            "last_seen": raw_cells[5] if len(raw_cells) > 5 else "",
-            "administrator": raw_cells[6] if len(raw_cells) > 6 else "",
-            "administrator_url": raw_cells[7] if len(raw_cells) > 7 else "",
-            "administrator_phone": raw_cells[8] if len(raw_cells) > 8 else "",
-            "administrator_contact": raw_cells[9] if len(raw_cells) > 9 else "",
-            "validated_zero": raw_cells[10] if len(raw_cells) > 10 else "",
-            "validated_zero_review_due": raw_cells[11] if len(raw_cells) > 11 else "",
+            "url": get_cell("url", 1),
+            "notes": notes,
+            "scraping_measures": get_cell("scraping measures", 3),
+            "priority": get_cell("priority", 4),
+            "last_seen": get_cell("last seen", 5),
+            "administrator": get_cell("administrator", 6),
+            "administrator_url": get_cell("administrator url", 7),
+            "administrator_phone": get_cell("administrator phone", 8),
+            "administrator_contact": get_cell("administrator contact", 9),
+            "validated_zero": get_cell("validated zero", 10),
+            "validated_zero_review_due": get_cell("review due", 11),
         }
 
         cleaned = sanitize_target(raw)

@@ -1,6 +1,6 @@
 # generic_scraper.py
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -22,7 +22,10 @@ def generic_scrape(authority: str, url: str, html: str):
             pdf_links.append(full_url)
         elif any(kw in text for kw in ["affordable apartment", "available units", "bmr", "rental"]):
             if full_url not in sub_links and full_url != url:
-                sub_links.append(full_url)
+                p = urlparse(full_url)
+                base = urlparse(url).netloc.lower()
+                if p.netloc == base or (p.netloc and p.netloc.endswith("." + base)):
+                    sub_links.append(full_url)
 
     # Scrape HTML pages
     pages = [(url, html, authority)] + [(link, None, authority) for link in sub_links[:6]]

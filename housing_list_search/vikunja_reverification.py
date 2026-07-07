@@ -13,9 +13,7 @@ import logging
 import os
 from typing import Any
 
-import requests
-
-from housing_list_search.scraper import URLPolicyError, validate_http_url
+from housing_list_search.scraper import URLPolicyError, polite_get, polite_post, validate_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +65,9 @@ def _headers(token: str) -> dict[str, str]:
 
 def _list_open_tasks(base: str, token: str, project_id: int) -> list[dict[str, Any]]:
     url = f"{base}/api/v1/projects/{project_id}/tasks"
-    resp = requests.get(url, headers=_headers(token), timeout=15)
+    resp = polite_get(url, headers=_headers(token))
+    if resp is None:
+        raise RuntimeError("Vikunja list blocked by policy")
     resp.raise_for_status()
     data = resp.json()
     if isinstance(data, list):
@@ -125,8 +125,11 @@ def _create_task(
 ) -> int:
     url = f"{base}/api/v1/projects/{project_id}/tasks"
     body = {"title": title, "description": description, "priority": 4}
-    resp = requests.put(url, json=body, headers=_headers(token), timeout=15)
-    resp.raise_for_status()
+    resp = polite_post(url, json=body, headers=_headers(token))
+    if resp is not None:
+        resp.raise_for_status()
+    else:
+        raise RuntimeError("Vikunja create blocked by policy")
     data = resp.json()
     task_id = data.get("id")
     if task_id is None:
@@ -142,10 +145,11 @@ def _update_task(
     description: str,
 ) -> None:
     url = f"{base}/api/v1/tasks/{task_id}"
-    resp = requests.post(
-        url, json={"description": description}, headers=_headers(token), timeout=15
-    )
-    resp.raise_for_status()
+    resp = polite_post(url, json={"description": description}, headers=_headers(token))
+    if resp is not None:
+        resp.raise_for_status()
+    else:
+        raise RuntimeError("Vikunja update blocked by policy")
 
 
 def sync_reverification_tasks(
