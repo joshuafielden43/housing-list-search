@@ -20,23 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from housing_list_search.listing import canonical_authority, coerce_listing, persistence_url
+from housing_list_search.listing import ListingKey, listing_identity
 from housing_list_search.status_labels import resolve_status_label
-
-ListingKey = tuple[str, str, str]
-
-
-def listing_identity(item: dict[str, Any]) -> ListingKey:
-    """Canonical (authority, property_name, url) for a listing dict or snapshot row."""
-    raw = coerce_listing(item)
-    auth = canonical_authority(raw.get("authority") or raw.get("source_authority") or "")
-    name = (raw.get("property_name") or "").strip()
-    stored = (item.get("url") or "").strip()
-    if stored.startswith("hls:") or "://" in stored:
-        url = stored
-    else:
-        url = persistence_url(raw)
-    return auth, name, url
 
 
 def listings_by_key(items: list[dict[str, Any]]) -> dict[ListingKey, dict[str, Any]]:
@@ -76,12 +61,11 @@ def compute_run_diff(
     return RunDiff(added=added, removed=removed, status_changed=changed)
 
 
-def _key_from_diff_row(row: dict[str, str]) -> ListingKey:
+def key_from_diff_row(row: dict[str, str]) -> ListingKey:
+    """Build ListingKey from a diff.csv row (handles source_authority vs authority column)."""
     return listing_identity(
         {
-            "authority": canonical_authority(
-                row.get("source_authority") or row.get("authority") or ""
-            ),
+            "authority": row.get("source_authority") or row.get("authority") or "",
             "property_name": row.get("property_name") or "",
             "url": row.get("url") or "",
         }
@@ -116,7 +100,7 @@ def stale_from_db_rows(
     for row in diff_rows:
         if row.get("change_type") != "STALE":
             continue
-        key = _key_from_diff_row(row)
+        key = key_from_diff_row(row)
         if key not in removed_keys:
             stale.append(key)
     return stale
@@ -132,7 +116,7 @@ def scrape_failed_from_db_rows(
     for row in diff_rows:
         if row.get("change_type") != "SCRAPE_FAILED":
             continue
-        key = _key_from_diff_row(row)
+        key = key_from_diff_row(row)
         if key not in excluded_keys:
             keys.append(key)
     return keys

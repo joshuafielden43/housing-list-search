@@ -191,7 +191,7 @@ When adding a new adapter:
 
 ## Listing shape (listing.py)
 
-All adapter output crosses `listing_to_row()` at persistence time (`db.upsert_listings()`). Do not add parallel field-mapping paths.
+The deep module at the canonical transformation seam. All adapter output crosses `canonicalize_listings()` / `listing_to_row()` (single coercion + idempotent) before dedupe/identity/persist. `listing_identity()` (and `key_from_diff_row`) provide the canonical key. Surrogate URLs, authority canonicalization, and address normalization live here for locality. Callers (db, dedupe, freshness, disappearance, pipeline, changelog) consume canonical rows or keys; no parallel field-mapping paths. Do not reach low-level helpers from outside.
 
 ## PDF extraction (extraction/pdf.py)
 
@@ -246,7 +246,7 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/scraper.py` | Consolidated safe fetch (polite_get etc.; was split across 5 files) |
 | `housing_list_search/pipeline.py` | Run orchestration: scrape → dedupe → persist → export → changelog |
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
-| `housing_list_search/listing.py` | Canonical `listing_to_row()` at persistence seam |
+| `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row / listing_identity; all shape, surrogate, authority canon, identity here |
 | `housing_list_search/freshness.py` | Unified change semantics (diff.csv ↔ changelog) |
 | `housing_list_search/schema.py` | Sole owner of `housing_registry.db` DDL (`targets`, `housing_records`, `run_history`) |
 | `housing_list_search/sqlite_config.py` | `DEFAULT_DB_PATH`, WAL + busy-timeout connection helper |

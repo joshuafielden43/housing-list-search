@@ -21,6 +21,7 @@ import yaml
 
 from housing_list_search.coverage import classify_record_kind
 from housing_list_search.csv_safety import sanitize_csv_row
+from housing_list_search.listing import canonicalize_listings
 from housing_list_search.schema import init_schema
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
 
@@ -355,14 +356,12 @@ class DatabaseManager:
             run_id = now
         inserted = updated = 0
 
-        from housing_list_search.listing import coerce_listing, listing_to_row
+        # Ensure coercion always goes through the Listing seam (single coercion path).
+        canonical = canonicalize_listings(listings)
 
         # Collect normalized rows first
         to_upsert: list[dict] = []
-        for item in listings:
-            raw = coerce_listing(item)
-            row = listing_to_row(raw, now=now)
-
+        for row in canonical:
             authority = row["authority"]
             property_name = row["property_name"]
             url = row["url"]
@@ -370,7 +369,7 @@ class DatabaseManager:
             if not (authority and property_name):
                 continue
 
-            raw_json = json.dumps(raw, default=str)
+            raw_json = json.dumps(row, default=str)
             to_upsert.append(
                 {
                     "authority": authority,

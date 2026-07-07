@@ -1,9 +1,9 @@
 """
 listing.py — canonical Listing shape at the persistence seam.
 
-Adapters return plain dicts or HousingRecord dataclasses with varying keys.
-listing_to_row() is the single coercion path used by db.upsert_listings(),
-save_current_full(), and any future export surfaces.
+The deep module for turning raw adapter output into canonical Listings.
+listing_to_row() (and canonicalize_listings) is the single coercion path.
+Identity and surrogate logic live here for locality.
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Any
 
 from housing_list_search.status_labels import resolve_status_label
+
+ListingKey = tuple[str, str, str]
 
 _SURROGATE_PREFIX = "hls:"
 
@@ -61,7 +63,7 @@ def norm_address(addr: str) -> str:
     return re.sub(r"[^a-z0-9]", "", a)[:30]
 
 
-def persistence_url(raw: dict[str, Any]) -> str:
+def _persistence_url(raw: dict[str, Any]) -> str:
     """
     URL used for listing identity (DB unique key, changelog, freshness).
 
@@ -84,6 +86,13 @@ def persistence_url(raw: dict[str, Any]) -> str:
     if name:
         return f"{_SURROGATE_PREFIX}prop:{name}"
     return ""
+
+
+def _canon_auth_name(raw: dict[str, Any]) -> tuple[str, str]:
+    """Shared: canonical authority + stripped property_name for both row and identity."""
+    auth = canonical_authority(raw.get("authority") or raw.get("source_authority") or "")
+    name = (raw.get("property_name") or "").strip()
+    return auth, name
 
 
 def canonicalize_listings(
@@ -113,9 +122,15 @@ def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
     """
     Convert adapter output to the canonical housing_records row shape.
 
-    Returns a dict keyed for DB persistence. CSV export maps authority →
-    source_authority at write time (see normalizer.save_current_full).
+    Returns a dict keyed for DB persistence (single coercion path).
+    Production CSV uses db.export_csv() (which projects source_authority);
+    legacy save_current_full path in normalizer also remaps the column.
+
+    Idempotent on already-canonical rows.
     """
+    if isinstance(item, dict) and item.get("scrape_date"):
+        # already canonical
+        return dict(item)
     raw = coerce_listing(item)
     ts = now or datetime.now().isoformat()
 
@@ -138,9 +153,8 @@ def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
     else:
         eligibility_flags = str(flags)
 
-    authority = canonical_authority(raw.get("authority") or raw.get("source_authority") or "")
-    property_name = (raw.get("property_name") or "").strip()
-    url = persistence_url(raw)
+    authority, property_name = _canon_auth_name(raw)
+    url = _persistence_url(raw)
 
     return {
         "authority": authority,
@@ -169,3 +183,25 @@ def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
         "expires_at": (raw.get("expires_at") or "").strip(),
         "scrape_date": ts,
     }
+
+
+def listing_identity(item: Any) -> ListingKey:
+    """Canonical (authority, property_name, url) for a listing dict or snapshot row.
+
+    Idempotent on already-canonical rows (trusts their authority/url).
+    """
+    if isinstance(item, dict) and item.get("scrape_date"):
+        # canonical row produced by listing_to_row: trust pre-computed fields
+        auth = item.get("authority") or ""
+        name = (item.get("property_name") or "").strip()
+        url = (item.get("url") or "").strip()
+        return auth, name, url
+
+    raw = coerce_listing(item)
+    auth, name = _canon_auth_name(raw)
+    stored = (item.get("url") or "").strip() if isinstance(item, dict) else ""
+    if stored.startswith(_SURROGATE_PREFIX) or "://" in stored:
+        url = stored
+    else:
+        url = _persistence_url(raw)
+    return auth, name, url

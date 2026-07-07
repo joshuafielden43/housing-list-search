@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from housing_list_search.freshness import ListingKey, compute_run_diff, listing_identity
+from housing_list_search.freshness import ListingKey, compute_run_diff, key_from_diff_row
 
 
 @dataclass
@@ -24,16 +24,6 @@ class DisappearanceResult:
     status_changed: list[tuple[ListingKey, str, str]] = field(default_factory=list)
     prev_count: int = 0
     current_count: int = 0
-
-
-def _key_from_diff_row(row: dict[str, str]) -> ListingKey:
-    return listing_identity(
-        {
-            "authority": row.get("source_authority") or row.get("authority") or "",
-            "property_name": row.get("property_name") or "",
-            "url": row.get("url") or "",
-        }
-    )
 
 
 def _dedupe_keys(keys: list[ListingKey]) -> list[ListingKey]:
@@ -73,7 +63,7 @@ def project_disappearance(
 
     for row in diff_rows:
         change_type = (row.get("change_type") or "").strip()
-        key = _key_from_diff_row(row)
+        key = key_from_diff_row(row)
 
         if change_type == "NEW":
             added.append(key)

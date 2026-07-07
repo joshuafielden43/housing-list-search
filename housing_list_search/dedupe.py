@@ -13,8 +13,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from housing_list_search.freshness import ListingKey, listing_identity
-from housing_list_search.listing import canonicalize_listings, norm_address
+from housing_list_search.listing import (
+    ListingKey,
+    canonicalize_listings,
+    listing_identity,
+    norm_address,
+)
 
 _CROSS_URL_PREFIX = "hls:addr:"
 
