@@ -7,7 +7,6 @@ directly with a fake run_target_fn — no sys.argv or registry mocking required.
 
 from __future__ import annotations
 
-import csv
 import logging
 import os
 from collections.abc import Callable
@@ -16,10 +15,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+import housing_list_search.artifacts as artifacts_module
 import housing_list_search.dispatch as dispatch_module
-from housing_list_search.changelog import generate_changelog
 from housing_list_search.coverage import summarize_coverage
-from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
@@ -28,7 +26,6 @@ from housing_list_search.needs_review import notify_needs_review
 from housing_list_search.outputs import (
     PARTIAL_DAILY_SUMMARY_PATH,
     STAFF_DAILY_SUMMARY_PATH,
-    generate_daily_summary,
 )
 from housing_list_search.suspicious_zero import find_suspicious_zeros
 from housing_list_search.validated_zero import find_reverification_due
@@ -185,36 +182,25 @@ class RunPipeline:
             scrape_failed_n=scrape_failed_n,
         )
 
+        artifacts_module.generate_run_artifacts(
+            all_listings,
+            db=db,
+            run_id=run_id,
+            partial_run=partial_run,
+            target_filter=target_filter,
+            skipped_targets=skipped,
+            scrape_failed_authorities=failed_targets,
+            run_stats=run_stats,
+            rows_after=counts["inserted"] + counts["updated"],
+        )
         if partial_run:
-            self._write_partial_changelog(target_filter or "")
             logger.info(
                 "Partial --target run: left global run_prev.csv changelog baseline unchanged"
-            )
-            generate_daily_summary(
-                all_listings,
-                skipped_targets=[],
-                output_path=PARTIAL_DAILY_SUMMARY_PATH,
-                run_stats=run_stats,
             )
             logger.info(
                 "Partial --target run: wrote %s; left staff-facing %s unchanged",
                 PARTIAL_DAILY_SUMMARY_PATH,
                 STAFF_DAILY_SUMMARY_PATH,
-            )
-        else:
-            previous_run_id = db.get_previous_full_run_id()
-            generate_changelog(
-                all_listings,
-                skipped_targets=skipped,
-                run_id=run_id,
-                previous_run_id=previous_run_id,
-                scrape_failed_authorities=failed_targets,
-            )
-            db.log_full_run(run_id, rows_after=counts["inserted"] + counts["updated"])
-            generate_daily_summary(
-                all_listings,
-                skipped_targets=skipped,
-                run_stats=run_stats,
             )
 
         if failed_targets:
@@ -291,24 +277,3 @@ class RunPipeline:
             all_listings.extend(o.records)
             listings_by_authority[o.authority] = o.records
         return all_listings, failed_targets, listings_by_authority
-
-    @staticmethod
-    def _write_partial_changelog(target_filter: str) -> None:
-        with open("changelog_diffs.md", "w", encoding="utf-8") as f:
-            f.write("# Housing List Changelog\n\n")
-            f.write(
-                f"Partial --target run for {target_filter!r}; "
-                "global run_prev.csv baseline was not updated.\n"
-            )
-        with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["change_type", "authority", "property_name", "url", "details"])
-            writer.writerow(
-                [
-                    sanitize_csv_field("PARTIAL_RUN"),
-                    sanitize_csv_field("target"),
-                    sanitize_csv_field(target_filter),
-                    sanitize_csv_field(""),
-                    sanitize_csv_field("global changelog baseline not updated"),
-                ]
-            )
