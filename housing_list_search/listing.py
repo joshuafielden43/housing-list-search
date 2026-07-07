@@ -17,6 +17,25 @@ from housing_list_search.status_labels import resolve_status_label
 _SURROGATE_PREFIX = "hls:"
 
 
+def canonical_authority(auth: str) -> str:
+    """Map known authority variants to a stable canonical label for identity keys.
+
+    This prevents NEW/STALE churn and duplicate records when TARGETS.md uses
+    descriptive names (e.g. "John Stewart Company (jsco.net portfolio)") while
+    adapters or other sources emit slightly different strings for the same vendor.
+    All normalization for the (authority, ...) identity key lives here.
+    """
+    a = (auth or "").strip()
+    if not a:
+        return ""
+    low = a.lower()
+    if low.startswith("john stewart") or "john stewart company" in low:
+        return "John Stewart Company"
+    # Add other known vendor/platform aliases here as needed (document in AGENTS.md).
+    # Example future: if "housing group" variants appear, map to "Housing Group".
+    return a
+
+
 def norm_address(addr: str) -> str:
     """Robust street-level key tolerant of real-world formatting differences."""
     if not addr:
@@ -119,7 +138,7 @@ def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
     else:
         eligibility_flags = str(flags)
 
-    authority = (raw.get("authority") or raw.get("source_authority") or "").strip()
+    authority = canonical_authority(raw.get("authority") or raw.get("source_authority") or "")
     property_name = (raw.get("property_name") or "").strip()
     url = persistence_url(raw)
 

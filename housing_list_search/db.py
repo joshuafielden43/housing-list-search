@@ -357,6 +357,8 @@ class DatabaseManager:
 
         from housing_list_search.listing import coerce_listing, listing_to_row
 
+        # Collect normalized rows first
+        to_upsert: list[dict] = []
         for item in listings:
             raw = coerce_listing(item)
             row = listing_to_row(raw, now=now)
@@ -369,120 +371,101 @@ class DatabaseManager:
                 continue
 
             raw_json = json.dumps(raw, default=str)
-            last_seen = row["last_seen"]
-            first_seen_val = row["first_seen"]
-            listing_status = row["listing_status"]
-            status = row["status"]
-            notes = row["notes"]
-            source = row["source"]
-            source_url = row["source_url"]
-            expires_at = row["expires_at"]
-            address = row["address"]
-            phone = row["phone"]
-            email = row["email"]
-            deadline = row["deadline"]
-            bedrooms = row["bedrooms"]
-            income_limits = row["income_limits"]
-            unit_types = row["unit_types"]
-            eligibility_flags = row["eligibility_flags"]
-            confidence = row["confidence"]
-            administrator = row["administrator"]
-            administrator_url = row["administrator_url"]
-            administrator_phone = row["administrator_phone"]
-            administrator_contact = row["administrator_contact"]
-
-            # Check if record exists
-            c.execute(
-                "SELECT id, first_seen FROM housing_records WHERE authority=? AND property_name=? AND url=?",
-                (authority, property_name, url),
+            to_upsert.append(
+                {
+                    "authority": authority,
+                    "property_name": property_name,
+                    "url": url,
+                    "address": row["address"],
+                    "phone": row["phone"],
+                    "email": row["email"],
+                    "deadline": row["deadline"],
+                    "bedrooms": row["bedrooms"],
+                    "income_limits": row["income_limits"],
+                    "unit_types": row["unit_types"],
+                    "eligibility_flags": row["eligibility_flags"],
+                    "status": row["status"],
+                    "listing_status": row["listing_status"],
+                    "notes": row["notes"],
+                    "confidence": row["confidence"],
+                    "administrator": row["administrator"],
+                    "administrator_url": row["administrator_url"],
+                    "administrator_phone": row["administrator_phone"],
+                    "administrator_contact": row["administrator_contact"],
+                    "last_seen": row["last_seen"],
+                    "first_seen": row["first_seen"],
+                    "source": row["source"],
+                    "source_url": row["source_url"],
+                    "expires_at": row["expires_at"],
+                    "raw_json": raw_json,
+                    "run_id": run_id,
+                }
             )
-            existing = c.fetchone()
 
-            if existing:
-                # Preserve original first_seen; update everything else
+        if to_upsert:
+            # Batch existence check (keys only, very light) so we can report accurate
+            # inserted/updated counts without fetching full old rows (the old N+1 data hit).
+            existing: set[tuple[str, str, str]] = set()
+            for r in to_upsert:
                 c.execute(
-                    """
-                    UPDATE housing_records SET
-                        last_seen=?, last_run_id=?, status=?, listing_status=?, notes=?,
-                        source=?, source_url=?, expires_at=?, address=?,
-                        phone=?, email=?, deadline=?,
-                        bedrooms=?, income_limits=?, unit_types=?, eligibility_flags=?,
-                        confidence=?, administrator=?, administrator_url=?,
-                        administrator_phone=?, administrator_contact=?, raw_data=?
-                    WHERE authority=? AND property_name=? AND url=?
-                """,
-                    (
-                        last_seen,
-                        run_id,
-                        status,
-                        listing_status,
-                        notes,
-                        source,
-                        source_url,
-                        expires_at,
-                        address,
-                        phone,
-                        email,
-                        deadline,
-                        bedrooms,
-                        income_limits,
-                        unit_types,
-                        eligibility_flags,
-                        confidence,
-                        administrator,
-                        administrator_url,
-                        administrator_phone,
-                        administrator_contact,
-                        raw_json,
-                        authority,
-                        property_name,
-                        url,
-                    ),
+                    "SELECT 1 FROM housing_records WHERE authority=? AND property_name=? AND url=? LIMIT 1",
+                    (r["authority"], r["property_name"], r["url"]),
                 )
-                updated += 1
-            else:
-                c.execute(
-                    """
-                    INSERT INTO housing_records
-                        (authority, property_name, address, phone, email, url,
-                         status, listing_status, deadline, notes,
-                         bedrooms, income_limits, unit_types, eligibility_flags,
-                         confidence, administrator, administrator_url,
-                         administrator_phone, administrator_contact,
-                         last_seen, first_seen, last_run_id, first_run_id, source, source_url, expires_at, raw_data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        authority,
-                        property_name,
-                        address,
-                        phone,
-                        email,
-                        url,
-                        status,
-                        listing_status,
-                        deadline,
-                        notes,
-                        bedrooms,
-                        income_limits,
-                        unit_types,
-                        eligibility_flags,
-                        confidence,
-                        administrator,
-                        administrator_url,
-                        administrator_phone,
-                        administrator_contact,
-                        last_seen,
-                        first_seen_val,
-                        run_id,
-                        run_id,
-                        source,
-                        source_url,
-                        expires_at,
-                        raw_json,
-                    ),
-                )
-                inserted += 1
+                if c.fetchone():
+                    existing.add((r["authority"], r["property_name"], r["url"]))
+
+            # Single-statement upsert using ON CONFLICT. Eliminates full-row N+1.
+            upsert_sql = """
+                INSERT INTO housing_records
+                    (authority, property_name, address, phone, email, url,
+                     status, listing_status, deadline, notes,
+                     bedrooms, income_limits, unit_types, eligibility_flags,
+                     confidence, administrator, administrator_url,
+                     administrator_phone, administrator_contact,
+                     last_seen, first_seen, last_run_id, first_run_id,
+                     source, source_url, expires_at, raw_data)
+                VALUES
+                    (:authority, :property_name, :address, :phone, :email, :url,
+                     :status, :listing_status, :deadline, :notes,
+                     :bedrooms, :income_limits, :unit_types, :eligibility_flags,
+                     :confidence, :administrator, :administrator_url,
+                     :administrator_phone, :administrator_contact,
+                     :last_seen, :first_seen, :run_id, :run_id,
+                     :source, :source_url, :expires_at, :raw_json)
+                ON CONFLICT (authority, property_name, url) DO UPDATE SET
+                    last_seen = excluded.last_seen,
+                    last_run_id = excluded.last_run_id,
+                    status = excluded.status,
+                    listing_status = excluded.listing_status,
+                    notes = excluded.notes,
+                    source = excluded.source,
+                    source_url = excluded.source_url,
+                    expires_at = excluded.expires_at,
+                    address = excluded.address,
+                    phone = excluded.phone,
+                    email = excluded.email,
+                    deadline = excluded.deadline,
+                    bedrooms = excluded.bedrooms,
+                    income_limits = excluded.income_limits,
+                    unit_types = excluded.unit_types,
+                    eligibility_flags = excluded.eligibility_flags,
+                    confidence = excluded.confidence,
+                    administrator = excluded.administrator,
+                    administrator_url = excluded.administrator_url,
+                    administrator_phone = excluded.administrator_phone,
+                    administrator_contact = excluded.administrator_contact,
+                    raw_data = excluded.raw_data,
+                    first_seen = COALESCE(housing_records.first_seen, excluded.first_seen),
+                    first_run_id = COALESCE(housing_records.first_run_id, excluded.first_run_id)
+            """
+            c.executemany(upsert_sql, to_upsert)
+
+            for r in to_upsert:
+                k = (r["authority"], r["property_name"], r["url"])
+                if k in existing:
+                    updated += 1
+                else:
+                    inserted += 1
 
         conn.commit()
         after = self.get_record_count()

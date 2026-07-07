@@ -4,18 +4,24 @@ import csv
 from pathlib import Path
 
 from housing_list_search.db import DatabaseManager
+from housing_list_search.dispatch import TargetScrapeResult
 from housing_list_search.pipeline import RunPipeline
 
 
-def _fake_listings_for(target: dict, failures: list[str] | None = None) -> list[dict]:
-    return [
-        {
-            "authority": target["authority"],
-            "property_name": f"{target['authority']} Prop",
-            "url": target.get("url", ""),
-            "listing_status": "open",
-        }
-    ]
+def _fake_listings_for(target: dict) -> TargetScrapeResult:
+    auth = target["authority"]
+    return TargetScrapeResult(
+        authority=auth,
+        records=[
+            {
+                "authority": auth,
+                "property_name": f"{auth} Prop",
+                "url": target.get("url", ""),
+                "listing_status": "open",
+            }
+        ],
+        had_error=False,
+    )
 
 
 class TestRunPipeline:
@@ -88,14 +94,18 @@ class TestRunPipeline:
                 db=db,
                 partial_run=True,
                 target_filter="City A",
-                run_target_fn=lambda t, failures=None: [
-                    {
-                        "authority": "City A",
-                        "property_name": "A Prop",
-                        "url": "https://a",
-                        "listing_status": "open",
-                    }
-                ],
+                run_target_fn=lambda t: TargetScrapeResult(
+                    authority="City A",
+                    records=[
+                        {
+                            "authority": "City A",
+                            "property_name": "A Prop",
+                            "url": "https://a",
+                            "listing_status": "open",
+                        }
+                    ],
+                    had_error=False,
+                ),
                 run_id="test-run-partial",
             )
 
@@ -138,8 +148,12 @@ class TestRunPipeline:
                 "listing_status": "open",
             }
 
-            def _dup_target(_t, failures=None):
-                return [dup_a, dup_b]
+            def _dup_target(_t):
+                return TargetScrapeResult(
+                    authority="X",
+                    records=[dup_a, dup_b],
+                    had_error=False,
+                )
 
             result = RunPipeline().run(
                 [{"authority": "X", "url": "", "scraping_measures": ""}],
@@ -163,8 +177,7 @@ class TestRunPipeline:
             db = DatabaseManager(Path("housing_registry.db"))
             db.init_db()
 
-            def _boom(_t, failures):
-                failures.append("City A")
+            def _boom(_t):
                 raise RuntimeError("adapter down")
 
             result = RunPipeline().run(
@@ -186,8 +199,12 @@ class TestRunPipeline:
             db = DatabaseManager(Path("housing_registry.db"))
             db.init_db()
 
-            def _empty_inventory(t, failures=None):
-                return []
+            def _empty_inventory(t):
+                return TargetScrapeResult(
+                    authority=t["authority"],
+                    records=[],
+                    had_error=False,
+                )
 
             targets = [
                 {
@@ -228,8 +245,12 @@ class TestRunPipeline:
             db = DatabaseManager(Path("housing_registry.db"))
             db.init_db()
 
-            def _empty(_t, failures=None):
-                return []
+            def _empty(_t):
+                return TargetScrapeResult(
+                    authority=_t["authority"],
+                    records=[],
+                    had_error=False,
+                )
 
             targets = [
                 {
@@ -290,19 +311,21 @@ class TestRunPipeline:
                 run_id="prior-full",
             )
 
-            def _mixed(t, failures=None):
-                failures = failures if failures is not None else []
+            def _mixed(t):
                 if t["authority"] == "City A":
-                    failures.append("City A")
                     raise RuntimeError("adapter down")
-                return [
-                    {
-                        "authority": "City B",
-                        "property_name": "B Prop",
-                        "url": "https://b",
-                        "listing_status": "open",
-                    }
-                ]
+                return TargetScrapeResult(
+                    authority="City B",
+                    records=[
+                        {
+                            "authority": "City B",
+                            "property_name": "B Prop",
+                            "url": "https://b",
+                            "listing_status": "open",
+                        }
+                    ],
+                    had_error=False,
+                )
 
             targets = [
                 {"authority": "City A", "url": "https://a", "scraping_measures": ""},
@@ -342,9 +365,7 @@ class TestRunPipeline:
             db = DatabaseManager(Path("housing_registry.db"))
             db.init_db()
 
-            def _boom(t, failures=None):
-                failures = failures if failures is not None else []
-                failures.append(t["authority"])
+            def _boom(t):
                 raise RuntimeError("down")
 
             targets = [
@@ -376,8 +397,12 @@ class TestRunPipeline:
             db = DatabaseManager(Path("housing_registry.db"))
             db.init_db()
 
-            def _empty_inventory(_t, failures=None):
-                return []
+            def _empty_inventory(_t):
+                return TargetScrapeResult(
+                    authority=_t["authority"],
+                    records=[],
+                    had_error=False,
+                )
 
             targets = [
                 {
@@ -385,7 +410,7 @@ class TestRunPipeline:
                     "url": "https://campbell.example/",
                     "scraping_measures": "civicplus,delegated_administrator",
                     "validated_zero": "2026-06-05",
-                    "validated_zero_review_due": "2026-07-05",
+                    "validated_zero_review_due": "2026-08-01",
                 }
             ]
 

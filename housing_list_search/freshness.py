@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from housing_list_search.listing import coerce_listing, persistence_url
+from housing_list_search.listing import canonical_authority, coerce_listing, persistence_url
 from housing_list_search.status_labels import resolve_status_label
 
 ListingKey = tuple[str, str, str]
@@ -29,7 +29,7 @@ ListingKey = tuple[str, str, str]
 def listing_identity(item: dict[str, Any]) -> ListingKey:
     """Canonical (authority, property_name, url) for a listing dict or snapshot row."""
     raw = coerce_listing(item)
-    auth = (raw.get("authority") or raw.get("source_authority") or "").strip()
+    auth = canonical_authority(raw.get("authority") or raw.get("source_authority") or "")
     name = (raw.get("property_name") or "").strip()
     stored = (item.get("url") or "").strip()
     if stored.startswith("hls:") or "://" in stored:
@@ -79,7 +79,9 @@ def compute_run_diff(
 def _key_from_diff_row(row: dict[str, str]) -> ListingKey:
     return listing_identity(
         {
-            "authority": row.get("source_authority") or row.get("authority") or "",
+            "authority": canonical_authority(
+                row.get("source_authority") or row.get("authority") or ""
+            ),
             "property_name": row.get("property_name") or "",
             "url": row.get("url") or "",
         }

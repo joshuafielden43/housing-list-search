@@ -105,8 +105,11 @@ from bs4 import BeautifulSoup
 
 from housing_list_search.scraper import polite_get
 
-# Single authority for all John Stewart sources — avoids STALE churn when the
-# same property is seen via SCCHA directory, jscosccha.com, or jsco.net.
+# Fallback canonical authority label for John Stewart sources when no
+# TargetContext authority is supplied. The listing seam (canonical_authority
+# in listing.py) unifies variants (including descriptive TARGETS names like
+# "John Stewart Company (jsco.net portfolio)") to this stable key to avoid
+# STALE churn across SCCHA, jscosccha.com, and jsco.net entries.
 JOHN_STEWART_AUTHORITY = "John Stewart Company"
 
 
@@ -127,7 +130,7 @@ def _normalize(text: str) -> str:
 # =============================================================================
 
 
-def _scrape_sccha_directory(url: str) -> list[dict[str, Any]]:
+def _scrape_sccha_directory(url: str, *, authority: str = "") -> list[dict[str, Any]]:
     """
     Parse SCCHA's custom WordPress properties grid.
 
@@ -136,6 +139,7 @@ def _scrape_sccha_directory(url: str) -> list[dict[str, Any]]:
     point back to the real John Stewart property pages.
     """
     print(f"🧩 Running John Stewart adapter (SCCHA custom directory mode) on {url}")
+    auth = authority or JOHN_STEWART_AUTHORITY
 
     resp = polite_get(url)
     if not resp:
@@ -211,7 +215,7 @@ def _scrape_sccha_directory(url: str) -> list[dict[str, Any]]:
 
         now_iso = _dt.now().isoformat()
         listing = {
-            "authority": JOHN_STEWART_AUTHORITY,
+            "authority": auth,
             "property_name": name or address.split(",")[0].strip(),
             "address": address,
             "url": detail_url or url,
@@ -250,7 +254,7 @@ def _scrape_sccha_directory(url: str) -> list[dict[str, Any]]:
 # =============================================================================
 
 
-def _scrape_direct_john_stewart(url: str) -> list[dict[str, Any]]:
+def _scrape_direct_john_stewart(url: str, *, authority: str = "") -> list[dict[str, Any]]:
     """
     Robust parser for individual property pages on the John Stewart platform
     (jscosccha.com/property/...).
@@ -263,6 +267,7 @@ def _scrape_direct_john_stewart(url: str) -> list[dict[str, Any]]:
     even when John Stewart data is the background source.
     """
     print(f"🧩 Running John Stewart adapter (direct vendor site mode) on {url}")
+    auth = authority or JOHN_STEWART_AUTHORITY
 
     resp = polite_get(url)
     if not resp:
@@ -365,7 +370,7 @@ def _scrape_direct_john_stewart(url: str) -> list[dict[str, Any]]:
 
     if name or address:
         rec = {
-            "authority": JOHN_STEWART_AUTHORITY,
+            "authority": auth,
             "property_name": name or address.split(",")[0].strip(),
             "address": address,
             "phone": phone,
@@ -417,7 +422,7 @@ _JSCO_SCC_CITIES = {
 }
 
 
-def _scrape_jsco_portfolio(url: str) -> list[dict[str, Any]]:
+def _scrape_jsco_portfolio(url: str, *, authority: str = "") -> list[dict[str, Any]]:
     """Fetch all Santa Clara County properties from the jsco.net REST API.
 
     Single paginated query filtered by city taxonomy; returns one record per
@@ -427,6 +432,7 @@ def _scrape_jsco_portfolio(url: str) -> list[dict[str, Any]]:
     import html as _html
 
     print("🧩 Running John Stewart adapter (jsco.net corporate portfolio mode)")
+    auth = authority or JOHN_STEWART_AUTHORITY
 
     city_filter = ",".join(str(i) for i in _JSCO_SCC_CITIES)
     listings: list[dict[str, Any]] = []
@@ -456,7 +462,7 @@ def _scrape_jsco_portfolio(url: str) -> list[dict[str, Any]]:
 
             listings.append(
                 {
-                    "authority": JOHN_STEWART_AUTHORITY,
+                    "authority": auth,
                     "property_name": name,
                     "address": f"{city}, CA" if city else "",
                     "url": item.get("link") or "",
@@ -488,7 +494,7 @@ def _scrape_jsco_portfolio(url: str) -> list[dict[str, Any]]:
 # =============================================================================
 
 
-def scrape_john_stewart(url: str) -> list[dict[str, Any]]:
+def scrape_john_stewart(url: str, *, authority: str = "") -> list[dict[str, Any]]:
     """
     Primary entry point for the John Stewart Company adapter.
 
@@ -501,26 +507,28 @@ def scrape_john_stewart(url: str) -> list[dict[str, Any]]:
     - For any other URL (typically direct jscosccha.com pages), it falls back
       to the direct vendor site parser.
 
-    This design lets us maintain a single adapter file for the entire
-    John Stewart ecosystem regardless of how different municipalities
-    choose to surface the data.
+    The optional `authority` (from TargetContext) is preferred and passed
+    through; callers from dispatch supply the TARGETS.md authority. A module
+    constant provides a fallback for direct use. Downstream canonical_authority()
+    in listing.py ensures stable identity keys across descriptive variants.
     """
     lower_url = url.lower()
+    auth = authority or JOHN_STEWART_AUTHORITY
 
     # SCCHA custom front-end (special structured page)
     if "properties-list" in lower_url and "scchousingauthority.org" in lower_url:
-        return _scrape_sccha_directory(url)
+        return _scrape_sccha_directory(url, authority=auth)
 
     # Corporate portfolio via WordPress REST API (jsco.net)
     if "jsco.net" in lower_url:
-        return _scrape_jsco_portfolio(url)
+        return _scrape_jsco_portfolio(url, authority=auth)
 
     # Any direct page on the John Stewart platform
     if "jscosccha.com" in lower_url or "jscosccha" in lower_url:
-        return _scrape_direct_john_stewart(url)
+        return _scrape_direct_john_stewart(url, authority=auth)
 
     # Fallback — try the direct parser anyway (some links may be relative or mirrored)
-    return _scrape_direct_john_stewart(url)
+    return _scrape_direct_john_stewart(url, authority=auth)
 
 
 # =============================================================================
@@ -537,7 +545,7 @@ def scrape_john_stewart(url: str) -> list[dict[str, Any]]:
 #   4. Write a dedicated parser for the custom front-end (usually easy wins).
 #   5. Keep or improve the direct backend parser.
 #   6. Document the relationship in the module docstring exactly like above.
-#   7. Wire the new URL pattern into runner.py (and update TARGETS.md).
+#   7. Wire the new URL pattern into dispatch.py (and update TARGETS.md).
 #   8. Add the new source to the deduplication logic if it overlaps with
 #      existing sources.
 #

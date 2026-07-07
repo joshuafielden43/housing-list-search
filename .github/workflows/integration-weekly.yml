@@ -26,7 +26,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.lock
+
+      - name: Note on integration tests
+        run: echo "Live portal smoke tests (requires real network + playwright). Failures often mean portal/WAF changes — see TARGETS.md and adapters."
 
       - name: Install Playwright Chromium
         run: playwright install chromium --with-deps

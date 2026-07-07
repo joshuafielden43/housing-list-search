@@ -37,7 +37,7 @@ def test_ground_truth_record_counts(case):
         records = extract_target(case["url"], case.get("authority", ""))
         count = len(records)
     elif method == "run_target":
-        from housing_list_search.runner import run_target
+        from housing_list_search.dispatch import run_target
 
         records = run_target(case["target"])
         count = len(records)

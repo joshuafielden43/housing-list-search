@@ -4,7 +4,7 @@ import re
 from bs4 import BeautifulSoup
 
 from housing_list_search.playwright_nav import safe_goto
-from housing_list_search.url_policy import URLPolicyError
+from housing_list_search.scraper import URLPolicyError
 
 
 def playwright_scrape(authority: str, url: str):

@@ -494,12 +494,10 @@ def _fetch_via_ssr(listings_url: str) -> tuple[list[dict], list[dict]]:
     """
     resp = polite_get(listings_url)
     if not resp:
-        logger.warning("[Bloom] SSR path: polite_get(%s) returned no response", listings_url)
-        return [], []
+        raise RuntimeError(f"[Bloom] SSR path: polite_get returned no response for {listings_url}")
 
     if resp.status_code != 200:
-        logger.warning("[Bloom] SSR path: HTTP %d for %s", resp.status_code, resp.url)
-        return [], []
+        raise RuntimeError(f"[Bloom] SSR path: HTTP {resp.status_code} for {resp.url}")
 
     soup = BeautifulSoup(resp.text, "html.parser")
     tag = soup.find("script", id="__NEXT_DATA__")
@@ -515,8 +513,7 @@ def _fetch_via_ssr(listings_url: str) -> tuple[list[dict], list[dict]]:
     try:
         data = json.loads(tag.string)
     except json.JSONDecodeError as exc:
-        logger.warning("[Bloom] SSR path: failed to parse __NEXT_DATA__ JSON: %s", exc)
-        return [], []
+        raise RuntimeError(f"[Bloom] SSR path: failed to parse __NEXT_DATA__ JSON: {exc}") from exc
 
     # IMPORTANT: the standard Next.js shape nests page data under
     # data["props"]["pageProps"], NOT data["pageProps"].
@@ -579,8 +576,7 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
     """
     from urllib.parse import urlparse
 
-    from housing_list_search.scraper import polite_post
-    from housing_list_search.url_policy import URLPolicyError, validate_http_url
+    from housing_list_search.scraper import URLPolicyError, polite_post, validate_http_url
 
     parsed = urlparse(listings_url)
     host = parsed.netloc  # e.g. "housingbayarea.mtc.ca.gov"
@@ -637,9 +633,7 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
         resp = polite_post(endpoint, json=body, headers=headers)
         if resp is None:
             logger.warning(
-                "[Bloom] API path: request to %s page %d failed or was blocked",
-                endpoint,
-                page,
+                "[Bloom] API path: request to %s page %d failed or was blocked", endpoint, page
             )
             pagination_complete = False
             break

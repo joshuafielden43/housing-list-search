@@ -406,7 +406,7 @@ def parse_housing_line(
 
 def normalize_docaccess_url(url: str) -> tuple[str, str]:
     """Unwrap docaccess.com viewer URLs; returns (real_url, wrapper_url)."""
-    from housing_list_search.url_policy import URLPolicyError, validate_http_url
+    from housing_list_search.scraper import URLPolicyError, validate_http_url
 
     parsed = urlparse(url)
     if parsed.hostname in {"docaccess.com", "www.docaccess.com"} and "docviewer" in parsed.path:
@@ -577,6 +577,10 @@ def extract_records_from_pdf(
         pdf_bytes = _fetch_pdf(real_url)
     except Exception as e:
         logger.warning("[pdf] Failed to fetch %s: %s", real_url, e)
+        return []
+
+    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
+        logger.warning("[pdf] Response does not start with PDF magic signature for %s", real_url)
         return []
 
     flyer_records = _extract_flyer_pages_from_pdf(pdf_bytes, authority, real_url)

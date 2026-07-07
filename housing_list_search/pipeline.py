@@ -10,19 +10,19 @@ from __future__ import annotations
 import csv
 import logging
 import os
-import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-import housing_list_search.runner as runner_module
+import housing_list_search.dispatch as dispatch_module
 from housing_list_search.changelog import generate_changelog
 from housing_list_search.coverage import summarize_coverage
 from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_listings
+from housing_list_search.dispatch import TargetScrapeResult
 from housing_list_search.listing import canonicalize_listings
 from housing_list_search.needs_review import notify_needs_review
 from housing_list_search.outputs import (
@@ -35,7 +35,9 @@ from housing_list_search.validated_zero import find_reverification_due
 
 logger = logging.getLogger("housing_list_search")
 
-TargetFn = Callable[..., list[dict]]
+TargetFn = Callable[
+    [dict[str, Any]], TargetScrapeResult
+]  # the deepened seam: always rich outcome with authority + raw records + had_error
 
 _DEFAULT_MAX_TARGET_WORKERS = 3
 _MAX_TARGET_WORKERS_CAP = 8
@@ -83,11 +85,16 @@ class RunPipeline:
         run_target_fn: TargetFn | None = None,
         run_id: str | None = None,
     ) -> RunResult:
-        scrape = run_target_fn or runner_module.run_target
+        scrape = (
+            run_target_fn or dispatch_module.scrape_target
+        )  # collapsed seam: direct from dispatch (module import for patchability)
         skipped = skipped_targets or []
         target_authorities = [t["authority"] for t in targets] if partial_run else None
 
+        # Deepened TargetScrapeResult seam: each target returns authority + raw records + explicit had_error.
+        # Pipeline collects raw pre-canonical for suspicious_zero; no phantom mutable failures lists.
         all_listings, failed_targets, listings_by_authority = self._scrape_targets(targets, scrape)
+
         suspicious_zero_authorities = find_suspicious_zeros(
             targets, listings_by_authority, failed_targets
         )
@@ -239,43 +246,50 @@ class RunPipeline:
         targets: list[dict[str, Any]],
         scrape: TargetFn,
     ) -> tuple[list[dict], list[str], dict[str, list[dict]]]:
-        all_listings: list[dict] = []
-        listings_by_authority: dict[str, list[dict]] = {}
-        failed_targets: list[str] = []
-        failures_lock = threading.Lock()
-        listings_lock = threading.Lock()
+        """
+        Collect raw results from all Targets.
+
+        The scrape fn is the deepened TargetScrapeResult seam: returns a rich
+        outcome (authority + pre-canonical raw records + had_error).
+
+        listings_by_authority (for Suspicious Zero, pre-Listing) and failed_targets
+        are derived from the outcomes after parallel/serial execution.
+        """
         workers = max_target_workers()
         if workers > 1 and len(targets) > 1:
             logger.info("Scraping %d targets with up to %d parallel workers", len(targets), workers)
 
-        def _run_one(target: dict[str, Any]) -> None:
+        def _run_one(target: dict[str, Any]) -> TargetScrapeResult:
             authority = target.get("authority", "")
-            local_failures: list[str] = []
-            recs: list[dict] = []
             try:
-                recs = scrape(target, failures=local_failures)
-                with listings_lock:
-                    all_listings.extend(recs)
-                    listings_by_authority[authority] = recs
+                res = scrape(target)
+                if isinstance(res, TargetScrapeResult):
+                    return res
+                # support list-returning fakes (e.g. test_performance direct call)
+                return TargetScrapeResult(authority=authority, records=res or [], had_error=False)
             except Exception as exc:
                 logger.error("Error on %s: %s", authority, exc)
-                local_failures.append(authority)
-            if local_failures:
-                with failures_lock:
-                    for name in local_failures:
-                        if name not in failed_targets:
-                            failed_targets.append(name)
+                return TargetScrapeResult(authority=authority, records=[], had_error=True)
 
+        outcomes: list[TargetScrapeResult] = []
         if workers == 1 or len(targets) <= 1:
             for t in targets:
-                _run_one(t)
-            return all_listings, failed_targets, listings_by_authority
+                outcomes.append(_run_one(t))
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(_run_one, t) for t in targets]
+                for fut in as_completed(futures):
+                    outcomes.append(fut.result())
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(_run_one, t) for t in targets]
-            for fut in as_completed(futures):
-                fut.result()
-
+        # Derive collections from the rich seam outcomes (deepened TargetScrapeResult seam)
+        # This makes the per-target Result the source of truth; listings_by_authority
+        # gets the raw pre-canonical records needed by suspicious_zero.
+        all_listings = []
+        listings_by_authority = {}
+        failed_targets = [o.authority for o in outcomes if o.had_error]
+        for o in outcomes:
+            all_listings.extend(o.records)
+            listings_by_authority[o.authority] = o.records
         return all_listings, failed_targets, listings_by_authority
 
     @staticmethod

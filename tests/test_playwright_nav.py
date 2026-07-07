@@ -4,9 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from housing_list_search.host_throttle import reset_host_throttle
 from housing_list_search.playwright_nav import safe_goto, validated_goto_url
-from housing_list_search.url_policy import URLPolicyError
+from housing_list_search.scraper import URLPolicyError, reset_host_throttle
 
 
 def test_validated_goto_url_accepts_public_https():

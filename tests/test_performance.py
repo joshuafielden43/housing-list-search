@@ -8,9 +8,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from housing_list_search.host_throttle import mark_host_fetched, reset_host_throttle, wait_for_host
 from housing_list_search.pipeline import RunPipeline, max_target_workers
-from housing_list_search.robots_cache import RobotsEntry, clear_robots_cache, get_robots_entry
+from housing_list_search.scraper import (
+    RobotsEntry,
+    clear_robots_cache,
+    get_robots_entry,
+    mark_host_fetched,
+    reset_host_throttle,
+    wait_for_host,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -28,9 +34,7 @@ class TestRobotsCache:
         mock_resp.status_code = 200
         mock_resp.iter_content.return_value = [b"User-agent: *\nDisallow:\n"]
 
-        with patch(
-            "housing_list_search.robots_cache.requests.get", return_value=mock_resp
-        ) as mock_get:
+        with patch("housing_list_search.scraper.requests.get", return_value=mock_resp) as mock_get:
             get_robots_entry("https://example.gov", "https://example.gov/robots.txt")
             get_robots_entry("https://example.gov", "https://example.gov/robots.txt")
 
@@ -96,7 +100,7 @@ class TestParallelTargets:
         seen: list[str] = []
         lock = threading.Lock()
 
-        def slow_scrape(target, failures=None):
+        def slow_scrape(target):
             with lock:
                 seen.append(target["authority"])
             active.wait(timeout=2)

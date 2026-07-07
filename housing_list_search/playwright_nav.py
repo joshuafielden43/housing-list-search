@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from housing_list_search.host_throttle import mark_host_fetched, wait_for_host
-from housing_list_search.url_policy import validate_http_url
+from housing_list_search.scraper import mark_host_fetched, validate_http_url, wait_for_host
 
 DEFAULT_PLAYWRIGHT_DELAY = 3
 

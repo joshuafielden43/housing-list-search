@@ -61,7 +61,7 @@ Six first-class adapters, all named after the recurring **platform or vendor** (
 | `adapters/eah.py` | EAH all-properties list, county filter | ~27 county properties |
 | `adapters/first_housing.py` | First Community Housing Wix portfolio (contacts) | ~21 properties |
 
-High-quality structured extraction lives in `extraction/`. Adapters in `adapters/` handle messier or registration-only cases. Routing lives in `dispatch.py` (via `runner.run_target()`), driven by `scraping_measures` plus URL extractors gated on `bloom` / `pdf` measures. Run orchestration lives in `pipeline.py` (via `cli.main()`).
+High-quality structured extraction lives in `extraction/`. Adapters in `adapters/` handle messier or registration-only cases. Routing lives in `dispatch.py` (via `scrape_target()` / `dispatch_target()`), driven by `scraping_measures` plus URL extractors gated on `bloom` / `pdf` measures. Run orchestration lives in `pipeline.py` (via `cli.main()`).
 
 See `CONTEXT.md` for domain glossary (Target, Listing, Run, Measure, Freshness, …).
 
@@ -170,7 +170,7 @@ When you hit a WAF block: document it (what you tried, the specific block signat
 
 ## Routing logic (dispatch.py)
 
-`runner.run_target(target_row)` delegates to `dispatch.dispatch_target()`. Dispatch is measure-driven — URL substrings and authority name patterns are explicitly not used for named adapters. Order of operations:
+`scrape_target(target_row)` (in dispatch) builds context and delegates to `dispatch_target()`. Dispatch is measure-driven — URL substrings and authority name patterns are explicitly not used for named adapters. Order of operations:
 
 1. **URL extractors** (registered in `dispatch.py`) — `bloom` measure + Bloom hostname → `bloom_housing`; `pdf` measure + direct PDF/DocumentCenter URL → `extraction/pdf.py`. Standalone `extract_target()` (integration tests) skips the measure gate.
 2. **Named-measure handlers** — `register_measure()` entries for `john_stewart`, `gis`, `housekeys`, `civicplus` (legacy alias: `cdn`), `alta`, `charities_housing`, `midpen`, `eden`, `eah`, `first_housing`. All matching measures run; zero results from one does not suppress others.
@@ -242,7 +242,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `CONTEXT.md` | Domain glossary for agents and architecture reviews |
 | `docs/adr/` | Architecture decision records (disappearance semantics, Suspicious Zero) |
 | `housing_list_search/dispatch.py` | Unified dispatch registry (measures + URL extractors) |
-| `housing_list_search/runner.py` | Thin wrapper: `run_target()` → `dispatch_target()` |
+| `housing_list_search/dispatch.py` | DispatchRegistry + collapsed Target Scrape seam (scrape_target → TargetScrapeResult; the core of "scrape a Target") |
+| `housing_list_search/scraper.py` | Consolidated safe fetch (polite_get etc.; was split across 5 files) |
 | `housing_list_search/pipeline.py` | Run orchestration: scrape → dedupe → persist → export → changelog |
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Canonical `listing_to_row()` at persistence seam |
@@ -252,9 +253,7 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/db.py` | DatabaseManager: upsert_listings, export_csv, export_diff_csv, prune |
 | `housing_list_search/changelog.py` | Staff-facing changelog; reads STALE from diff.csv |
 | `housing_list_search/registry.py` | TARGETS.md → SQLite `targets` ingest + sanitization |
-| `housing_list_search/scraper.py` | `polite_get()` — the only approved HTTP entry point |
-| `housing_list_search/robots_cache.py` | Per-host robots.txt cache (one fetch per origin per run) |
-| `housing_list_search/host_throttle.py` | Per-host rate limiter (safe with parallel target workers) |
+| `housing_list_search/scraper.py` | `polite_get()` / safe fetch — the only approved HTTP entry point (consolidated: policy, throttle, robots, limits) |
 | `housing_list_search/extraction/bloom_housing.py` | Bloom Housing platform adapter (`BLOOM_DOMAINS`) |
 | `housing_list_search/extraction/pdf.py` | PDF extraction (tables, flyers, marker fallback) |
 | `housing_list_search/extraction/__init__.py` | Public `extract_target()` API (delegates to dispatch) |

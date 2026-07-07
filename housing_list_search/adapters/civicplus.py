@@ -44,7 +44,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
 from housing_list_search.playwright_nav import safe_goto
-from housing_list_search.url_policy import is_safe_http_url
+from housing_list_search.scraper import is_safe_http_url
 
 logger = logging.getLogger(__name__)
 

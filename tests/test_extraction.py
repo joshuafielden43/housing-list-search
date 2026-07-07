@@ -12,30 +12,34 @@ from housing_list_search.extraction import HousingRecord, extract_target
 
 @pytest.mark.integration
 def test_san_jose_dispatcher_returns_real_records():
-    """San José portal via the dedicated Next.js listings.json extractor."""
+    """San José portal (Bloom) via extract_target dispatch path."""
     records = extract_target("https://housing.sanjoseca.gov/listings", "City of San José")
     assert len(records) > 5, "Expected many real San José listings"
     r = records[0]
-    assert isinstance(r, HousingRecord)
-    assert r.authority == "City of San José"
-    assert r.property_name, "Property name must be present"
-    assert r.document_url.startswith("https://housing.sanjoseca.gov/listing/"), (
+    # extract_target (via dispatch) returns plain dicts for uniformity
+    assert isinstance(r, dict)
+    assert r.get("authority") == "City of San José"
+    assert r.get("property_name"), "Property name must be present"
+    doc = r.get("document_url") or r.get("url") or ""
+    assert doc.startswith("https://housing.sanjoseca.gov/listing/"), (
         "Should have direct listing link"
     )
 
 
 @pytest.mark.integration
 def test_gilroy_pdf_dispatcher_returns_real_records():
-    """Gilroy DocumentCenter PDF via the table-aware extractor (one of the known good lists)."""
+    """Gilroy DocumentCenter PDF via extract_target dispatch path."""
     records = extract_target(
         "https://www.cityofgilroy.org/DocumentCenter/View/16518", "City of Gilroy"
     )
     assert len(records) > 5, "Expected multiple rows from the PDF table"
     r = records[0]
-    assert isinstance(r, HousingRecord)
-    assert "Gilroy" in r.authority or not r.authority  # authority set inside
-    assert r.property_name, "Property name must be extracted from table"
-    assert r.address, "Address must be extracted from table"
+    # extract_target (via dispatch) returns plain dicts for uniformity
+    assert isinstance(r, dict)
+    auth = r.get("authority") or ""
+    assert "Gilroy" in auth or not auth
+    assert r.get("property_name"), "Property name must be extracted from table"
+    assert r.get("address"), "Address must be extracted from table"
 
 
 def test_housing_record_to_dict_roundtrip():

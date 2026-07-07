@@ -1,19 +1,289 @@
 # scraper.py
+"""
+Safe, polite HTTP fetching for housing-list-search.
+
+This is the deep module for "look at a link". All outbound HTTP (polite_get, polite_post,
+robots checks) goes through here. It encapsulates:
+- URL policy / SSRF protection (no private nets, metadata, etc.)
+- Robots.txt checking and caching
+- Per-host rate limiting
+- Bounded response sizes
+- Redirect following with policy on each hop
+- Nonprofit User-Agent
+
+Public interface is small and stable. Implementation details (caches, throttles, policy)
+are hidden here for locality and depth.
+"""
+
+import ipaddress
 import logging
+import socket
+import threading
+import time
+import urllib.robotparser
+from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
 import requests
 
-from housing_list_search.host_throttle import mark_host_fetched, wait_for_host
-from housing_list_search.http_limits import (
-    DEFAULT_MAX_RESPONSE_BYTES,
-    USER_AGENT,
+# --- http limits (inlined) ---
+USER_AGENT = "HousingListAggregator-Nonprofit-Santa Clara-v1 (contact: joshua@fielden.org)"
+DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024  # 20 MiB
+
+
+def read_bounded_content(resp: requests.Response, max_bytes: int) -> bytes | None:
+    """Read response body up to max_bytes. Returns None if the cap is exceeded."""
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in resp.iter_content(chunk_size=65536):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > max_bytes:
+            resp.close()
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+_read_bounded_content = read_bounded_content  # for internal polite_get
+
+
+# --- url policy (inlined) ---
+ALLOWED_SCHEMES = ("http", "https")
+
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "metadata.google.internal",
+        "metadata.goog",
+    }
 )
-from housing_list_search.http_limits import (
-    read_bounded_content as _read_bounded_content,
+
+_BLOCKED_HOST_SUBSTRINGS = (
+    ".local",
+    ".internal",
+    "169.254.",
 )
-from housing_list_search.robots_cache import get_robots_entry
-from housing_list_search.url_policy import URLPolicyError, validate_http_url
+
+
+class URLPolicyError(ValueError):
+    """Raised when a URL fails outbound policy checks."""
+
+
+def _hostname_is_blocked(hostname: str) -> bool:
+    host = hostname.lower().rstrip(".")
+    if not host:
+        return True
+    if host in _BLOCKED_HOSTNAMES:
+        return True
+    if any(part in host for part in _BLOCKED_HOST_SUBSTRINGS):
+        return True
+    return False
+
+
+def _ip_is_public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _check_resolved_addresses(hostname: str) -> None:
+    """Resolve hostname and reject if any address is non-public."""
+    try:
+        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise URLPolicyError(f"DNS resolution failed for {hostname!r}: {exc}") from exc
+
+    if not infos:
+        raise URLPolicyError(f"DNS resolution returned no addresses for {hostname!r}")
+
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if not _ip_is_public(ip):
+            raise URLPolicyError(f"URL host {hostname!r} resolves to non-public address {addr}")
+
+
+def validate_http_url(url: str, *, resolve_dns: bool = True) -> str:
+    """
+    Validate that url is safe to fetch over HTTP(S).
+
+    Returns the original url string on success.
+    Raises URLPolicyError on policy violation.
+    """
+    if not url or not str(url).strip():
+        raise URLPolicyError("URL is empty")
+
+    url = str(url).strip()
+    parsed = urlparse(url)
+
+    if parsed.scheme not in ALLOWED_SCHEMES:
+        raise URLPolicyError(f"Disallowed URL scheme: {parsed.scheme!r}")
+
+    if parsed.username or parsed.password:
+        raise URLPolicyError("URLs with embedded credentials are not allowed")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise URLPolicyError("URL has no hostname")
+
+    if _hostname_is_blocked(hostname):
+        raise URLPolicyError(f"Blocked hostname: {hostname!r}")
+
+    # Literal IP in the URL
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        ip = None
+
+    if ip is not None:
+        if not _ip_is_public(ip):
+            raise URLPolicyError(f"Non-public IP address in URL: {hostname}")
+    elif resolve_dns:
+        _check_resolved_addresses(hostname)
+
+    return url
+
+
+def is_safe_http_url(url: str, *, resolve_dns: bool = True) -> bool:
+    """Non-raising policy check for sanitizers."""
+    try:
+        validate_http_url(url, resolve_dns=resolve_dns)
+        return True
+    except URLPolicyError as exc:
+        logger.debug("URL policy rejected %r: %s", url, exc)
+        return False
+
+
+# --- host throttle (inlined) ---
+_HOST_LOCKS: dict[str, threading.Lock] = {}
+_HOST_LAST_FETCH: dict[str, float] = {}
+_META_LOCK = threading.Lock()
+
+
+def _netloc(url_or_host: str) -> str:
+    if "://" in url_or_host:
+        return urlparse(url_or_host).netloc or ""
+    return url_or_host
+
+
+def _host_lock(netloc: str) -> threading.Lock:
+    with _META_LOCK:
+        lock = _HOST_LOCKS.get(netloc)
+        if lock is None:
+            lock = threading.Lock()
+            _HOST_LOCKS[netloc] = lock
+        return lock
+
+
+def wait_for_host(url_or_host: str, delay: float) -> None:
+    """Block until at least ``delay`` seconds have elapsed since the last fetch to this host."""
+    netloc = _netloc(url_or_host)
+    if not netloc or delay <= 0:
+        return
+
+    lock = _host_lock(netloc)
+    with lock:
+        now = time.monotonic()
+        last = _HOST_LAST_FETCH.get(netloc, 0.0)
+        remaining = delay - (now - last)
+        if remaining > 0:
+            time.sleep(remaining)
+
+
+def mark_host_fetched(url_or_host: str) -> None:
+    """Record that a fetch to this host completed (success or failure)."""
+    netloc = _netloc(url_or_host)
+    if not netloc:
+        return
+    lock = _host_lock(netloc)
+    with lock:
+        _HOST_LAST_FETCH[netloc] = time.monotonic()
+
+
+def reset_host_throttle() -> None:
+    """Clear throttle state (tests)."""
+    with _META_LOCK:
+        _HOST_LAST_FETCH.clear()
+
+
+# --- robots cache (inlined) ---
+_ROBOTS_CACHE: dict[str, "RobotsEntry"] = {}
+_CACHE_LOCK = threading.Lock()
+
+
+@dataclass
+class RobotsEntry:
+    """Cached robots.txt evaluation state for one origin."""
+
+    parser: urllib.robotparser.RobotFileParser | None
+    treat_as_allowed: bool
+
+
+def clear_robots_cache() -> None:
+    """Reset cache (tests)."""
+    with _CACHE_LOCK:
+        _ROBOTS_CACHE.clear()
+
+
+def get_robots_entry(base: str, robots_url: str) -> RobotsEntry:
+    """Return cached robots entry for ``base`` (scheme://host), fetching on miss."""
+    with _CACHE_LOCK:
+        cached = _ROBOTS_CACHE.get(base)
+        if cached is not None:
+            return cached
+
+    entry = _fetch_robots_entry(robots_url)
+
+    with _CACHE_LOCK:
+        _ROBOTS_CACHE[base] = entry
+        return entry
+
+
+def _fetch_robots_entry(robots_url: str) -> RobotsEntry:
+    try:
+        resp = requests.get(
+            robots_url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=15,
+            stream=True,
+        )
+        content = _read_bounded_content(resp, 256 * 1024)
+        if content is None:
+            logger.warning(
+                "robots.txt response exceeded size cap for %s — treating as unreachable (allowed)",
+                robots_url,
+            )
+            return RobotsEntry(parser=None, treat_as_allowed=True)
+
+        if resp.status_code in (401, 403):
+            logger.warning(
+                "robots.txt returned HTTP %d for %s — treating as unreachable (allowed). "
+                "If this is a WAF block on the robots fetch itself, document in TARGETS.md.",
+                resp.status_code,
+                robots_url,
+            )
+            return RobotsEntry(parser=None, treat_as_allowed=True)
+        if resp.status_code >= 400:
+            return RobotsEntry(parser=None, treat_as_allowed=True)
+
+        rp = urllib.robotparser.RobotFileParser()
+        rp.set_url(robots_url)
+        rp.parse(content.decode("utf-8", errors="replace").splitlines())
+        return RobotsEntry(parser=rp, treat_as_allowed=False)
+    except Exception as exc:
+        logger.debug("Failed to fetch robots.txt for %s: %s", robots_url, exc)
+        return RobotsEntry(parser=None, treat_as_allowed=True)
+
 
 logger = logging.getLogger(__name__)
 

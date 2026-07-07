@@ -15,7 +15,7 @@ from typing import Any
 
 import requests
 
-from housing_list_search.url_policy import URLPolicyError, validate_http_url
+from housing_list_search.scraper import URLPolicyError, validate_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,15 @@ def _vikunja_config() -> tuple[str, str, int] | None:
     except ValueError:
         project_id = _DEFAULT_PROJECT_ID
     return base, token, project_id
+
+
+def _redacted(token: str) -> str:
+    if not token:
+        return ""
+    t = token.strip()
+    if len(t) <= 8:
+        return "***"
+    return f"{t[:4]}...{t[-4:]}"
 
 
 def _headers(token: str) -> dict[str, str]:

@@ -19,7 +19,7 @@ from typing import Any
 import requests
 
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD
-from housing_list_search.url_policy import URLPolicyError, validate_http_url
+from housing_list_search.scraper import URLPolicyError, validate_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,9 @@ def notify_needs_review(
             resp.raise_for_status()
             logger.info("Posted Needs Review payload to webhook")
         except Exception as exc:
-            logger.warning("Needs Review webhook POST failed: %s", exc)
+            # Do not log full webhook URL (may embed tokens)
+            redacted = webhook_raw[:20] + "..." if len(webhook_raw) > 25 else "***"
+            logger.warning("Needs Review webhook POST failed for %s: %s", redacted, exc)
 
     from housing_list_search.vikunja_reverification import sync_reverification_tasks
 

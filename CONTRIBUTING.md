@@ -64,7 +64,7 @@ pytest tests/ -m integration         # live San José + Gilroy portal checks
 
 1. Check `TARGETS.md` — the city may already be documented (possibly as `no_public_list` or `waf_blocked`).
 2. If the city uses an existing platform (Bloom Housing, HouseKeys, Housing Group/CDN, Alta, GIS), just add a TARGETS.md row with the right URL and `scraping_measures`. No code needed.
-3. If it's a new platform, create `housing_list_search/adapters/{platform_name}.py` following the module docstring and Scope & Guardrails pattern from any existing adapter. Add routing in `runner.py`. Update `AGENTS.md`.
+3. If it's a new platform, create `housing_list_search/adapters/{platform_name}.py` following the module docstring and Scope & Guardrails pattern from any existing adapter. Add routing in `dispatch.py`. Update `AGENTS.md`.
 
 ### Fixing a bug or updating an adapter
 

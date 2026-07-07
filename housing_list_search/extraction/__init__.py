@@ -17,10 +17,11 @@ from .bloom_housing import (
 from .pdf import HousingRecord, extract_records_from_pdf
 
 
-def extract_target(url: str, authority: str = "") -> list[HousingRecord]:
+def extract_target(url: str, authority: str = "") -> list[dict]:
     """
     Standalone URL extraction entry point (integration tests, ground_truth).
     Delegates to the dispatch registry with measure gate disabled.
+    Returns plain dicts (dispatch coerces for uniformity with the rest of the pipeline).
     """
     from housing_list_search.dispatch import extract_target as _dispatch_extract
 

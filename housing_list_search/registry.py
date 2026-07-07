@@ -10,8 +10,8 @@ import re
 import sqlite3
 
 from housing_list_search.schema import init_schema
+from housing_list_search.scraper import is_safe_http_url
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
-from housing_list_search.url_policy import is_safe_http_url
 from housing_list_search.validated_zero import parse_validated_zero_date
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ def sanitize_target(raw: dict) -> dict:
 
     Rows whose URL is blank after sanitization are skipped on ingest.
     That is distinct from waf_blocked targets, which keep a valid URL in
-    TARGETS.md but are skipped at scrape time in runner.py before any fetch.
+    TARGETS.md but are skipped at scrape time in dispatch before any fetch.
     """
     out = {}
 
@@ -196,72 +196,121 @@ def load_targets_to_db():
     with open("TARGETS.md", encoding="utf-8") as f:
         lines = f.readlines()
 
-    in_table = False
+    # Robust markdown table parser (column-aware, strict length checks).
+    # Rejects on column count drift or embedded | in notes (to keep alignment).
+    # Loud warnings + skips instead of silent partial ingest.
+    expected_cols: int | None = None
     sanitized_count = 0
     skipped_count = 0
+    in_table = False
 
     for line in lines:
-        if line.strip().startswith("City/Authority"):
-            in_table = True
+        stripped = line.strip()
+        if not stripped or "|" not in stripped:
             continue
-        if in_table and "|" in line and not line.startswith("---"):
-            parts = [p.strip() for p in line.split("|")]
-            if len(parts) >= 6 and "|" in parts[2]:
-                logger.warning(
-                    "Sanitizer rejected row for authority='%s' — pipe character in notes "
-                    "breaks column alignment; escape or rephrase notes",
-                    parts[0][:60],
-                )
-                skipped_count += 1
+
+        # Detect header and capture its column width; do not treat header row as data
+        if not in_table:
+            if "City/Authority" in stripped:
+                in_table = True
+                raw_cells = [p.strip() for p in stripped.split("|") if p.strip()]
+                expected_cols = len(raw_cells)
+                continue  # skip header itself
+            else:
+                # data before explicit header token: use this line's width
+                raw_cells = [p.strip() for p in stripped.split("|")]
+                if raw_cells and raw_cells[0] == "":
+                    raw_cells = raw_cells[1:]
+                if raw_cells and raw_cells[-1] == "":
+                    raw_cells = raw_cells[:-1]
+                if expected_cols is None:
+                    expected_cols = len(raw_cells)
+                # fall through to validation/ingest for this first data row
+        else:
+            if stripped.startswith("---"):
                 continue
-            if len(parts) >= 6:
-                raw = {
-                    "authority": parts[0],
-                    "url": parts[1],
-                    "notes": parts[2],
-                    "scraping_measures": parts[3],
-                    "priority": parts[4],
-                    "last_seen": parts[5],
-                    "administrator": parts[6] if len(parts) > 6 else "",
-                    "administrator_url": parts[7] if len(parts) > 7 else "",
-                    "administrator_phone": parts[8] if len(parts) > 8 else "",
-                    "administrator_contact": parts[9] if len(parts) > 9 else "",
-                    "validated_zero": parts[10] if len(parts) > 10 else "",
-                    "validated_zero_review_due": parts[11] if len(parts) > 11 else "",
-                }
+            raw_cells = [p.strip() for p in stripped.split("|")]
+            if raw_cells and raw_cells[0] == "":
+                raw_cells = raw_cells[1:]
+            if raw_cells and raw_cells[-1] == "":
+                raw_cells = raw_cells[:-1]
 
-                cleaned = sanitize_target(raw)
+        if expected_cols is None:
+            expected_cols = len(raw_cells) if raw_cells else 6
 
-                # If the URL is empty after sanitization we treat it as a bad row
-                if not cleaned["url"]:
-                    logger.warning(
-                        f"Sanitizer rejected row for authority='{raw['authority'][:60]}' — no usable URL after cleaning"
-                    )
-                    skipped_count += 1
-                    continue
+        if len(raw_cells) < expected_cols:
+            logger.warning(
+                "TARGETS parser: column count mismatch (got %d, expected %d). "
+                "Row skipped to prevent data corruption. Check TARGETS.md alignment. "
+                "First cell: %s",
+                len(raw_cells),
+                expected_cols,
+                (raw_cells[0] if raw_cells else "")[:60],
+            )
+            skipped_count += 1
+            continue
+        # allow len > expected (e.g. test minimal header + extra validated cols, or real extended table)
 
-                c.execute(
-                    """INSERT INTO targets 
-                    (authority, url, notes, scraping_measures, priority, last_seen,
-                     administrator, administrator_url, administrator_phone, administrator_contact,
-                     validated_zero, validated_zero_review_due)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        cleaned["authority"],
-                        cleaned["url"],
-                        cleaned["notes"],
-                        cleaned["scraping_measures"],
-                        cleaned["priority"],
-                        cleaned["last_seen"],
-                        cleaned["administrator"],
-                        cleaned["administrator_url"],
-                        cleaned["administrator_phone"],
-                        cleaned["administrator_contact"],
-                        cleaned["validated_zero"],
-                        cleaned["validated_zero_review_due"],
-                    ),
-                )
-                sanitized_count += 1
+        # Map by position (stable even if header names evolve slightly)
+        # Expected order from TARGETS.md: authority, url, notes, measures, priority, last_seen,
+        # admin, admin_url, admin_phone, admin_contact, validated_zero, validated_zero_review_due
+        authority = raw_cells[0] if len(raw_cells) > 0 else ""
+        if len(raw_cells) > 2 and "|" in raw_cells[2]:
+            logger.warning(
+                "Sanitizer rejected row for authority='%s' — pipe character in notes "
+                "breaks column alignment; escape or rephrase notes",
+                authority[:60],
+            )
+            skipped_count += 1
+            continue
+
+        raw = {
+            "authority": authority,
+            "url": raw_cells[1] if len(raw_cells) > 1 else "",
+            "notes": raw_cells[2] if len(raw_cells) > 2 else "",
+            "scraping_measures": raw_cells[3] if len(raw_cells) > 3 else "",
+            "priority": raw_cells[4] if len(raw_cells) > 4 else "",
+            "last_seen": raw_cells[5] if len(raw_cells) > 5 else "",
+            "administrator": raw_cells[6] if len(raw_cells) > 6 else "",
+            "administrator_url": raw_cells[7] if len(raw_cells) > 7 else "",
+            "administrator_phone": raw_cells[8] if len(raw_cells) > 8 else "",
+            "administrator_contact": raw_cells[9] if len(raw_cells) > 9 else "",
+            "validated_zero": raw_cells[10] if len(raw_cells) > 10 else "",
+            "validated_zero_review_due": raw_cells[11] if len(raw_cells) > 11 else "",
+        }
+
+        cleaned = sanitize_target(raw)
+
+        if not cleaned["url"]:
+            logger.warning(
+                "Sanitizer rejected row for authority='%s' — no usable URL after cleaning",
+                raw["authority"][:60],
+            )
+            skipped_count += 1
+            continue
+
+        c.execute(
+            """INSERT INTO targets 
+            (authority, url, notes, scraping_measures, priority, last_seen,
+             administrator, administrator_url, administrator_phone, administrator_contact,
+             validated_zero, validated_zero_review_due)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                cleaned["authority"],
+                cleaned["url"],
+                cleaned["notes"],
+                cleaned["scraping_measures"],
+                cleaned["priority"],
+                cleaned["last_seen"],
+                cleaned["administrator"],
+                cleaned["administrator_url"],
+                cleaned["administrator_phone"],
+                cleaned["administrator_contact"],
+                cleaned["validated_zero"],
+                cleaned["validated_zero_review_due"],
+            ),
+        )
+        sanitized_count += 1
 
     conn.commit()
     conn.close()

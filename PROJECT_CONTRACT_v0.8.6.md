@@ -28,7 +28,7 @@ This is the short, current contract. Detail lives in `AGENTS.md`, `SOUL.md`, and
 | Target list curation | Human + `TARGETS.md` |
 | Target DB ingest | `registry.py` → `targets` table |
 | Listing persistence | `db.py` → `housing_records` table |
-| Adapter routing | `runner.py` (by `scraping_measures`) |
+| Adapter routing | `dispatch.py` (by `scraping_measures`) |
 | Diagnostics | `scripts/doctor.py` |
 | Destructive DB ops | `scripts/db_manage.py` |
 

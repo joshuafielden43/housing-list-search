@@ -872,7 +872,7 @@ class TestDailySummaryUrlFallback:
 
 
 # ---------------------------------------------------------------------------
-# runner.py — measure-driven dispatch (replaces inline cli.py routing)
+# dispatch.py — measure-driven dispatch (collapsed seam)
 # ---------------------------------------------------------------------------
 
 
@@ -918,7 +918,7 @@ class TestRunnerDispatch:
                 },
             ),
         ):
-            from housing_list_search.runner import run_target
+            from housing_list_search.dispatch import run_target
 
             result = run_target(self._target("housekeys,civicplus"))
 
@@ -943,7 +943,7 @@ class TestRunnerDispatch:
                 },
             ),
         ):
-            from housing_list_search.runner import run_target
+            from housing_list_search.dispatch import run_target
 
             # URL has no "jscosccha" or "properties-list" — routing must come from the measure
             result = run_target(self._target("john_stewart", url="https://example.gov/housing"))
@@ -951,7 +951,7 @@ class TestRunnerDispatch:
 
     def test_waf_blocked_returns_empty_immediately(self):
         with patch("housing_list_search.dispatch._run_url_extractors", return_value=[]) as mock_ext:
-            from housing_list_search.runner import run_target
+            from housing_list_search.dispatch import run_target
 
             result = run_target(self._target("waf_blocked,civicplus"))
         mock_ext.assert_not_called()
@@ -963,7 +963,7 @@ class TestRunnerDispatch:
             patch("housing_list_search.dispatch._run_url_extractors", return_value=[]),
             patch("housing_list_search.dispatch._run_fallbacks", return_value=[]),
         ):
-            from housing_list_search.runner import run_target
+            from housing_list_search.dispatch import run_target
 
             result = run_target(self._target("housekey_typo"))
         assert isinstance(result, list)  # no exception
@@ -983,7 +983,7 @@ class TestRunnerDispatch:
                 },
             ),
         ):
-            from housing_list_search.runner import run_target
+            from housing_list_search.dispatch import run_target
 
             result = run_target(
                 self._target(
@@ -1001,7 +1001,7 @@ class TestRunnerDispatch:
         with patch(
             "housing_list_search.extraction.bloom_housing.extract_bloom_for_target"
         ) as mock_bloom:
-            from housing_list_search.runner import run_target
+            from housing_list_search.dispatch import run_target
 
             run_target(
                 self._target(
@@ -1019,7 +1019,7 @@ class TestRunnerDispatch:
             patch("housing_list_search.dispatch._run_url_extractors", return_value=[]),
             patch("housing_list_search.dispatch._MEASURE_HANDLERS", {"housekeys": _boom}),
         ):
-            from housing_list_search.runner import run_target
+            from housing_list_search.dispatch import run_target
 
             failures: list[str] = []
             result = run_target(self._target("housekeys"), failures=failures)
@@ -1628,7 +1628,7 @@ class TestCliTargetRun:
                 patch("housing_list_search.registry.get_active_targets", return_value=targets),
                 patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
                 patch(
-                    "housing_list_search.runner.run_target",
+                    "housing_list_search.dispatch.scrape_target",
                     return_value=[
                         {
                             "authority": "City A",
@@ -1684,7 +1684,7 @@ class TestCliTargetRun:
                 patch("housing_list_search.registry.get_active_targets", return_value=targets),
                 patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
                 patch(
-                    "housing_list_search.runner.run_target",
+                    "housing_list_search.dispatch.scrape_target",
                     return_value=[
                         {
                             "authority": "City A",
@@ -1733,7 +1733,7 @@ class TestCliTargetRun:
                 patch("housing_list_search.registry.get_active_targets", return_value=targets),
                 patch("housing_list_search.registry.get_skipped_targets", return_value=[]),
                 patch(
-                    "housing_list_search.runner.run_target",
+                    "housing_list_search.dispatch.scrape_target",
                     side_effect=RuntimeError("adapter down"),
                 ),
                 pytest.raises(SystemExit) as excinfo,

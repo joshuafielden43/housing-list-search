@@ -1,8 +1,10 @@
 """
 dispatch.py — unified Target dispatch registry.
 
+The core of the (now collapsed) Target Scrape seam.
+scrape_target() is the primary entry point; returns TargetScrapeResult.
+run_target() is the thin backward-compat wrapper.
 Measures map to adapter handlers; URL predicates map to extraction-layer handlers.
-runner.run_target() delegates here.
 """
 
 from __future__ import annotations
@@ -12,7 +14,28 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from housing_list_search.measure_registry import KNOWN_MEASURES, MEASURE_ALIASES
+from housing_list_search.measure_registry import (
+    KNOWN_MEASURES,
+    MEASURE_ALIASES,
+    parse_target_measures,
+)
+
+
+@dataclass(frozen=True)
+class TargetScrapeResult:
+    """Explicit result of scraping one target.
+
+    Deepened seam artifact. Carries authority for self-description, raw records
+    (pre-Listing canonical for consumers like suspicious_zero), and had_error.
+    Replaces implicit "phantom" tracking via mutable failures lists.
+    had_error=True means some part of the scrape raised; records may be partial.
+    The caller decides what that implies for SCRAPE_FAILED vs STALE.
+    """
+
+    authority: str
+    records: list[Record]
+    had_error: bool = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -122,9 +145,14 @@ def dispatch_target(
     ctx: TargetContext,
     *,
     url_extractor: Callable[[str, str], list[Any]] | None = None,
-    failures: list[str] | None = None,
-) -> list[Record]:
-    """Dispatch one target through URL extractors, measure handlers, then fallbacks."""
+) -> TargetScrapeResult:
+    """Dispatch one Target. Returns records + explicit had_error flag.
+
+    had_error is set on any exception in URL extractors, measure handlers, or fallbacks.
+    waf_blocked and no_public_list short-circuit with had_error=False.
+    Partial records + had_error=True is possible and intentional (upsert what you can;
+    unconfirmed records for the authority will be labelled SCRAPE_FAILED in diff).
+    """
     if "waf_blocked" in ctx.measures:
         logger.warning(
             "SKIPPING %s — waf_blocked (Akamai IP-range block; "
@@ -132,7 +160,7 @@ def dispatch_target(
             "See TARGETS.md notes.",
             ctx.authority,
         )
-        return []
+        return TargetScrapeResult(authority=ctx.authority, records=[], had_error=False)
 
     results: list[Record] = []
     ran_any = False
@@ -180,10 +208,7 @@ def dispatch_target(
     if not ran_any:
         results.extend(_run_fallbacks(ctx, _note_error))
 
-    if had_error and failures is not None and ctx.authority not in failures:
-        failures.append(ctx.authority)
-
-    return results
+    return TargetScrapeResult(authority=ctx.authority, records=results, had_error=had_error)
 
 
 def _run_fallbacks(ctx: TargetContext, note_error: Callable[[], None]) -> list[Record]:
@@ -262,7 +287,9 @@ def _register_measure_handlers() -> None:
     try:
         from housing_list_search.adapters.john_stewart import scrape_john_stewart
 
-        register_measure("john_stewart", lambda ctx: scrape_john_stewart(ctx.url))
+        register_measure(
+            "john_stewart", lambda ctx: scrape_john_stewart(ctx.url, authority=ctx.authority)
+        )
     except ImportError:
         pass
 
@@ -352,3 +379,47 @@ def _register_measure_handlers() -> None:
 
 
 _register_measure_handlers()
+
+
+# ---------------------------------------------------------------------------
+# Collapsed seam: primary scrape entry points (scrape_target / run_target now live here)
+# ---------------------------------------------------------------------------
+
+
+# (no __all__ to allow full public exports from the module)
+
+
+def scrape_target(target: dict[str, Any]) -> TargetScrapeResult:
+    """Primary entry point for orchestration (deepened/collapsed Target Scrape Result seam).
+
+    Returns TargetScrapeResult (authority + raw records + had_error).
+    This is the clean seam (no phantom list mutation, self-describing outcome).
+    """
+    measures = parse_target_measures(target.get("scraping_measures") or "")
+
+    ctx = TargetContext(
+        authority=target.get("authority", ""),
+        url=target.get("url", ""),
+        measures=measures,
+        administrator=target.get("administrator") or "",
+        administrator_url=target.get("administrator_url") or "",
+        administrator_phone=target.get("administrator_phone") or "",
+        administrator_contact=target.get("administrator_contact") or "",
+        notes=target.get("notes") or "",
+    )
+
+    return dispatch_target(ctx)
+
+
+def run_target(target: dict[str, Any], *, failures: list[str] | None = None) -> list[dict]:
+    """
+    Backward-compat wrapper for direct calls and tests that still pass `failures=`.
+
+    Prefer `scrape_target` for new orchestration code.
+    """
+    outcome = scrape_target(target)
+    if failures is not None and outcome.had_error:
+        auth = target.get("authority", "")
+        if auth and auth not in failures:
+            failures.append(auth)
+    return outcome.records

@@ -1,6 +1,6 @@
 """Dispatch failure propagation when adapters error but return empty."""
 
-from housing_list_search.dispatch import TargetContext, dispatch_target
+from housing_list_search.dispatch import TargetContext, TargetScrapeResult, dispatch_target
 
 
 def _failing_civicplus(_ctx: TargetContext) -> list[dict]:
@@ -14,13 +14,13 @@ class TestDispatchFailurePropagation:
         monkeypatch.setitem(dispatch._MEASURE_HANDLERS, "civicplus", _failing_civicplus)
         monkeypatch.setattr(dispatch, "_run_fallbacks", lambda _ctx, _note_error: [])
 
-        failures: list[str] = []
         ctx = TargetContext(
             authority="City of Gilroy",
             url="https://www.cityofgilroy.org/housing",
             measures={"civicplus"},
         )
-        recs = dispatch_target(ctx, failures=failures)
+        outcome: TargetScrapeResult = dispatch_target(ctx)
 
-        assert recs == []
-        assert failures == ["City of Gilroy"]
+        assert outcome.authority == "City of Gilroy"
+        assert outcome.records == []
+        assert outcome.had_error is True

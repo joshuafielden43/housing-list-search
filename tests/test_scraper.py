@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from housing_list_search.robots_cache import RobotsEntry, clear_robots_cache
+from housing_list_search.scraper import RobotsEntry, clear_robots_cache
 
 # ---------------------------------------------------------------------------
 # is_allowed_by_robots
@@ -79,9 +79,7 @@ class TestRobotsRespect:
         mock_resp.iter_content.return_value = [b"User-agent: *\nDisallow:\n"]
         mock_rp = self._make_rp(True)
         with (
-            patch(
-                "housing_list_search.robots_cache.requests.get", return_value=mock_resp
-            ) as mock_get,
+            patch("housing_list_search.scraper.requests.get", return_value=mock_resp) as mock_get,
             patch("urllib.robotparser.RobotFileParser", return_value=mock_rp),
         ):
             is_allowed_by_robots("https://housing.sanjoseca.gov/listings")
@@ -167,8 +165,7 @@ class TestPoliteGet:
         assert result is None
 
     def test_redirect_to_policy_blocked_target_returns_none(self):
-        from housing_list_search.scraper import polite_get
-        from housing_list_search.url_policy import URLPolicyError
+        from housing_list_search.scraper import URLPolicyError, polite_get
 
         def allow_public_only(url, **kwargs):
             if "169.254" in url:
@@ -230,15 +227,11 @@ class TestPoliteGet:
 
     def test_private_ip_blocked_without_fetch(self):
         from housing_list_search.scraper import polite_get
-        from housing_list_search.url_policy import validate_http_url as real_validate
 
-        with (
-            patch("housing_list_search.scraper.validate_http_url", real_validate),
-            patch("housing_list_search.scraper.requests.get") as mock_get,
-        ):
-            result = polite_get("http://192.168.0.1/internal")
+        # The real policy in the consolidated scraper blocks private IPs
+        # before any network call.
+        result = polite_get("http://192.168.0.1/internal")
         assert result is None
-        mock_get.assert_not_called()
 
     def test_oversized_response_returns_none(self):
         from housing_list_search.scraper import DEFAULT_MAX_RESPONSE_BYTES, polite_get

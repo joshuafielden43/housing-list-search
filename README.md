@@ -88,7 +88,7 @@ housing_list_search/
   extraction/        # Structured extraction (bloom_housing, pdf, marker_pdf)
   dispatch.py        # Measure registry + URL extractors (bloom, pdf)
   pipeline.py        # Run orchestration: scrape → dedupe → persist → export
-  runner.py          # Thin wrapper: run_target() → dispatch
+  dispatch.py        # DispatchRegistry + collapsed Target Scrape seam (scrape_target)
   listing.py         # Canonical listing_to_row() at persistence seam
   freshness.py       # Unified diff.csv ↔ changelog identity
   db.py              # DatabaseManager: upsert, export_csv, export_diff_csv, prune
