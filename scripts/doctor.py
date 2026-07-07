@@ -200,9 +200,11 @@ def check_playwright() -> bool:
         print("   pip install playwright && playwright install")
         return True  # Not fatal — some targets work without it
     except Exception as e:
-        print(f"❌ Playwright package installed but browser launch failed: {e}")
-        print("   Run: playwright install chromium")
-        return False  # Treat as issue for browser-dependent adapters
+        print(
+            f"⚠️  Playwright package installed but browser launch failed (expected in CI without 'playwright install'): {e}"
+        )
+        print("   Run locally: playwright install chromium")
+        return True  # Optional — not fatal in CI or envs without browsers (matches prior behavior)
 
 
 def _prune_snapshots(older_than_days: int):
