@@ -397,7 +397,7 @@ class TestDedupeSharedURL:
         ]
         result = deduplicate_listings(records)
         assert len(result) == 1
-        assert result[0]["authority"] == "SCCHA"  # higher confidence kept
+        assert result[0]["authority"] == "Santa Clara County Housing Authority"  # canonicalized for seam stability (#983)
 
     def test_housing_record_dataclass_does_not_crash_dedupe(self):
         """HousingRecord objects from extraction layer must not cause AttributeError in dedupe."""

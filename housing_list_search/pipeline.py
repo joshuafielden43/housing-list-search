@@ -154,8 +154,8 @@ class RunPipeline:
         if stale_n >= DEFAULT_STALE_WARN_THRESHOLD:
             logger.warning(
                 "%d STALE record(s) in diff.csv (not confirmed this run; threshold=%d). "
-                "Review diff.csv, then prune when appropriate: "
-                "python scripts/db_manage.py prune --not-seen-since 45",
+                "Review diff.csv, then (safely) prune with: "
+                "python scripts/db_manage.py prune --from-diff  [or --not-seen-since 45 after review]",
                 stale_n,
                 DEFAULT_STALE_WARN_THRESHOLD,
             )

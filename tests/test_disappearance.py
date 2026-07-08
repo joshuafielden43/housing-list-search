@@ -38,7 +38,10 @@ class TestProjectDisappearance:
             current_listings=[],
             prev_snapshot=[{"authority": "City", "property_name": "Gone", "url": ""}],
         )
-        assert result.removed == [("City", "Gone", "hls:prop:Gone")]
+        # surrogate now scoped+hashed for stability (#983); compute via seam
+        from housing_list_search.listing import listing_to_row
+        expected_url = listing_to_row({"authority": "City", "property_name": "Gone", "url": ""})["url"]
+        assert result.removed == [("City", "Gone", expected_url)]
         assert not result.stale_lingering
 
     def test_lingering_stale_when_last_run_older(self):

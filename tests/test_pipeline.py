@@ -163,7 +163,7 @@ class TestRunPipeline:
             )
 
             assert len(result.listings) == 1
-            assert result.listings[0]["authority"] == "SCCHA"
+            assert result.listings[0]["authority"] == "Santa Clara County Housing Authority"  # canonicalized (#983)
             assert result.inserted == 1
         finally:
             os.chdir(orig)

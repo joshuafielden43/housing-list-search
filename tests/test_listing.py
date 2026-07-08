@@ -1,7 +1,12 @@
 """Tests for the canonical Listing persistence seam."""
 
 from housing_list_search.extraction.pdf import HousingRecord
-from housing_list_search.listing import canonicalize_listings, coerce_listing, listing_to_row
+from housing_list_search.listing import (
+    canonical_authority,
+    canonicalize_listings,
+    coerce_listing,
+    listing_to_row,
+)
 
 
 class TestCanonicalizeListings:
@@ -48,7 +53,8 @@ class TestListingToRow:
         row = listing_to_row(
             {"source_authority": "SCCHA", "property_name": "X", "url": "https://a"}
         )
-        assert row["authority"] == "SCCHA"
+        # Now canonicalized for seam stability (#983)
+        assert row["authority"] == "Santa Clara County Housing Authority"
 
     def test_empty_url_uses_address_surrogate(self):
         row = listing_to_row(
@@ -159,3 +165,39 @@ class TestListingToRow:
             assert row[0] == "Waitlist Open"
             assert row[1] == "waitlist"
             assert row[2] == "low_income"
+
+
+class TestListingSeamStability:
+    """Regression tests for #983: identity seam, surrogates, canonical forms."""
+
+    def test_canonical_authority_variants(self):
+        assert canonical_authority("John Stewart Company (jsco.net portfolio)") == "John Stewart Company"
+        assert canonical_authority("SCCHA Properties") == "Santa Clara County Housing Authority"
+        assert canonical_authority("Housing Group - Campbell") == "Housing Group"
+        assert canonical_authority("MidPen") == "MidPen Housing"
+
+    def test_norm_address_improved_distinction(self):
+        from housing_list_search.listing import norm_address
+        a1 = norm_address("123 Main Street, San Jose CA 95112")
+        a2 = norm_address("123 Main St. San Jose")
+        # Should produce similar but we test non-empty and digit-containing
+        assert a1 and "123" in a1
+        assert a2 and len(a2) >= 6
+
+    def test_surrogate_scoped_by_authority(self):
+        # Same name, different authorities should not collide on prop surrogate
+        row1 = listing_to_row({"authority": "City A", "property_name": "Oak Apts", "url": "", "address": ""})
+        row2 = listing_to_row({"authority": "City B", "property_name": "Oak Apts", "url": "", "address": ""})
+        assert row1["url"] != row2["url"]
+        assert row1["url"].startswith("hls:prop:")
+        assert row2["url"].startswith("hls:prop:")
+
+    def test_canonical_listing_value_type_roundtrip(self):
+        from housing_list_search.listing import CanonicalListing
+        d = listing_to_row({"authority": "T", "property_name": "P", "url": "https://x"})
+        # Construct minimal and verify to_dict preserves core + produces dict
+        cl = CanonicalListing(authority=d["authority"], property_name=d["property_name"], url=d["url"])
+        out = cl.to_dict()
+        assert out["authority"] == "T"
+        assert out["property_name"] == "P"
+        assert isinstance(out, dict)

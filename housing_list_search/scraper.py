@@ -26,6 +26,11 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
+# Simple retry config for #985
+_RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+_MAX_RETRIES = 3
+_RETRY_BACKOFF = 1.5  # seconds base
+
 # --- http limits (inlined) ---
 USER_AGENT = "HousingListAggregator-Nonprofit-Santa Clara-v1 (contact: joshua@fielden.org)"
 DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024  # 20 MiB
@@ -414,8 +419,28 @@ def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_B
     try:
         wait_for_host(url, delay)
         logger.debug("Fetching: %s", url)
-        resp = _request_with_redirect_policy("GET", url, headers=headers, timeout=15, stream=True)
+        resp = None
+        last_exc = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = _request_with_redirect_policy("GET", url, headers=headers, timeout=15, stream=True)
+            except URLPolicyError as exc:
+                # Policy blocks are final, no retry
+                logger.warning("URL policy blocked fetch for %s: %s", url, exc)
+                return None
+            except Exception as exc:  # pragma: no cover
+                last_exc = exc
+                resp = None
+            if resp is not None and resp.status_code not in _RETRYABLE_STATUS:
+                break
+            # Only retry when we actually got a retryable *response* status (policy None or other None = final)
+            if attempt < _MAX_RETRIES - 1 and resp is not None and resp.status_code in _RETRYABLE_STATUS:
+                time.sleep(_RETRY_BACKOFF * (attempt + 1))
+                continue
+            break
         if resp is None:
+            if last_exc:
+                logger.warning("Request failed after retries for %s: %s", url, last_exc)
             return None
 
         if resp.status_code == 404:
@@ -488,15 +513,33 @@ def polite_post(
     try:
         wait_for_host(url, delay)
         logger.debug("POST: %s", url)
-        resp = _request_with_redirect_policy(
-            "POST",
-            url,
-            headers=req_headers,
-            timeout=30,
-            stream=True,
-            json=json,
-        )
+        resp = None
+        last_exc = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = _request_with_redirect_policy(
+                    "POST",
+                    url,
+                    headers=req_headers,
+                    timeout=30,
+                    stream=True,
+                    json=json,
+                )
+            except URLPolicyError as exc:
+                logger.warning("URL policy blocked POST for %s: %s", url, exc)
+                return None
+            except Exception as exc:
+                last_exc = exc
+                resp = None
+            if resp is not None and resp.status_code not in _RETRYABLE_STATUS:
+                break
+            if attempt < _MAX_RETRIES - 1 and resp is not None and resp.status_code in _RETRYABLE_STATUS:
+                time.sleep(_RETRY_BACKOFF * (attempt + 1))
+                continue
+            break
         if resp is None:
+            if last_exc:
+                logger.warning("POST failed after retries for %s: %s", url, last_exc)
             return None
 
         if resp.status_code == 404:
