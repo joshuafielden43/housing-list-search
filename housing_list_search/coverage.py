@@ -61,10 +61,7 @@ class CoverageSummary:
     portal_records: list[dict[str, Any]] = field(default_factory=list)
     program_records: list[dict[str, Any]] = field(default_factory=list)
 
-    @property
-    def property_inventory_count(self) -> int:
-        """Rows that represent actual property inventory (excludes portal + program noise)."""
-        return self.property_count
+
 
 
 def summarize_coverage(listings: list[dict[str, Any]]) -> CoverageSummary:

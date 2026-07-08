@@ -3,7 +3,6 @@ dispatch.py — unified Target dispatch registry.
 
 The core of the (now collapsed) Target Scrape seam.
 scrape_target() is the primary entry point; returns TargetScrapeResult.
-run_target() is the thin backward-compat wrapper.
 Measures map to adapter handlers; URL predicates map to extraction-layer handlers.
 """
 
@@ -204,45 +203,13 @@ def dispatch_target(
             "[dispatch] %s: unrecognised measures %s — check TARGETS.md", ctx.authority, unknown
         )
 
-    # Last-resort fallbacks
-    if not ran_any:
-        results.extend(_run_fallbacks(ctx, _note_error))
+    if not ran_any and not results:
+        logger.warning(
+            "[dispatch] %s: no adapters or extractors matched; returning empty (no generic fallback)",
+            ctx.authority,
+        )
 
     return TargetScrapeResult(authority=ctx.authority, records=results, had_error=had_error)
-
-
-def _run_fallbacks(ctx: TargetContext, note_error: Callable[[], None]) -> list[Record]:
-    results: list[Record] = []
-    if "playwright_needed" in ctx.measures or "js_heavy" in ctx.measures:
-        try:
-            from housing_list_search.playwright_scraper import playwright_scrape
-
-            recs = playwright_scrape(ctx.authority, ctx.url)
-            results.extend(recs)
-            logger.info("[dispatch] %s: playwright fallback → %d records", ctx.authority, len(recs))
-        except ImportError:
-            pass
-        except Exception as exc:
-            note_error()
-            logger.warning("[dispatch] %s: playwright failed: %s", ctx.authority, exc)
-    else:
-        try:
-            from housing_list_search.generic_scraper import generic_scrape
-            from housing_list_search.scraper import polite_get
-
-            resp = polite_get(ctx.url)
-            if resp:
-                recs = generic_scrape(ctx.authority, ctx.url, resp.text)
-                results.extend(recs)
-                logger.info(
-                    "[dispatch] %s: generic fallback → %d records", ctx.authority, len(recs)
-                )
-        except ImportError:
-            pass
-        except Exception as exc:
-            note_error()
-            logger.warning("[dispatch] %s: generic fallback failed: %s", ctx.authority, exc)
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -409,17 +376,3 @@ def scrape_target(target: dict[str, Any]) -> TargetScrapeResult:
     )
 
     return dispatch_target(ctx)
-
-
-def run_target(target: dict[str, Any], *, failures: list[str] | None = None) -> list[dict]:
-    """
-    Backward-compat wrapper for direct calls and tests that still pass `failures=`.
-
-    Prefer `scrape_target` for new orchestration code.
-    """
-    outcome = scrape_target(target)
-    if failures is not None and outcome.had_error:
-        auth = target.get("authority", "")
-        if auth and auth not in failures:
-            failures.append(auth)
-    return outcome.records

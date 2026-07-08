@@ -159,7 +159,7 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 | Task | Why |
 |------|-----|
-| *(none — backlog clear for autonomous work)* |
+| **#982** [EPIC] Ponytail cleanup batch (13 items) | delete/YAGNI/shrink legacy: normalizer.py, generic_scraper, playwright_scraper fallbacks, run_target wrapper, freshness helpers, doctor prune-snapshots, lint-staged, artifacts wrapper, city shims, records_to_markdown, GIS _normalize, plus 2 shrinks. Net -550..-850 LOC. See subtasks #969–#981. |
 
 **Deferred (local-first):** **#412** onboarding baseline; **#423** PR live integration tests.
 

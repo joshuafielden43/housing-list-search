@@ -72,56 +72,6 @@ def key_from_diff_row(row: dict[str, str]) -> ListingKey:
     )
 
 
-def partition_removed_by_scrape_failure(
-    removed: list[ListingKey],
-    scrape_failed_authorities: list[str] | None,
-) -> tuple[list[ListingKey], list[ListingKey]]:
-    """Split snapshot REMOVED keys into staff REMOVED vs SCRAPE_FAILED by authority."""
-    failed = set(scrape_failed_authorities or [])
-    staff_removed: list[ListingKey] = []
-    scrape_failed: list[ListingKey] = []
-    for key in removed:
-        if key[0] in failed:
-            scrape_failed.append(key)
-        else:
-            staff_removed.append(key)
-    return staff_removed, scrape_failed
-
-
-def stale_from_db_rows(
-    diff_rows: list[dict[str, str]],
-    *,
-    removed_keys: set[ListingKey],
-) -> list[ListingKey]:
-    """
-    STALE rows from diff.csv that are not already covered by REMOVED changelog events.
-    """
-    stale: list[ListingKey] = []
-    for row in diff_rows:
-        if row.get("change_type") != "STALE":
-            continue
-        key = key_from_diff_row(row)
-        if key not in removed_keys:
-            stale.append(key)
-    return stale
-
-
-def scrape_failed_from_db_rows(
-    diff_rows: list[dict[str, str]],
-    *,
-    excluded_keys: set[ListingKey],
-) -> list[ListingKey]:
-    """SCRAPE_FAILED rows from diff.csv not already projected from the run snapshot."""
-    keys: list[ListingKey] = []
-    for row in diff_rows:
-        if row.get("change_type") != "SCRAPE_FAILED":
-            continue
-        key = key_from_diff_row(row)
-        if key not in excluded_keys:
-            keys.append(key)
-    return keys
-
-
 def load_diff_csv_rows(path: str = "diff.csv") -> list[dict[str, str]]:
     import csv
 

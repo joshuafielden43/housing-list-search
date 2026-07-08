@@ -1043,38 +1043,3 @@ def extract_bloom_housing_listings(
         f"   [bloom_housing] {len(records)} records ({len(open_items)} open + {len(closed_items)} closed) from {url}"
     )
     return records
-
-
-def extract_san_jose_listings(max_results: int = 200) -> list[HousingRecord]:
-    """Backwards-compatible shim — callers using the old San José-specific name still work."""
-    return extract_bloom_housing_listings(
-        "https://housing.sanjoseca.gov/listings",
-        authority="City of San José",
-        max_results=max_results,
-    )
-
-
-# =============================================================================
-# DIAGNOSTIC / OUTPUT HELPERS
-# =============================================================================
-
-
-def records_to_markdown(records: list[HousingRecord]) -> str:
-    """Human-readable markdown table of extracted records."""
-    if not records:
-        return "_No records extracted._"
-
-    lines = [
-        "| Property | Address | Unit Types | Status / Notes | Contact / Apply |",
-        "|----------|---------|------------|----------------|-----------------|",
-    ]
-    for r in records:
-        name = (r.property_name or "(unnamed)")[:55]
-        addr = (r.address or "")[:40]
-        br = (r.bedrooms or "")[:22]
-        notes = (r.notes or "")[:55].replace("|", "/")
-        link = r.document_url or ""
-        if len(link) > 55:
-            link = link[:52] + "..."
-        lines.append(f"| {name} | {addr} | {br} | {notes} | {link} |")
-    return "\n".join(lines)

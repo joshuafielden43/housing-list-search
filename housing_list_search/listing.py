@@ -138,8 +138,7 @@ def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
     Convert adapter output to the canonical housing_records row shape.
 
     Returns a dict keyed for DB persistence (single coercion path).
-    Production CSV uses db.export_csv() (which projects source_authority);
-    legacy save_current_full path in normalizer also remaps the column.
+    Production CSV uses db.export_csv() (which projects source_authority).
 
     Idempotent on already-canonical rows.
     """

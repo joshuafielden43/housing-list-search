@@ -7,7 +7,7 @@ affordable housing PDFs (especially the kind of lists Gilroy publishes).
 
 We keep the conservative, high-signal philosophy:
 - Prefer precision over recall.
-- Output structured records that can feed the normalizer / CSV pipeline.
+- Output structured records that can feed the CSV pipeline.
 - Designed so an LLM (when used later) can help with scoring or cleaning,
   but never makes the final extraction decision by itself.
 """
@@ -59,7 +59,7 @@ class HousingRecord:
     expires_at: str = ""  # optional explicit expiry if the source provides one
 
     def to_dict(self) -> dict:
-        """Convert to plain dict for downstream normalizer/CSV/outputs."""
+        """Convert to plain dict for downstream CSV/outputs."""
         return {
             "authority": self.authority,
             "property_name": self.property_name,

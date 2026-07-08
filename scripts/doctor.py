@@ -207,25 +207,6 @@ def check_playwright() -> bool:
         return True  # Optional — not fatal in CI or envs without browsers (matches prior behavior)
 
 
-def _prune_snapshots(older_than_days: int):
-    import time
-
-    snapshots_dir = Path("snapshots")
-    if not snapshots_dir.exists():
-        print("   snapshots/ directory not found — nothing to prune")
-        return
-    cutoff = time.time() - older_than_days * 86400
-    removed = 0
-    for f in snapshots_dir.iterdir():
-        if f.is_file() and f.stat().st_mtime < cutoff:
-            f.unlink()
-            print(f"   Pruned: {f.name}")
-            removed += 1
-    print(
-        f"✅ Snapshot pruning complete — {removed} file(s) removed (older than {older_than_days} days)"
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description="Housing List Search Doctor + Registry Fixer")
     parser.add_argument(
@@ -239,12 +220,6 @@ def main():
         action="store_true",
         help="Validate imports and config only — no network requests, no DB writes. "
         "Safe to run in CI or restricted environments.",
-    )
-    parser.add_argument(
-        "--prune-snapshots",
-        type=int,
-        metavar="DAYS",
-        help="Delete snapshots/ archives older than DAYS days.",
     )
     args = parser.parse_args()
 
@@ -322,9 +297,6 @@ def main():
             print("✅ alta adapter smoke test ran (returned list, no crash)")
         except Exception as e:
             print(f"⚠️  Adapter smoke had issues (may be expected in restricted env): {e}")
-
-    if args.prune_snapshots is not None:
-        _prune_snapshots(args.prune_snapshots)
 
     section("Summary")
 

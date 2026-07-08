@@ -13,7 +13,6 @@
     "check": "scripts/check.sh"
   },
   "devDependencies": {
-    "husky": "^9.1.7",
-    "lint-staged": "^17.0.8"
+    "husky": "^9.1.7"
   }
 }

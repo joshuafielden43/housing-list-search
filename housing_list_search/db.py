@@ -87,7 +87,7 @@ class DatabaseManager:
         except Exception:
             return {"database": {"prune": {"default_not_seen_days": default_prune_days}}}
 
-    def init_db(self, force: bool = False) -> bool:
+    def init_db(self) -> bool:
         """Initialize all housing_registry.db tables (see schema.py)."""
         init_schema(self.connect())
         return True

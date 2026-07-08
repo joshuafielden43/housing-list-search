@@ -49,4 +49,4 @@ class TestSummarizeCoverage:
         assert s.property_count == 1
         assert s.portal_count == 1
         assert s.program_count == 1
-        assert s.property_inventory_count == 1
+        assert s.property_count == 1

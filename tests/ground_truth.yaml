@@ -27,7 +27,7 @@ targets:
     max_records: 20
 
   - name: morgan_hill_housekeys
-    method: run_target
+    method: scrape_target
     min_records: 1
     max_records: 1
     target:
@@ -41,7 +41,7 @@ targets:
       administrator_contact: ""
 
   - name: midpen_portfolio
-    method: run_target
+    method: scrape_target
     min_records: 35
     max_records: 55
     target:
@@ -55,7 +55,7 @@ targets:
       administrator_contact: ""
 
   - name: jsco_portfolio
-    method: run_target
+    method: scrape_target
     min_records: 55
     max_records: 80
     target:
@@ -69,7 +69,7 @@ targets:
       administrator_contact: ""
 
   - name: charities_portfolio
-    method: run_target
+    method: scrape_target
     min_records: 40
     max_records: 55
     target:

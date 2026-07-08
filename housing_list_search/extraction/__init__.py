@@ -11,7 +11,6 @@ from .bloom_housing import (
     BLOOM_DOMAINS,
     extract_bloom_for_target,
     extract_bloom_housing_listings,
-    extract_san_jose_listings,
     is_bloom_url,
 )
 from .pdf import HousingRecord, extract_records_from_pdf
@@ -35,6 +34,5 @@ __all__ = [
     "extract_records_from_pdf",
     "extract_bloom_housing_listings",
     "extract_bloom_for_target",
-    "extract_san_jose_listings",
     "is_bloom_url",
 ]

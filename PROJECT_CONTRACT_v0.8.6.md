@@ -10,7 +10,7 @@ This is the short, current contract. Detail lives in `AGENTS.md`, `SOUL.md`, and
 ## Daily run (`python main.py --run`)
 
 1. `registry.load_targets_to_db()` — TARGETS.md → `targets` table (registry owns this schema)
-2. `runner.run_target()` per active row — measure-driven adapter dispatch
+2. `scrape_target()` (dispatch) per active row — measure-driven adapter dispatch
 3. `deduplicate_listings()` — cross-source dedupe
 4. `db.upsert_listings()` — listings → `housing_records` (db.py owns this schema)
 5. Export `current_full.csv` (full DB) and `diff.csv` (NEW/UPDATED/STALE for this `run_id`)

@@ -192,47 +192,6 @@ def extract_gis_portfolio(
 
 
 # =============================================================================
-# CONVENIENCE HELPERS FOR KNOWN PATTERNS
-# =============================================================================
-
-
-def extract_cupertino_gis() -> list[dict[str, Any]]:
-    """
-    Convenience wrapper specifically for the City of Cupertino's current
-    GIS publication method (embedded GeoJSON in /bmr_units/units.js and
-    /bmr_units/purchase.js).
-
-    Includes the known delegated administrator (Rise Housing) so the
-    pattern is demonstrated.
-    """
-    base = "https://gis.cupertino.org/bmr_units/"
-
-    administrator = "Rise Housing"
-    administrator_url = "https://www.risehousing.com/applicants-cupertino-bmr-rental"
-    administrator_phone = "(415) 301-5448"
-    administrator_contact = "cupertino@risehousing.com"
-
-    rental = extract_gis_portfolio(
-        base + "units.js",
-        "City of Cupertino BMR (Rental)",
-        administrator=administrator,
-        administrator_url=administrator_url,
-        administrator_phone=administrator_phone,
-        administrator_contact=administrator_contact,
-    )
-    ownership = extract_gis_portfolio(
-        base + "purchase.js",
-        "City of Cupertino BMR (Ownership)",
-        administrator=administrator,
-        administrator_url=administrator_url,
-        administrator_phone=administrator_phone,
-        administrator_contact=administrator_contact,
-    )
-
-    return rental + ownership
-
-
-# =============================================================================
 # PARSERS
 # =============================================================================
 
@@ -601,10 +560,6 @@ def _features_to_records(
     return records
 
 
-def _normalize(text: str) -> str:
-    return " ".join(text.split()) if text else ""
-
-
 # =============================================================================
 # QUICK USAGE / VALIDATION
 # =============================================================================
@@ -617,7 +572,27 @@ def _normalize(text: str) -> str:
 
 if __name__ == "__main__":
     print("=== GIS Extraction – Cupertino Reference Run ===\n")
-    records = extract_cupertino_gis()
+    base = "https://gis.cupertino.org/bmr_units/"
+    administrator = "Rise Housing"
+    administrator_url = "https://www.risehousing.com/applicants-cupertino-bmr-rental"
+    administrator_phone = "(415) 301-5448"
+    administrator_contact = "cupertino@risehousing.com"
+
+    records = extract_gis_portfolio(
+        base + "units.js",
+        "City of Cupertino BMR (Rental)",
+        administrator=administrator,
+        administrator_url=administrator_url,
+        administrator_phone=administrator_phone,
+        administrator_contact=administrator_contact,
+    ) + extract_gis_portfolio(
+        base + "purchase.js",
+        "City of Cupertino BMR (Ownership)",
+        administrator=administrator,
+        administrator_url=administrator_url,
+        administrator_phone=administrator_phone,
+        administrator_contact=administrator_contact,
+    )
 
     print(f"Total records returned: {len(records)}\n")
     for r in records:

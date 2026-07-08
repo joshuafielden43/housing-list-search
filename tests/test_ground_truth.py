@@ -36,10 +36,11 @@ def test_ground_truth_record_counts(case):
 
         records = extract_target(case["url"], case.get("authority", ""))
         count = len(records)
-    elif method == "run_target":
-        from housing_list_search.dispatch import run_target
+    elif method in ("run_target", "scrape_target"):
+        from housing_list_search.dispatch import scrape_target
 
-        records = run_target(case["target"])
+        outcome = scrape_target(case["target"])
+        records = outcome.records
         count = len(records)
     else:
         pytest.fail(f"Unknown ground-truth method: {method}")

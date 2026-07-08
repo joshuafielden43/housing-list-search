@@ -145,7 +145,7 @@ def _format_coverage_summary(listings) -> str:
             f"(program-level PDF/page text — not named properties)\n"
         )
     lines.append(
-        f"- **UEO-style property count:** {cov.property_inventory_count} "
+        f"- **UEO-style property count:** {cov.property_count} "
         f"(excludes portals and program noise)\n\n"
     )
 
@@ -197,7 +197,7 @@ def generate_daily_summary(
         cov = summarize_coverage(listings)
         f.write(
             f"**Records this run:** {cov.total} extracted "
-            f"({cov.property_inventory_count} property inventory"
+            f"({cov.property_count} property inventory"
         )
         if cov.portal_count:
             f.write(f", {cov.portal_count} portal pointer{'s' if cov.portal_count != 1 else ''}")

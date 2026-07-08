@@ -14,7 +14,7 @@ Coverage:
 - outputs.py  structured records with short names appear in open section
 - outputs.py  "accepting applications" / "waitlist open" treated as open
 - dedupe.py   shared URL does NOT deduplicate distinct named properties
-- normalizer.py  string eligibility_flags coerced to pipe-joined value
+- listing_to_row + export_csv: string eligibility_flags coerced to pipe-joined value
 - housekeys.py  city page 403 still produces a registration record
 - db.py  upsert_listings / export_csv / export_diff_csv / first_seen preservation
 - changelog.py  generate_changelog / run_prev.csv round-trip
@@ -119,7 +119,7 @@ class TestSummaryOpenDetection:
 
     def test_unstructured_name_under_5_chars_excluded(self):
         # source without a colon = generic/unstructured; short names should be filtered
-        listings = [_listing("BMR", status="Open", notes="", source="generic_scrape")]
+        listings = [_listing("BMR", status="Open", notes="", source="generic")]
         md = self._run(listings)
         assert "## 🔥 CURRENTLY OPEN" not in md
 
@@ -415,121 +415,54 @@ class TestDedupeSharedURL:
 
 
 # ---------------------------------------------------------------------------
-# normalizer.py — eligibility_flags coercion and listing_status→status mapping
-# These tests call save_current_full() directly so a regression in the real
-# write path is caught rather than just the logic duplicated here.
+# listing_to_row + export_csv coverage for flag coercion and status semantics
+# (replaced legacy normalizer.py direct writer tests)
 # ---------------------------------------------------------------------------
 
 
-class TestNormalizerFlagsCoercion:
-    def _csv_rows(self, listings):
-        """Write via save_current_full and return parsed CSV rows."""
+class TestListingToRowAndExportFlagsStatus:
+    def test_listing_to_row_joins_eligibility_flags(self):
+        from housing_list_search.listing import listing_to_row
+
+        row = listing_to_row(
+            {"property_name": "Test", "eligibility_flags": ["below_market_rate", "senior"], "authority": "X"}
+        )
+        assert row["eligibility_flags"] == "below_market_rate|senior"
+
+        row2 = listing_to_row(
+            {"property_name": "Test", "eligibility_flags": "below_market_rate", "authority": "X"}
+        )
+        assert row2["eligibility_flags"] == "below_market_rate"
+
+    def test_export_csv_preserves_flag_and_status_semantics(self, tmp_path):
+        """Production path via DB export (was normalizer + save_current_full)."""
         import csv
-        import os
-        import tempfile
 
-        from housing_list_search.normalizer import save_current_full
+        from housing_list_search.db import DatabaseManager
+        from housing_list_search.listing import listing_to_row
 
-        orig = os.getcwd()
-        with tempfile.TemporaryDirectory() as tmp:
-            os.chdir(tmp)
-            try:
-                save_current_full(listings)
-                with open("current_full.csv", newline="", encoding="utf-8") as f:
-                    return list(csv.DictReader(f))
-            finally:
-                os.chdir(orig)
+        db = DatabaseManager(db_path=tmp_path / "t.db")
+        db.init_db()
 
-    def test_string_flag_is_joined_intact(self):
-        rows = self._csv_rows(
-            [{"property_name": "Test", "eligibility_flags": "below_market_rate", "authority": "X"}]
-        )
-        assert rows[0]["eligibility_flags"] == "below_market_rate"
+        raw = {
+            "property_name": "Monroe Commons",
+            "authority": "City of Test",
+            "url": "https://example.com/m",
+            "listing_status": "open",
+            "eligibility_flags": ["senior", "below_market_rate"],
+            "bedrooms": "1BR,2BR",
+            "income_limits": "80% AMI",
+        }
+        db.upsert_listings([listing_to_row(raw)])
 
-    def test_list_flags_joined_with_pipe(self):
-        rows = self._csv_rows(
-            [
-                {
-                    "property_name": "Test",
-                    "eligibility_flags": ["below_market_rate", "senior"],
-                    "authority": "X",
-                }
-            ]
-        )
-        assert rows[0]["eligibility_flags"] == "below_market_rate|senior"
+        export_path = str(tmp_path / "out.csv")
+        db.export_csv(export_path)
+        with open(export_path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
 
-    def test_empty_string_flag_becomes_empty(self):
-        rows = self._csv_rows(
-            [{"property_name": "Test", "eligibility_flags": "", "authority": "X"}]
-        )
-        assert rows[0]["eligibility_flags"] == ""
-
-    def test_listing_status_open_maps_to_Open_in_csv(self):
-        rows = self._csv_rows(
-            [
-                {
-                    "property_name": "Monroe Commons",
-                    "listing_status": "open",
-                    "authority": "Test",
-                    "eligibility_flags": [],
-                }
-            ]
-        )
+        assert rows[0]["eligibility_flags"] == "senior|below_market_rate"
         assert rows[0]["status"] == "Open"
-
-    def test_listing_status_waitlist_maps_correctly(self):
-        rows = self._csv_rows(
-            [
-                {
-                    "property_name": "Park View",
-                    "listing_status": "waitlist",
-                    "authority": "Test",
-                    "eligibility_flags": [],
-                }
-            ]
-        )
-        assert rows[0]["status"] == "Waitlist Open"
-
-    def test_listing_status_closed_maps_correctly(self):
-        rows = self._csv_rows(
-            [
-                {
-                    "property_name": "Elm Court",
-                    "listing_status": "closed",
-                    "authority": "Test",
-                    "eligibility_flags": [],
-                }
-            ]
-        )
-        assert rows[0]["status"] == "Closed"
-
-    def test_listing_status_overrides_raw_status_field(self):
-        """listing_status takes precedence over the generic status field."""
-        rows = self._csv_rows(
-            [
-                {
-                    "property_name": "Bloom Prop",
-                    "listing_status": "open",
-                    "status": "active",
-                    "authority": "Test",
-                    "eligibility_flags": [],
-                }
-            ]
-        )
-        assert rows[0]["status"] == "Open"
-
-    def test_no_listing_status_falls_back_to_status_field(self):
-        rows = self._csv_rows(
-            [
-                {
-                    "property_name": "Generic",
-                    "status": "Waitlisting",
-                    "authority": "Test",
-                    "eligibility_flags": [],
-                }
-            ]
-        )
-        assert rows[0]["status"] == "Waitlisting"
+        assert rows[0]["listing_status"] == "open"
 
 
 # ---------------------------------------------------------------------------
@@ -878,7 +811,7 @@ class TestDailySummaryUrlFallback:
 
 class TestRunnerDispatch:
     """
-    run_target() must be driven purely by scraping_measures.
+    scrape_target() must be driven purely by scraping_measures.
     URL substrings and authority name patterns must NOT affect routing.
     """
 
@@ -918,9 +851,10 @@ class TestRunnerDispatch:
                 },
             ),
         ):
-            from housing_list_search.dispatch import run_target
+            from housing_list_search.dispatch import scrape_target
 
-            result = run_target(self._target("housekeys,civicplus"))
+            outcome = scrape_target(self._target("housekeys,civicplus"))
+            result = outcome.records
 
         names = {r["property_name"] for r in result}
         assert "HK Prop" in names
@@ -943,29 +877,29 @@ class TestRunnerDispatch:
                 },
             ),
         ):
-            from housing_list_search.dispatch import run_target
+            from housing_list_search.dispatch import scrape_target
 
             # URL has no "jscosccha" or "properties-list" — routing must come from the measure
-            result = run_target(self._target("john_stewart", url="https://example.gov/housing"))
+            outcome = scrape_target(self._target("john_stewart", url="https://example.gov/housing"))
+            result = outcome.records
         assert result[0]["property_name"] == "JS Prop"
 
     def test_waf_blocked_returns_empty_immediately(self):
         with patch("housing_list_search.dispatch._run_url_extractors", return_value=[]) as mock_ext:
-            from housing_list_search.dispatch import run_target
+            from housing_list_search.dispatch import scrape_target
 
-            result = run_target(self._target("waf_blocked,civicplus"))
+            outcome = scrape_target(self._target("waf_blocked,civicplus"))
+            result = outcome.records
         mock_ext.assert_not_called()
         assert result == []
 
     def test_unknown_measure_logged_not_crashed(self):
         """A typo like 'housekey' (missing s) must warn but not raise."""
-        with (
-            patch("housing_list_search.dispatch._run_url_extractors", return_value=[]),
-            patch("housing_list_search.dispatch._run_fallbacks", return_value=[]),
-        ):
-            from housing_list_search.dispatch import run_target
+        with patch("housing_list_search.dispatch._run_url_extractors", return_value=[]):
+            from housing_list_search.dispatch import scrape_target
 
-            result = run_target(self._target("housekey_typo"))
+            outcome = scrape_target(self._target("housekey_typo"))
+            result = outcome.records
         assert isinstance(result, list)  # no exception
 
     def test_extraction_and_named_adapters_both_run(self):
@@ -983,14 +917,15 @@ class TestRunnerDispatch:
                 },
             ),
         ):
-            from housing_list_search.dispatch import run_target
+            from housing_list_search.dispatch import scrape_target
 
-            result = run_target(
+            outcome = scrape_target(
                 self._target(
                     "bloom,housekeys",
                     url="https://housing.sanjoseca.gov/listings",
                 )
             )
+            result = outcome.records
 
         names = {r["property_name"] for r in result}
         assert "Bloom Prop" in names
@@ -1001,9 +936,9 @@ class TestRunnerDispatch:
         with patch(
             "housing_list_search.extraction.bloom_housing.extract_bloom_for_target"
         ) as mock_bloom:
-            from housing_list_search.dispatch import run_target
+            from housing_list_search.dispatch import scrape_target
 
-            run_target(
+            scrape_target(
                 self._target(
                     "housekeys",
                     url="https://housing.sanjoseca.gov/listings",
@@ -1019,10 +954,15 @@ class TestRunnerDispatch:
             patch("housing_list_search.dispatch._run_url_extractors", return_value=[]),
             patch("housing_list_search.dispatch._MEASURE_HANDLERS", {"housekeys": _boom}),
         ):
-            from housing_list_search.dispatch import run_target
+            from housing_list_search.dispatch import scrape_target
 
             failures: list[str] = []
-            result = run_target(self._target("housekeys"), failures=failures)
+            outcome = scrape_target(self._target("housekeys"))
+            result = outcome.records
+            if outcome.had_error:
+                auth = "City of Test"
+                if auth not in failures:
+                    failures.append(auth)
 
         assert result == []
         assert failures == ["City of Test"]
@@ -1135,7 +1075,7 @@ class TestDatabaseManager:
         assert rows[0]["status"] == "Open"
 
     def test_export_csv_maps_listing_status_to_display_status(self, tmp_path):
-        """Production DB export must preserve normalizer status semantics."""
+        """Production DB export must preserve status semantics (via listing_to_row)."""
         import csv
         from pathlib import Path
 

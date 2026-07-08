@@ -203,9 +203,9 @@ Playwright navigation uses `playwright_nav.safe_goto()` — URL policy + per-hos
 
 Listing identity is `(authority, property_name, url)` everywhere. `diff.csv` (machine: NEW/UPDATED/STALE/SCRAPE_FAILED) and `changelog_diffs` (staff: ADDED/REMOVED/STATUS_CHANGE/STALE) are aligned via `freshness.py`. `run_prev.csv` snapshots the deduped run set (includes `url` column) — not `current_full.csv`.
 
-## Run artifacts (artifacts.py)
+## Run artifacts
 
-After canonical Listings + machine exports, `artifacts.generate_run_artifacts()` is the single seam for staff outputs (daily_summary, changelog_diffs) and side-effects (run_prev snapshot on full runs, partial markers). It owns the full/partial branch and delegates to focused submodules. Pipeline calls it once. This deepens the output side (see architecture review report).
+After canonical Listings + machine exports, the partial/full artifact branch + snapshot side-effects live inline in pipeline.py (previously a thin artifacts.py wrapper). Coordinates generate_changelog, generate_daily_summary, db.log_full_run. See pipeline.py.
 
 ---
 
@@ -248,10 +248,10 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/dispatch.py` | Unified dispatch registry (measures + URL extractors) |
 | `housing_list_search/dispatch.py` | DispatchRegistry + collapsed Target Scrape seam (scrape_target → TargetScrapeResult; the core of "scrape a Target") |
 | `housing_list_search/scraper.py` | Consolidated safe fetch (polite_get etc.; was split across 5 files) |
-| `housing_list_search/pipeline.py` | Run orchestration: scrape → dedupe → persist → export (db) → artifacts (staff outputs) |
+| `housing_list_search/pipeline.py` | Run orchestration: scrape → dedupe → persist → export (db) + inlined artifact generation (changelog etc.) |
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row / listing_identity; all shape, surrogate, authority canon, identity here |
-| `housing_list_search/artifacts.py` | Deep post-Listing seam: generate_run_artifacts (coordinates changelog + daily_summary + snapshot + partial handling after canonical rows + exports) |
+
 | `housing_list_search/freshness.py` | Unified change semantics (diff.csv ↔ changelog) |
 | `housing_list_search/schema.py` | Sole owner of `housing_registry.db` DDL (`targets`, `housing_records`, `run_history`) |
 | `housing_list_search/sqlite_config.py` | `DEFAULT_DB_PATH`, WAL + busy-timeout connection helper |

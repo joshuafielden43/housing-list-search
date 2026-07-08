@@ -12,7 +12,6 @@ class TestDispatchFailurePropagation:
         import housing_list_search.dispatch as dispatch
 
         monkeypatch.setitem(dispatch._MEASURE_HANDLERS, "civicplus", _failing_civicplus)
-        monkeypatch.setattr(dispatch, "_run_fallbacks", lambda _ctx, _note_error: [])
 
         ctx = TargetContext(
             authority="City of Gilroy",

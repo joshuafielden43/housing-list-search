@@ -133,7 +133,7 @@ class TestListingToRow:
         assert "phone: 408-555-0100" in row["notes"]
         assert "br: 2 BR" in row["notes"]
 
-    def test_db_upsert_uses_same_path_as_normalizer(self):
+    def test_db_upsert_uses_canonical_path(self):
         """listing_to_row output must satisfy upsert_listings required fields."""
         import os
         import tempfile
