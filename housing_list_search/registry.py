@@ -215,6 +215,15 @@ def load_targets_to_db():
                 in_table = True
                 header_cells = [p.strip().lower() for p in stripped.split("|") if p.strip()]
                 header_map = {name: idx for idx, name in enumerate(header_cells)}
+                # Harden: require critical columns (#986)
+                crit = ["city/authority", "url", "scraping measures"]
+                missing = [c for c in crit if c not in header_map]
+                if missing:
+                    logger.warning(
+                        "TARGETS.md header missing expected columns %s — parser may misalign rows. "
+                        "Check table format.",
+                        missing,
+                    )
                 continue  # skip header
             else:
                 # pre-header data row (rare); fall back to positional for first row

@@ -40,6 +40,9 @@ def init_targets_schema(cursor: sqlite3.Cursor) -> None:
             administrator_contact TEXT
         )
     """)
+    # Indexes for targets lookup
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_targets_authority ON targets (authority)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_targets_measures ON targets (scraping_measures)")
     _migrate_columns(
         cursor,
         "targets",
@@ -107,6 +110,23 @@ def init_housing_records_schema(cursor: sqlite3.Cursor) -> None:
         ],
     )
 
+    # Indexes for common queries (prune, diff, export, lookups) — #990
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_housing_records_last_seen ON housing_records (last_seen)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_housing_records_last_run ON housing_records (last_run_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_housing_records_expires ON housing_records (expires_at)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_housing_records_authority ON housing_records (authority)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_housing_records_source ON housing_records (source)"
+    )
+
 
 def init_run_history_schema(cursor: sqlite3.Cursor) -> None:
     cursor.execute("""
@@ -122,6 +142,8 @@ def init_run_history_schema(cursor: sqlite3.Cursor) -> None:
         )
     """)
     _migrate_columns(cursor, "run_history", [("run_id", "TEXT")])
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_run_history_runid ON run_history (run_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_run_history_cmd ON run_history (command)")
 
 
 def init_schema(conn: sqlite3.Connection) -> None:

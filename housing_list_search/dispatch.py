@@ -97,6 +97,7 @@ def extract_target(url: str, authority: str = "") -> list[Any]:
     Standalone URL extraction (integration tests, ground_truth).
     Predicate-gated only — no measure required.
     """
+    ensure_registered()
     return _run_url_extractors(url, authority, set(), ignore_measure_gate=True)
 
 
@@ -145,6 +146,7 @@ def dispatch_target(
     *,
     url_extractor: Callable[[str, str], list[Any]] | None = None,
 ) -> TargetScrapeResult:
+    ensure_registered()
     """Dispatch one Target. Returns records + explicit had_error flag.
 
     had_error is set on any exception in URL extractors, measure handlers, or fallbacks.
@@ -241,13 +243,21 @@ def _pdf_extract(url: str, authority: str) -> list[Any]:
     return extract_records_from_pdf(url, authority=auth_label)
 
 
+# URL extractors registered at import (lightweight predicates)
 register_url_extractor("bloom", _bloom_predicate, _bloom_extract, measures=frozenset({"bloom"}))
 register_url_extractor("pdf", _pdf_predicate, _pdf_extract, measures=frozenset({"pdf"}))
 
 
-# ---------------------------------------------------------------------------
-# Measure handler registrations
-# ---------------------------------------------------------------------------
+# Measure handler registrations (moved to lazy to avoid import-time side effects — #992)
+_registered = False
+
+
+def ensure_registered() -> None:
+    global _registered
+    if _registered:
+        return
+    _register_measure_handlers()
+    _registered = True
 
 
 def _register_measure_handlers() -> None:
@@ -345,7 +355,7 @@ def _register_measure_handlers() -> None:
         pass
 
 
-_register_measure_handlers()
+# Registration is now lazy via ensure_registered() — no import side effects.
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +372,7 @@ def scrape_target(target: dict[str, Any]) -> TargetScrapeResult:
     Returns TargetScrapeResult (authority + raw records + had_error).
     This is the clean seam (no phantom list mutation, self-describing outcome).
     """
+    ensure_registered()
     measures = parse_target_measures(target.get("scraping_measures") or "")
 
     ctx = TargetContext(
