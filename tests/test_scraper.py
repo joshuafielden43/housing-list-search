@@ -17,6 +17,35 @@ from housing_list_search.scraper import RobotsEntry, clear_robots_cache
 # ---------------------------------------------------------------------------
 
 
+class TestHostThrottleAtomic:
+    def test_concurrent_waiters_do_not_start_together(self):
+        """#1053: second waiter must sleep after first claims the host slot."""
+        import threading
+        import time
+
+        from housing_list_search.scraper import reset_host_throttle, wait_for_host
+
+        reset_host_throttle()
+        starts: list[float] = []
+        barrier = threading.Barrier(2)
+
+        def worker():
+            barrier.wait()
+            wait_for_host("https://example.gov/page", delay=0.15)
+            starts.append(time.monotonic())
+
+        t1 = threading.Thread(target=worker)
+        t2 = threading.Thread(target=worker)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        assert len(starts) == 2
+        starts.sort()
+        # Second claim should be ~delay after first (allow jitter)
+        assert starts[1] - starts[0] >= 0.10
+
+
 class TestSourceFetchError:
     def test_require_response_passes_through(self):
         from housing_list_search.scraper import require_response

@@ -26,6 +26,15 @@ def _partial_then_fail(_ctx: TargetContext) -> list[dict]:
 
 
 class TestDispatchFailurePropagation:
+    def test_ensure_registered_is_idempotent(self):
+        """#1054: second ensure_registered must not re-bind handlers (mock-safe)."""
+        import housing_list_search.dispatch as dispatch
+
+        dispatch.ensure_registered()
+        before = dispatch._MEASURE_HANDLERS.get("civicplus")
+        dispatch.ensure_registered()
+        assert dispatch._MEASURE_HANDLERS.get("civicplus") is before
+
     def test_handler_exception_marks_authority_failed(self, monkeypatch):
         import housing_list_search.dispatch as dispatch
 

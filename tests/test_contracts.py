@@ -541,7 +541,7 @@ class TestBloomAPIPagination:
         }
         try:
             with patch("requests.post", side_effect=responses) as mock_post:
-                open_items, _ = bh._fetch_via_api(
+                open_items, _, complete = bh._fetch_via_api(
                     "https://housingbayarea.mtc.ca.gov/listings",
                     city_filter="",
                 )
@@ -550,6 +550,7 @@ class TestBloomAPIPagination:
 
         assert mock_post.call_count == 2
         assert len(open_items) == 101
+        assert complete is True
 
     def test_http_201_accepted(self):
         import housing_list_search.extraction.bloom_housing as bh
@@ -576,13 +577,14 @@ class TestBloomAPIPagination:
                     status_code=201,
                 ),
             ):
-                open_items, _ = bh._fetch_via_api(
+                open_items, _, complete = bh._fetch_via_api(
                     "https://housingbayarea.mtc.ca.gov/listings",
                     city_filter="Santa Clara",
                 )
         finally:
             bh._API_INSTANCES = orig
         assert len(open_items) == 1
+        assert complete is True
 
     def test_city_filter_applied_after_all_pages(self):
         items_p1 = [
@@ -605,7 +607,7 @@ class TestBloomAPIPagination:
         }
         try:
             with patch("requests.post", return_value=self._make_page(items_p1, 2)):
-                open_items, _ = bh._fetch_via_api(
+                open_items, _, complete = bh._fetch_via_api(
                     "https://housingbayarea.mtc.ca.gov/listings",
                     city_filter="Santa Clara",
                 )
@@ -614,9 +616,10 @@ class TestBloomAPIPagination:
 
         assert len(open_items) == 1
         assert open_items[0]["name"] == "Monroe Commons"
+        assert complete is True
 
     def test_partial_pagination_returns_collected_items_on_failure(self):
-        """Mid-pagination HTTP failure returns items collected so far (#760)."""
+        """Mid-pagination HTTP failure returns items so far but complete=False (#760 #1058)."""
         page1_items = [
             {"id": str(i), "name": f"Prop {i}", "listingsBuildingAddress": {"city": "San Jose"}}
             for i in range(100)
@@ -637,7 +640,7 @@ class TestBloomAPIPagination:
         }
         try:
             with patch("requests.post", side_effect=responses):
-                open_items, closed_items = bh._fetch_via_api(
+                open_items, closed_items, complete = bh._fetch_via_api(
                     "https://housingbayarea.mtc.ca.gov/listings",
                     city_filter="",
                 )
@@ -647,6 +650,34 @@ class TestBloomAPIPagination:
         assert len(open_items) == 100
         assert open_items[0]["name"] == "Prop 0"
         assert closed_items == []
+        assert complete is False
+
+    def test_incomplete_pagination_raises_source_fetch_error_from_extract(self):
+        """#1058: extract path must not report partial feed as full success."""
+        import housing_list_search.extraction.bloom_housing as bh
+        from housing_list_search.scraper import SourceFetchError
+
+        partial = [
+            {
+                "id": "1",
+                "name": "Partial Prop",
+                "status": "active",
+                "listingsBuildingAddress": {"city": "San Jose", "street": "1 Main"},
+            }
+        ]
+        with (
+            patch.object(bh, "_fetch_via_ssr", return_value=([], [])),
+            patch.object(bh, "_fetch_via_api", return_value=(partial, [], False)),
+        ):
+            try:
+                bh.extract_bloom_housing_listings(
+                    "https://housingbayarea.mtc.ca.gov/listings",
+                    authority="City of San José",
+                )
+                raise AssertionError("expected SourceFetchError")
+            except SourceFetchError as exc:
+                assert "incomplete" in str(exc).lower() or "pagination" in str(exc).lower()
+                assert len(exc.partial) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -670,7 +701,7 @@ class TestBloomPlaywrightCityFilter:
 
         with (
             patch.object(bh, "_fetch_via_ssr", return_value=([], [])),
-            patch.object(bh, "_fetch_via_api", return_value=([], [])),
+            patch.object(bh, "_fetch_via_api", return_value=([], [], True)),
             patch.object(bh, "_fetch_via_playwright", return_value=(playwright_open, [])),
         ):
             records = bh.extract_bloom_housing_listings(

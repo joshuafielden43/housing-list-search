@@ -262,11 +262,22 @@ _registered = False
 
 
 def ensure_registered() -> None:
+    """Idempotent measure-handler registration (lazy, once per process).
+
+    #1054: tests that monkeypatch ``_MEASURE_HANDLERS`` must call this *before*
+    patching so registration does not overwrite the mock on first dispatch.
+    """
     global _registered
     if _registered:
         return
     _register_measure_handlers()
     _registered = True
+
+
+def _reset_registration_for_tests() -> None:
+    """Test helper: allow re-registration after clearing handlers."""
+    global _registered
+    _registered = False
 
 
 def _register_measure_handlers() -> None:

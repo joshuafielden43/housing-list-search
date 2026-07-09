@@ -547,9 +547,15 @@ def _fetch_via_ssr(listings_url: str) -> tuple[list[dict], list[dict]]:
 # =============================================================================
 
 
-def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict], list[dict]]:
+def _fetch_via_api(
+    listings_url: str, city_filter: str = ""
+) -> tuple[list[dict], list[dict], bool]:
     """
     REST API extraction path for Bloom instances that use client-side rendering.
+
+    Returns (open_items, closed_items, pagination_complete). When
+    pagination_complete is False the caller must treat the authority as
+    failed (had_error / SCRAPE_FAILED) even if some items were returned (#1058).
 
     Bloom CSR instances (e.g. housingbayarea.mtc.ca.gov) load the page as a
     shell and fetch listing data via XHR POST to /api/adapter/listings/combined.
@@ -585,14 +591,14 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
     cfg = _API_INSTANCES.get(host)
     if not cfg:
         logger.debug("[Bloom] API path: %s is not in _API_INSTANCES — skipping", host)
-        return [], []
+        return [], [], True  # not applicable; not an incomplete failure
 
     endpoint = cfg["endpoint"]
     try:
         validate_http_url(endpoint)
     except URLPolicyError as exc:
         logger.warning("[Bloom] API path: endpoint blocked by URL policy: %s", exc)
-        return [], []
+        return [], [], False
 
     jurisdiction = cfg["jurisdictionname"]
 
@@ -694,7 +700,8 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
     if not pagination_complete:
         if all_items:
             logger.warning(
-                "[Bloom] API path: pagination incomplete — returning %d partial item(s) from %s",
+                "[Bloom] API path: pagination incomplete — %d partial item(s) from %s "
+                "(will mark scrape failed; partial inventory is not a successful full feed)",
                 len(all_items),
                 endpoint,
             )
@@ -703,7 +710,7 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
                 "[Bloom] API path: pagination aborted with zero items from %s",
                 endpoint,
             )
-            return [], []
+            return [], [], False
 
     items = all_items
 
@@ -719,15 +726,17 @@ def _fetch_via_api(listings_url: str, city_filter: str = "") -> tuple[list[dict]
         ]
 
     logger.info(
-        "[Bloom] API path: %d items from %s across %d page(s) (city_filter=%r)",
+        "[Bloom] API path: %d items from %s across %d page(s) (city_filter=%r complete=%s)",
         len(items),
         endpoint,
         page,
         city_filter,
+        pagination_complete,
     )
     # Return all as open_listings; status field within each item distinguishes
     # open vs closed and is preserved in _bloom_record_from_item.
-    return items, []
+    # pagination_complete is the third element (#1058).
+    return items, [], pagination_complete
 
 
 # =============================================================================
@@ -954,12 +963,17 @@ def extract_bloom_housing_listings(
     if not authority:
         authority = urlparse(url).netloc
 
+    from housing_list_search.scraper import SourceFetchError
+
     # Path 1: SSR via __NEXT_DATA__
     open_items, closed_items = _fetch_via_ssr(url)
+    api_pagination_complete = True
 
     # Path 2: REST API (CSR instances)
     if not open_items and not closed_items:
-        open_items, closed_items = _fetch_via_api(url, city_filter=city_filter)
+        open_items, closed_items, api_pagination_complete = _fetch_via_api(
+            url, city_filter=city_filter
+        )
     elif city_filter:
         # SSR gave us results but we still need to filter by city
         cf = city_filter.lower()
@@ -996,6 +1010,10 @@ def extract_bloom_housing_listings(
             ]
 
     if not open_items and not closed_items:
+        if not api_pagination_complete:
+            raise SourceFetchError(
+                f"[Bloom] API pagination failed with zero listings for {url}"
+            )
         logger.error(
             "[Bloom] All three extraction paths returned zero listings for %s. "
             "Manual investigation required. Check: "
@@ -1031,6 +1049,14 @@ def extract_bloom_housing_listings(
         rec = _bloom_record_from_item(item, url, authority)
         if rec:
             records.append(rec)
+
+    if not api_pagination_complete:
+        # #1058: partial regional feed is not a successful complete inventory
+        raise SourceFetchError(
+            f"[Bloom] incomplete API pagination for {url} "
+            f"({len(records)} records converted; mark SCRAPE_FAILED)",
+            partial=list(records),
+        )
 
     logger.info(
         "[Bloom] Produced %d HousingRecord objects from %s (%d open + %d closed source items)",

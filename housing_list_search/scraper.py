@@ -215,7 +215,13 @@ def _host_lock(netloc: str) -> threading.Lock:
 
 
 def wait_for_host(url_or_host: str, delay: float) -> None:
-    """Block until at least ``delay`` seconds have elapsed since the last fetch to this host."""
+    """Block until at least ``delay`` seconds have elapsed since the last fetch to this host.
+
+    Claims the host slot before releasing the lock (#1053) so concurrent workers
+    cannot both observe remaining==0 and start the same-host request together.
+    ``mark_host_fetched`` still runs after the request to extend the gap for
+    long-running responses.
+    """
     netloc = _netloc(url_or_host)
     if not netloc or delay <= 0:
         return
@@ -227,6 +233,8 @@ def wait_for_host(url_or_host: str, delay: float) -> None:
         remaining = delay - (now - last)
         if remaining > 0:
             time.sleep(remaining)
+        # Reserve: next waiter measures from this claim, not from request end
+        _HOST_LAST_FETCH[netloc] = time.monotonic()
 
 
 def mark_host_fetched(url_or_host: str) -> None:
