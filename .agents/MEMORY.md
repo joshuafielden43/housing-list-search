@@ -161,6 +161,7 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 |------|-----|
 | **#982** [EPIC] Ponytail cleanup batch (13 items) | delete/YAGNI/shrink legacy: normalizer.py, generic_scraper, playwright_scraper fallbacks, run_target wrapper, freshness helpers, doctor prune-snapshots, lint-staged, artifacts wrapper, city shims, records_to_markdown, GIS _normalize, plus 2 shrinks. Net ~-1070 LOC incl. tests/docs. Implemented + committed 6eff813. See subtasks #969–#981. |
 | Deep-critique 2026-07 (autonomous) | High: #983 Listing seam (value type + stable surrogates + tests), #985 retry in polite, partial #984 chore reduction (better prune cmd). Also #990 indexes, #992 lazy reg, #986 parser harden. Committed/pushed 78c467d + prior. See Vikunja #983-992. |
+| Deep-critique failure-semantics (2026-07-09) | #1047 epic + children. Shipped on main: b73f817 security (#1051/#1056/#1057), 12959d5 SourceFetchError (#1048), b3ab73e canonical failed auth + run_prev preserve (#1049/#1050), 3546ec0 TARGETS header hard-fail (#1052), 73f2a0f Bloom partial/throttle/lazy guard (#1058/#1053/#1054). #1055 closed as investigation: #1050 is the cheap publication half; full atomic multi-artifact commit remains optional. Domain bar: down ≠ gone. |
 
 **Deferred (local-first):** **#412** onboarding baseline; **#423** PR live integration tests.
 
