@@ -388,6 +388,95 @@ class TestRunPipeline:
         finally:
             os.chdir(orig)
 
+    def test_failed_portfolio_label_canonicalized_for_scrape_failed(self, tmp_path):
+        """#1049: TARGETS portfolio name → SCRAPE_FAILED on canonical MidPen Housing rows."""
+        import os
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+            db.upsert_listings(
+                [
+                    {
+                        "authority": "MidPen Housing (Santa Clara County portfolio)",
+                        "property_name": "MidPen Place",
+                        "url": "https://midpen.example/p1",
+                        "listing_status": "open",
+                    },
+                ],
+                run_id="prior-good",
+            )
+
+            def _boom(t):
+                raise RuntimeError("site down for the long weekend")
+
+            targets = [
+                {
+                    "authority": "MidPen Housing (Santa Clara County portfolio)",
+                    "url": "https://www.midpen-housing.org/find-housing/",
+                    "scraping_measures": "midpen,native_requests",
+                }
+            ]
+
+            result = RunPipeline().run(
+                targets,
+                db=db,
+                run_target_fn=_boom,
+                run_id="weekend-outage",
+            )
+
+            assert result.failed_targets == ["MidPen Housing"]
+            with open("diff.csv", newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            assert len(rows) == 1
+            assert rows[0]["source_authority"] == "MidPen Housing"
+            assert rows[0]["change_type"] == "SCRAPE_FAILED"
+            assert result.diff_counts.get("STALE", 0) == 0
+            assert result.diff_counts.get("SCRAPE_FAILED", 0) == 1
+        finally:
+            os.chdir(orig)
+
+    def test_full_run_with_failure_preserves_run_prev_baseline(self, tmp_path):
+        """#1050: failed full run must not overwrite run_prev.csv with a thin set."""
+        import os
+
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            db = DatabaseManager(Path("housing_registry.db"))
+            db.init_db()
+
+            # Seed a prior good baseline
+            with open("run_prev.csv", "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["authority", "property_name", "url", "listing_status"])
+                w.writerow(["MidPen Housing", "Known Prop", "https://m/1", "open"])
+            baseline = Path("run_prev.csv").read_text(encoding="utf-8")
+
+            def _boom(t):
+                raise RuntimeError("outage")
+
+            result = RunPipeline().run(
+                [
+                    {
+                        "authority": "MidPen Housing",
+                        "url": "https://example/",
+                        "scraping_measures": "midpen",
+                    }
+                ],
+                db=db,
+                run_target_fn=_boom,
+                run_id="outage-run",
+            )
+
+            assert result.failed_targets == ["MidPen Housing"]
+            assert Path("run_prev.csv").read_text(encoding="utf-8") == baseline
+            assert Path("changelog_diffs.md").exists()
+        finally:
+            os.chdir(orig)
+
     def test_validated_zero_suppresses_suspicious_zero(self, tmp_path):
         import os
 

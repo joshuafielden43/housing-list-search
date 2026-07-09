@@ -113,6 +113,38 @@ def test_export_diff_csv_marks_scrape_failed_separate_from_stale(temp_db):
             out.unlink()
 
 
+def test_export_diff_csv_scrape_failed_matches_canonical_authority(temp_db):
+    """#1049: portfolio TARGETS label must SCRAPE_FAILED rows stored as MidPen Housing."""
+    import csv
+
+    mgr = temp_db
+    mgr.upsert_listings(
+        [
+            {
+                "authority": "MidPen Housing (Santa Clara County portfolio)",
+                "property_name": "MidPen Place",
+                "url": "https://midpen.example/p1",
+            },
+        ],
+        run_id="prior",
+    )
+    # No confirmation this run
+    out = Path(tempfile.gettempdir()) / "test_diff_midpen_canon.csv"
+    try:
+        mgr.export_diff_csv(
+            str(out),
+            run_id="current-empty",
+            scrape_failed_authorities=["MidPen Housing (Santa Clara County portfolio)"],
+        )
+        rows = list(csv.DictReader(out.read_text(encoding="utf-8").splitlines()))
+        assert len(rows) == 1
+        assert rows[0]["source_authority"] == "MidPen Housing"
+        assert rows[0]["change_type"] == "SCRAPE_FAILED"
+    finally:
+        if out.exists():
+            out.unlink()
+
+
 def test_export_diff_csv_includes_record_kind(temp_db):
     mgr = temp_db
     mgr.upsert_listings(

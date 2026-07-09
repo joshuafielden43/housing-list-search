@@ -181,6 +181,7 @@ def generate_changelog(
     previous_run_id: str | None = None,
     diff_csv_path: str = "diff.csv",
     scrape_failed_authorities: list[str] | None = None,
+    update_run_prev: bool = True,
 ):
     """
     Project disappearance from diff.csv; render staff changelog artifacts.
@@ -188,6 +189,9 @@ def generate_changelog(
     current: deduped listing dicts from this run.
     run_id / previous_run_id: drive REMOVED vs lingering STALE (from run_history).
     diff_csv_path: machine diff written by RunPipeline (source of truth per ADR-0001).
+    update_run_prev: when False (failed full run, #1050), write changelog artifacts
+        but leave run_prev.csv untouched so a thin/outage run cannot become the next
+        baseline. Down ≠ gone.
     """
     skipped_targets = skipped_targets or []
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -224,10 +228,12 @@ def generate_changelog(
         writer.writerow(["change_type", "authority", "property_name", "url", "details"])
         writer.writerows([tuple(sanitize_csv_field(cell) for cell in row) for row in csv_rows])
 
-    _write_run_snapshot(current)
+    if update_run_prev:
+        _write_run_snapshot(current)
 
     print(
         f"✅ Generated changelog_diffs.md (+{len(result.added)} added, "
         f"-{len(result.removed)} removed, {len(result.scrape_failed)} scrape_failed, "
         f"{len(result.status_changed)} status changes, {len(result.stale_lingering)} stale)"
+        + ("" if update_run_prev else " [run_prev baseline preserved]")
     )

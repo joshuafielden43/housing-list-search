@@ -475,15 +475,29 @@ class DatabaseManager:
 
     @staticmethod
     def _diff_case_sql(scrape_failed_authorities: list[str] | None = None) -> tuple[str, list[str]]:
-        """Build the SCRAPE_FAILED CASE branch and its bind parameters."""
-        failed = [a for a in (scrape_failed_authorities or []) if a]
-        if not failed:
+        """Build the SCRAPE_FAILED CASE branch and its bind parameters.
+
+        Expands each label through canonical_authority so TARGETS portfolio
+        names match persisted MidPen Housing / John Stewart Company rows (#1049).
+        """
+        from housing_list_search.listing import canonical_authority
+
+        expanded: list[str] = []
+        seen: set[str] = set()
+        for a in scrape_failed_authorities or []:
+            if not a:
+                continue
+            for label in (a, canonical_authority(a) or a):
+                if label and label not in seen:
+                    seen.add(label)
+                    expanded.append(label)
+        if not expanded:
             return "", []
-        placeholders = ",".join("?" for _ in failed)
+        placeholders = ",".join("?" for _ in expanded)
         branch = (
             f"WHEN authority IN ({placeholders}) THEN 'SCRAPE_FAILED'\n                        "
         )
-        return branch, failed
+        return branch, expanded
 
     def export_csv(self, path: str = "current_full.csv") -> int:
         """

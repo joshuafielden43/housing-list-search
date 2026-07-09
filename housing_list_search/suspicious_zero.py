@@ -11,6 +11,7 @@ from datetime import date
 from typing import Any
 
 from housing_list_search.coverage import classify_record_kind
+from housing_list_search.listing import canonical_authority
 from housing_list_search.measure_registry import expects_property_inventory, parse_target_measures
 from housing_list_search.validated_zero import has_current_validated_zero
 
@@ -34,12 +35,20 @@ def find_suspicious_zeros(
     Targets with a current Validated Zero (ADR-0003) are excluded.
     """
     today = today or date.today()
-    failed = set(failed_authorities)
+    # Match raw TARGETS labels and canonical persisted forms (#1049)
+    failed = set()
+    for a in failed_authorities:
+        if not a:
+            continue
+        failed.add(a)
+        failed.add(canonical_authority(a) or a)
     suspicious: list[str] = []
 
     for target in targets:
         authority = (target.get("authority") or "").strip()
-        if not authority or authority in failed:
+        if not authority:
+            continue
+        if authority in failed or (canonical_authority(authority) or authority) in failed:
             continue
 
         measures = parse_target_measures(target.get("scraping_measures") or "")

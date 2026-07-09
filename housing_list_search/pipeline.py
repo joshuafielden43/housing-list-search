@@ -23,7 +23,7 @@ from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
-from housing_list_search.listing import canonicalize_listings
+from housing_list_search.listing import canonical_authority, canonicalize_listings
 from housing_list_search.needs_review import notify_needs_review
 from housing_list_search.outputs import (
     PARTIAL_DAILY_SUMMARY_PATH,
@@ -89,7 +89,12 @@ class RunPipeline:
             run_target_fn or dispatch_module.scrape_target
         )  # collapsed seam: direct from dispatch (module import for patchability)
         skipped = skipped_targets or []
-        target_authorities = [t["authority"] for t in targets] if partial_run else None
+        # Canonical authority labels so partial-run scope and SCRAPE_FAILED match DB rows (#1049)
+        target_authorities = (
+            [canonical_authority(t["authority"]) or t["authority"] for t in targets]
+            if partial_run
+            else None
+        )
 
         # Deepened TargetScrapeResult seam: each target returns authority + raw records + explicit had_error.
         # Pipeline collects raw pre-canonical for suspicious_zero; no phantom mutable failures lists.
@@ -222,13 +227,23 @@ class RunPipeline:
             )
         else:
             previous_run_id = db.get_previous_full_run_id()
+            # #1050: do not advance run_prev baseline when any authority failed.
+            # Down ≠ gone — a thin failed run must not become next run's comparison set.
+            update_baseline = not bool(failed_targets)
             generate_changelog(
                 all_listings,
                 skipped_targets=skipped,
                 run_id=run_id,
                 previous_run_id=previous_run_id,
                 scrape_failed_authorities=failed_targets,
+                update_run_prev=update_baseline,
             )
+            if not update_baseline:
+                logger.warning(
+                    "Preserved prior run_prev.csv baseline — %d failed target(s); "
+                    "down/outage is not evidence of inventory removal",
+                    len(failed_targets),
+                )
             db.log_full_run(run_id, rows_after=counts["inserted"] + counts["updated"])
             generate_daily_summary(
                 all_listings,
@@ -305,7 +320,15 @@ class RunPipeline:
         # gets the raw pre-canonical records needed by suspicious_zero.
         all_listings = []
         listings_by_authority = {}
-        failed_targets = [o.authority for o in outcomes if o.had_error]
+        # #1049: canonical labels for SCRAPE_FAILED matching persisted housing_records.authority
+        failed_targets = []
+        seen_failed: set[str] = set()
+        for o in outcomes:
+            if o.had_error:
+                label = canonical_authority(o.authority) or o.authority
+                if label and label not in seen_failed:
+                    seen_failed.add(label)
+                    failed_targets.append(label)
         for o in outcomes:
             all_listings.extend(o.records)
             listings_by_authority[o.authority] = o.records
