@@ -294,6 +294,26 @@ logger = logging.getLogger(__name__)
 
 _MAX_REDIRECT_HOPS = 10
 _REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
+# Drop these on cross-origin redirects so bearer/session credentials cannot leak.
+_SENSITIVE_HEADER_NAMES = frozenset({"authorization", "cookie", "proxy-authorization"})
+
+
+def _url_origin(url: str) -> tuple[str, str, int | None]:
+    """Return (scheme, hostname_lower, port) for same-origin comparison."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    port = parsed.port
+    if port is None:
+        if parsed.scheme == "https":
+            port = 443
+        elif parsed.scheme == "http":
+            port = 80
+    return (parsed.scheme.lower(), host, port)
+
+
+def _strip_sensitive_headers(headers: dict[str, str]) -> dict[str, str]:
+    """Copy headers without Authorization / Cookie (case-insensitive keys)."""
+    return {k: v for k, v in headers.items() if k.lower() not in _SENSITIVE_HEADER_NAMES}
 
 
 def _request_with_redirect_policy(
@@ -305,8 +325,14 @@ def _request_with_redirect_policy(
     stream: bool = True,
     json: dict | list | None = None,
 ):
-    """Issue HTTP request(s), validating each redirect target through url_policy."""
+    """Issue HTTP request(s), validating each redirect target through url_policy.
+
+    Cross-origin redirects (different scheme/host/port) strip Authorization and
+    Cookie so authenticated callers (e.g. Vikunja Bearer) cannot leak to a
+    third-party Location. Same-origin redirects keep credentials.
+    """
     current = url
+    active_headers = dict(headers)
     for _ in range(_MAX_REDIRECT_HOPS + 1):
         try:
             validate_http_url(current)
@@ -315,7 +341,7 @@ def _request_with_redirect_policy(
             return None
 
         kwargs: dict = {
-            "headers": headers,
+            "headers": active_headers,
             "timeout": timeout,
             "stream": stream,
             "allow_redirects": False,
@@ -336,7 +362,17 @@ def _request_with_redirect_policy(
         if not location:
             logger.warning("Redirect from %s missing Location header", current)
             return None
-        current = urljoin(current, location)
+        next_url = urljoin(current, location)
+        if _url_origin(next_url) != _url_origin(current):
+            stripped = _strip_sensitive_headers(active_headers)
+            if stripped != active_headers:
+                logger.info(
+                    "Stripped sensitive headers on cross-origin redirect %s → %s",
+                    current,
+                    next_url,
+                )
+            active_headers = stripped
+        current = next_url
 
     logger.warning("Redirect hop limit exceeded for %s", url)
     return None
@@ -394,10 +430,21 @@ def is_allowed_by_robots(url: str) -> bool:
         return True
 
 
-def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_BYTES):
+def polite_get(
+    url: str,
+    delay: int = 3,
+    max_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
+    *,
+    headers: dict[str, str] | None = None,
+):
     """
     Polite HTTP GET with URL policy, robots.txt check, rate limiting, and
     bounded response size.
+
+    Optional ``headers`` are merged over the nonprofit User-Agent (caller wins
+    on key collision except User-Agent is always set first then updated). Use
+    for authenticated APIs (e.g. Vikunja Bearer). Cross-origin redirects strip
+    Authorization/Cookie — see ``_request_with_redirect_policy``.
 
     Returns the Response on success, None on any failure (404, 403, network
     error, policy violation, oversize body). All failures are logged as
@@ -415,7 +462,9 @@ def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_B
     if not is_allowed_by_robots(url):
         return None
 
-    headers = {"User-Agent": USER_AGENT}
+    req_headers = {"User-Agent": USER_AGENT}
+    if headers:
+        req_headers.update(headers)
     try:
         wait_for_host(url, delay)
         logger.debug("Fetching: %s", url)
@@ -423,7 +472,9 @@ def polite_get(url: str, delay: int = 3, max_bytes: int = DEFAULT_MAX_RESPONSE_B
         last_exc = None
         for attempt in range(_MAX_RETRIES):
             try:
-                resp = _request_with_redirect_policy("GET", url, headers=headers, timeout=15, stream=True)
+                resp = _request_with_redirect_policy(
+                    "GET", url, headers=req_headers, timeout=15, stream=True
+                )
             except URLPolicyError as exc:
                 # Policy blocks are final, no retry
                 logger.warning("URL policy blocked fetch for %s: %s", url, exc)

@@ -208,6 +208,116 @@ class TestPoliteGet:
         assert result is ok
         assert mock_get.call_count == 2
 
+    def test_polite_get_accepts_and_forwards_headers(self):
+        """#1051: optional headers= merge (Vikunja Bearer, etc.)."""
+        from housing_list_search.scraper import polite_get
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.iter_content.return_value = [b"[]"]
+        with (
+            patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
+            patch("housing_list_search.scraper.requests.get", return_value=mock_resp) as mock_get,
+            patch("housing_list_search.scraper.wait_for_host"),
+            patch("housing_list_search.scraper.mark_host_fetched"),
+        ):
+            result = polite_get(
+                "https://vikunja.example/api/v1/projects/9/tasks",
+                headers={"Authorization": "Bearer secret-token", "Accept": "application/json"},
+            )
+        assert result is mock_resp
+        sent = mock_get.call_args.kwargs["headers"]
+        assert sent["Authorization"] == "Bearer secret-token"
+        assert sent["Accept"] == "application/json"
+        assert "User-Agent" in sent
+
+    def test_cross_origin_redirect_strips_authorization(self):
+        """#1056: Bearer must not follow a cross-origin Location."""
+        from housing_list_search.scraper import polite_get
+
+        redirect = MagicMock()
+        redirect.status_code = 302
+        redirect.headers = {"Location": "https://evil.example/collect"}
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.iter_content.return_value = [b"ok"]
+        with (
+            patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
+            patch(
+                "housing_list_search.scraper.requests.get",
+                side_effect=[redirect, ok],
+            ) as mock_get,
+            patch("housing_list_search.scraper.wait_for_host"),
+            patch("housing_list_search.scraper.mark_host_fetched"),
+        ):
+            result = polite_get(
+                "https://vikunja.example/api/start",
+                headers={"Authorization": "Bearer secret-token", "Cookie": "sid=abc"},
+            )
+        assert result is ok
+        assert mock_get.call_count == 2
+        first_headers = mock_get.call_args_list[0].kwargs["headers"]
+        second_headers = mock_get.call_args_list[1].kwargs["headers"]
+        assert first_headers["Authorization"] == "Bearer secret-token"
+        assert "Authorization" not in second_headers
+        assert "Cookie" not in second_headers
+        assert second_headers.get("User-Agent")
+
+    def test_same_origin_redirect_keeps_authorization(self):
+        """Same-origin redirect may keep auth (path-only Location)."""
+        from housing_list_search.scraper import polite_get
+
+        redirect = MagicMock()
+        redirect.status_code = 302
+        redirect.headers = {"Location": "/api/v1/projects/9/tasks"}
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.iter_content.return_value = [b"[]"]
+        with (
+            patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
+            patch(
+                "housing_list_search.scraper.requests.get",
+                side_effect=[redirect, ok],
+            ) as mock_get,
+            patch("housing_list_search.scraper.wait_for_host"),
+            patch("housing_list_search.scraper.mark_host_fetched"),
+        ):
+            result = polite_get(
+                "https://vikunja.example/api/start",
+                headers={"Authorization": "Bearer secret-token"},
+            )
+        assert result is ok
+        second_headers = mock_get.call_args_list[1].kwargs["headers"]
+        assert second_headers["Authorization"] == "Bearer secret-token"
+
+    def test_cross_origin_redirect_strips_auth_on_post(self):
+        """#1056 also applies to polite_post (Vikunja create/update)."""
+        from housing_list_search.scraper import polite_post
+
+        redirect = MagicMock()
+        redirect.status_code = 302
+        redirect.headers = {"Location": "https://evil.example/collect"}
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.iter_content.return_value = [b'{"id":1}']
+        with (
+            patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
+            patch(
+                "housing_list_search.scraper.requests.post",
+                side_effect=[redirect, ok],
+            ) as mock_post,
+            patch("housing_list_search.scraper.wait_for_host"),
+            patch("housing_list_search.scraper.mark_host_fetched"),
+        ):
+            result = polite_post(
+                "https://vikunja.example/api/v1/projects/9/tasks",
+                json={"title": "t"},
+                headers={"Authorization": "Bearer secret-token"},
+            )
+        assert result is ok
+        second_headers = mock_post.call_args_list[1].kwargs["headers"]
+        assert "Authorization" not in second_headers
+
     def test_network_exception_returns_none(self):
         import requests as _req
 

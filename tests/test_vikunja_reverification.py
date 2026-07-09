@@ -59,6 +59,49 @@ def test_sync_creates_task(monkeypatch):
     assert "/projects/9/tasks" in calls[1][1]
 
 
+def test_list_open_tasks_passes_headers_to_polite_get(monkeypatch):
+    """#1051: signature contract — polite_get must accept headers= from Vikunja."""
+    import inspect
+
+    import housing_list_search.vikunja_reverification as vr
+    from housing_list_search.scraper import polite_get
+
+    # Live signature must accept headers= (regression: TypeError before network)
+    sig = inspect.signature(polite_get)
+    assert "headers" in sig.parameters
+
+    monkeypatch.setenv("HLS_VIKUNJA_URL", "https://vikunja.example")
+    monkeypatch.setenv("HLS_VIKUNJA_TOKEN", "test-token")
+    monkeypatch.setenv("HLS_VIKUNJA_PROJECT_ID", "9")
+
+    seen: dict = {}
+
+    class FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return []
+
+    def capturing_get(url, *args, **kwargs):
+        seen["url"] = url
+        seen["kwargs"] = kwargs
+        # Exercise real polite_get signature path by calling with headers=
+        # (we do not hit the network — return fake)
+        return FakeResp()
+
+    monkeypatch.setattr(vr, "polite_get", capturing_get)
+    monkeypatch.setattr(vr, "polite_post", lambda *a, **k: FakeResp())
+
+    sync_reverification_tasks(
+        run_id="run-sig",
+        suspicious_zero_authorities=["City A"],
+        reverification_due_authorities=[],
+    )
+    assert "headers" in seen["kwargs"]
+    assert seen["kwargs"]["headers"]["Authorization"] == "Bearer test-token"
+
+
 def test_sync_updates_existing_task(monkeypatch):
     monkeypatch.setenv("HLS_VIKUNJA_URL", "https://vikunja.example")
     monkeypatch.setenv("HLS_VIKUNJA_TOKEN", "test-token")
