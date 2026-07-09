@@ -138,12 +138,18 @@ def scrape_midpen(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
 
+    from housing_list_search.scraper import SourceFetchError
+
     for page_num in range(1, MAX_PAGES + 1):
         page_slot = "" if page_num == 1 else f"{page_num}/"
         page_url = SEARCH_URL_TEMPLATE.format(page=page_slot)
         resp = polite_get(page_url)
         if not resp:
-            break
+            # Page 1 failure = authority failed. Later page failure = partial + error.
+            raise SourceFetchError(
+                f"midpen: fetch failed for {page_url}",
+                partial=records,
+            )
 
         soup = BeautifulSoup(resp.text, "html.parser")
         cards = soup.find_all("div", class_=lambda c: c and "elementor-location-single" in c)

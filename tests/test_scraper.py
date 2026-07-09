@@ -17,6 +17,31 @@ from housing_list_search.scraper import RobotsEntry, clear_robots_cache
 # ---------------------------------------------------------------------------
 
 
+class TestSourceFetchError:
+    def test_require_response_passes_through(self):
+        from housing_list_search.scraper import require_response
+
+        resp = object()
+        assert require_response(resp, "https://example.gov") is resp
+
+    def test_require_response_raises_on_none(self):
+        from housing_list_search.scraper import SourceFetchError, require_response
+
+        try:
+            require_response(None, "https://example.gov/x", context="eah")
+            raise AssertionError("expected SourceFetchError")
+        except SourceFetchError as exc:
+            assert "eah" in str(exc)
+            assert "https://example.gov/x" in str(exc)
+            assert exc.partial == []
+
+    def test_source_fetch_error_carries_partial(self):
+        from housing_list_search.scraper import SourceFetchError
+
+        err = SourceFetchError("mid-page fail", partial=[{"property_name": "A"}])
+        assert err.partial == [{"property_name": "A"}]
+
+
 class TestRobotsRespect:
     @pytest.fixture(autouse=True)
     def _allow_test_urls(self):

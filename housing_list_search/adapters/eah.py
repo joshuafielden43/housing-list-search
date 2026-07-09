@@ -108,10 +108,9 @@ def scrape_eah(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     now_iso = _dt.now().isoformat()
     target = url or SEARCH_RESULTS_URL
 
-    resp = polite_get(target)
-    if not resp:
-        logger.warning("[eah] Could not fetch %s", target)
-        return []
+    from housing_list_search.scraper import require_response
+
+    resp = require_response(polite_get(target), target, context="eah")
 
     records = parse_search_results(resp.text, now_iso, target)
     print(f"   → EAH Housing: {len(records)} Santa Clara County properties")

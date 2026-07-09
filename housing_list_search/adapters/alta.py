@@ -236,10 +236,13 @@ def scrape_property_directory(authority: str = "") -> list[dict[str, Any]]:
     city lives in the address while `authority` records which TARGETS.md row
     triggered the scrape.
     """
-    resp = polite_get(PROPERTY_DIRECTORY_URL)
-    if not resp:
-        logger.warning("[alta] Could not fetch property directory %s", PROPERTY_DIRECTORY_URL)
-        return []
+    from housing_list_search.scraper import require_response
+
+    resp = require_response(
+        polite_get(PROPERTY_DIRECTORY_URL),
+        PROPERTY_DIRECTORY_URL,
+        context="alta",
+    )
 
     soup = BeautifulSoup(resp.text, "html.parser")
     now_iso = _dt.now().isoformat()

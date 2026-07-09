@@ -182,6 +182,10 @@ def dispatch_target(
             ran_any = True
     except Exception as exc:
         _note_error()
+        partial = getattr(exc, "partial", None) or []
+        if partial:
+            results.extend(_coerce_records(partial))
+            ran_any = True
         logger.warning(
             "[dispatch] %s: URL extraction failed (%s) — continuing to measure handlers",
             ctx.authority,
@@ -197,6 +201,11 @@ def dispatch_target(
             logger.info("[dispatch] %s: %s → %d records", ctx.authority, measure_name, len(recs))
         except Exception as exc:
             _note_error()
+            # SourceFetchError may carry partial pages already scraped
+            partial = getattr(exc, "partial", None) or []
+            if partial:
+                results.extend(partial)
+                ran_any = True
             logger.warning("[dispatch] %s: %s failed: %s", ctx.authority, measure_name, exc)
 
     unknown = ctx.measures - KNOWN_MEASURES

@@ -108,16 +108,19 @@ def _parse_find_a_home(html_text: str, now_iso: str) -> list[dict[str, Any]]:
 
 def _fetch_portfolio_api(now_iso: str, known_urls: set[str]) -> list[dict[str, Any]]:
     """Backfill the full portfolio from the WordPress REST API."""
-    resp = polite_get(API_URL)
-    if not resp:
-        return []
+    from housing_list_search.scraper import require_response
+
+    resp = require_response(polite_get(API_URL), API_URL, context="charities_housing/api")
     try:
         items = resp.json()
     except Exception:
         logger.warning("[charities_housing] API returned non-JSON")
-        return []
+        raise
     if not isinstance(items, list):
-        return []
+        from housing_list_search.scraper import SourceFetchError
+
+        raise SourceFetchError(f"charities_housing/api: unexpected payload from {API_URL}")
+
 
     records: list[dict[str, Any]] = []
     for item in items:
@@ -160,15 +163,37 @@ def scrape_charities_housing(authority: str = "", url: str = "") -> list[dict[st
     print("🧩 Running Charities Housing adapter (find-a-home + portfolio API)")
     now_iso = _dt.now().isoformat()
 
+    from housing_list_search.scraper import SourceFetchError
+
     records: list[dict[str, Any]] = []
-    resp = polite_get(url or FIND_A_HOME_URL)
+    find_url = url or FIND_A_HOME_URL
+    find_failed = False
+    resp = polite_get(find_url)
     if resp:
         records.extend(_parse_find_a_home(resp.text, now_iso))
     else:
-        logger.warning("[charities_housing] Could not fetch %s", url or FIND_A_HOME_URL)
+        find_failed = True
+        logger.warning("[charities_housing] Could not fetch %s", find_url)
 
     known_urls = {r.get("url", "") for r in records}
-    records.extend(_fetch_portfolio_api(now_iso, known_urls))
+    api_failed = False
+    try:
+        records.extend(_fetch_portfolio_api(now_iso, known_urls))
+    except Exception as exc:
+        api_failed = True
+        logger.warning("[charities_housing] portfolio API failed: %s", exc)
+
+    if find_failed and api_failed:
+        raise SourceFetchError(
+            f"charities_housing: both find-a-home ({find_url}) and portfolio API failed"
+        )
+    if find_failed or api_failed:
+        # Partial success: upsert what we have, mark authority scrape incomplete
+        raise SourceFetchError(
+            "charities_housing: one of two sources failed "
+            f"(find_a_home_failed={find_failed}, api_failed={api_failed})",
+            partial=records,
+        )
 
     print(
         f"   → Charities Housing: {len(records)} properties "

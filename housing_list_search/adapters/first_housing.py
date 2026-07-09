@@ -108,10 +108,9 @@ def scrape_first_housing(authority: str = "", url: str = "") -> list[dict[str, A
     now_iso = _dt.now().isoformat()
     target = url or PORTFOLIO_URL
 
-    resp = polite_get(target)
-    if not resp:
-        logger.warning("[first_housing] Could not fetch %s", target)
-        return []
+    from housing_list_search.scraper import require_response
+
+    resp = require_response(polite_get(target), target, context="first_housing")
 
     records = parse_portfolio(resp.text, now_iso, target)
     print(f"   → First Community Housing: {len(records)} properties")

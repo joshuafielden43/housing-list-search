@@ -143,6 +143,8 @@ def scrape_eden(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     now_iso = _dt.now().isoformat()
     target = url or COUNTY_LIST_URL
 
+    from housing_list_search.scraper import require_response
+
     resp = polite_get(target)
     if not resp:
         logger.warning(
@@ -151,7 +153,7 @@ def scrape_eden(authority: str = "", url: str = "") -> list[dict[str, Any]]:
             "to public DNS (1.1.1.1 / 8.8.8.8).",
             target,
         )
-        return []
+    resp = require_response(resp, target, context="eden")
 
     records = parse_property_grid(resp.text, now_iso, target)
     print(f"   → Eden Housing: {len(records)} Santa Clara County properties")

@@ -76,6 +76,30 @@ class URLPolicyError(ValueError):
     """Raised when a URL fails outbound policy checks."""
 
 
+class SourceFetchError(RuntimeError):
+    """Inventory source fetch failed (network, HTTP error, policy, robots).
+
+    Distinct from a successful response that happens to contain zero listings.
+    Adapters raise this when polite_get/polite_post returns None for a required
+    inventory URL so dispatch can set had_error and label SCRAPE_FAILED.
+
+    ``partial`` may carry records already scraped (e.g. page 1 OK, page 2 failed)
+    so the pipeline can upsert what it has while still marking the authority failed.
+    """
+
+    def __init__(self, message: str, *, partial: list | None = None):
+        super().__init__(message)
+        self.partial: list = list(partial or [])
+
+
+def require_response(resp, url: str, *, context: str = ""):
+    """Return resp or raise SourceFetchError when polite_get/post returned None."""
+    if resp is not None:
+        return resp
+    where = f"{context}: " if context else ""
+    raise SourceFetchError(f"{where}fetch failed for {url}")
+
+
 def _hostname_is_blocked(hostname: str) -> bool:
     host = hostname.lower().rstrip(".")
     if not host:

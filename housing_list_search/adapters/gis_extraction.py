@@ -210,9 +210,9 @@ def _parse_embedded_geojson_js(
     """
     logger.debug(f"GIS (embedded JS) on {url}")
 
-    resp = polite_get(url)
-    if not resp:
-        return []
+    from housing_list_search.scraper import require_response
+
+    resp = require_response(polite_get(url), url, context="gis/embedded_js")
 
     text = resp.text
 
@@ -248,9 +248,9 @@ def _parse_direct_geojson(url: str, authority: str) -> list[dict[str, Any]]:
     """Handles direct .geojson or JSON FeatureCollection endpoints."""
     logger.debug(f"GIS (direct GeoJSON) on {url}")
 
-    resp = polite_get(url)
-    if not resp:
-        return []
+    from housing_list_search.scraper import require_response
+
+    resp = require_response(polite_get(url), url, context="gis/geojson")
 
     try:
         data = resp.json()
@@ -281,19 +281,18 @@ def _parse_arcgis_rest(url: str, authority: str) -> list[dict[str, Any]]:
     if not query_url.rstrip("/").endswith("/query"):
         query_url = query_url.rstrip("/") + "/query"
 
-    resp = polite_get(f"{query_url}?where=1%3D1&outFields=*&f=json")
-    if not resp:
-        return []
+    from housing_list_search.scraper import SourceFetchError, require_response
+
+    full = f"{query_url}?where=1%3D1&outFields=*&f=json"
+    resp = require_response(polite_get(full), full, context="gis/arcgis")
 
     try:
         data = resp.json()
     except Exception as exc:
-        logger.warning("ArcGIS response from %s is not JSON: %s", url, exc)
-        return []
+        raise SourceFetchError(f"gis/arcgis: non-JSON from {url}: {exc}") from exc
 
     if "error" in data:
-        logger.warning("ArcGIS error from %s: %s", url, data["error"])
-        return []
+        raise SourceFetchError(f"gis/arcgis: layer error from {url}: {data['error']}")
 
     return _arcgis_features_to_records(data, url, authority)
 
@@ -386,9 +385,9 @@ def _parse_page_for_embedded_gis(
     """
     logger.debug(f"GIS (page scan) on {url}")
 
-    resp = polite_get(url)
-    if not resp:
-        return []
+    from housing_list_search.scraper import require_response
+
+    resp = require_response(polite_get(url), url, context="gis/page_scan")
 
     soup = BeautifulSoup(resp.text, "html.parser")
     base_url = url
