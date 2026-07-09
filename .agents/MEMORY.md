@@ -159,16 +159,18 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 **Paperwork 2026-07-09:** closed **47** zombie/done tickets (ponytail #969–#981, deep-critique #983–#992 cluster, ops ADR #708–#739/#849, listing/dispatch overlaps #660/#785/#788/#826–#830, etc.). Notes prefixed `DONE (paperwork 2026-07-09)`.
 
-### Still open (~35 residual)
+### High/med concrete (2026-07-09) — shipped
+
+`df7669d` Playwright pool (#761 #769 #987) + low-yield (#789); `bf399c3` export confirmed_this_run (#659), property-only open list (#989), PDF magic (#791), prune docs (#657), OCR lock (#768), token logs (#790), RUN_EVENT (#988), docaccess/policy (#658), dead-weight N/A (#792).
+
+**Deferred by design:** #770 portal smoke remains weekly (no daily hammer).
+
+### Still open (investigate + architecture)
 
 | Priority | Theme | IDs |
 |----------|--------|-----|
-| high | Playwright under parallel workers | **#761** |
-| medium concrete | prune docs, docaccess policy, STALE in current_full, OCR lock, browser reuse, portal smoke cadence, yield gate, token redaction, PDF magic, dead weight, Playwright last-resort, observability, quarantine non-property | **#657 #658 #659 #768 #769 #770 #789 #790 #791 #792 #987 #988 #989** |
 | investigate | dedupe STALE, integration breadth, XHR policy, pagination alert, throttle races, marker license | **#661 #662 #773 #775 #776 #778 #793** |
 | architecture (optional) | seams, RunPipeline phases, measure registry, N+1 upsert, adapters | **#781–#784 #786 #794–#802 #828 #797 #795 #796 #798 #799 #801** |
-
-**Shipped epics (done on tracker):** #982 ponytail; #1047 failure-semantics; #388/#390 closed; #412/#423 deferred-as-designed and closed; #407 closed.
 
 **Domain bar:** down ≠ gone.
 
