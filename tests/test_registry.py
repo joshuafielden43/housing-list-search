@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 
 from housing_list_search.registry import (
+    TargetsHeaderError,
     get_active_targets,
     get_all_targets,
     load_targets_to_db,
+    parse_targets_md,
     sanitize_target,
 )
 
@@ -122,6 +124,36 @@ class TestLoadTargetsToDb:
         self._write_targets(registry_workspace, "")
         load_targets_to_db()
         assert get_all_targets() == []
+
+    def test_missing_critical_header_raises_before_delete(self, registry_workspace):
+        """#1052: bad header must not wipe an existing targets table."""
+        self._write_targets(
+            registry_workspace,
+            "City of Example | https://example.gov/housing | notes | housekeys | High | 2026-06-01\n",
+        )
+        load_targets_to_db()
+        assert len(get_all_targets()) == 1
+
+        # Broken header: missing URL + Scraping Measures columns
+        (registry_workspace / "TARGETS.md").write_text(
+            "City/Authority | Notes | Priority\n"
+            "--- | --- | ---\n"
+            "Would Misalign | something | High\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(TargetsHeaderError, match="missing critical"):
+            load_targets_to_db()
+        # Prior registry intact
+        rows = get_all_targets()
+        assert len(rows) == 1
+        assert rows[0]["authority"] == "City of Example"
+
+    def test_parse_targets_md_rejects_no_header(self, registry_workspace):
+        (registry_workspace / "TARGETS.md").write_text(
+            "No table here\njust prose\n", encoding="utf-8"
+        )
+        with pytest.raises(TargetsHeaderError, match="no City/Authority"):
+            parse_targets_md("TARGETS.md")
 
     def test_valid_row_loads_and_is_active(self, registry_workspace):
         self._write_targets(

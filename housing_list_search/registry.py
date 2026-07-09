@@ -185,25 +185,36 @@ def sanitize_target(raw: dict) -> dict:
     return out
 
 
-def load_targets_to_db():
-    init_db()
-    conn = connect_sqlite(DB_PATH)
-    c = conn.cursor()
+class TargetsHeaderError(ValueError):
+    """TARGETS.md table header is missing critical columns; refuse destructive reload."""
 
-    # Clear and reload from markdown
-    c.execute("DELETE FROM targets")
 
-    with open("TARGETS.md", encoding="utf-8") as f:
+_CRITICAL_TARGETS_COLUMNS = ("city/authority", "url", "scraping measures")
+
+
+def _split_md_row(stripped: str) -> list[str]:
+    raw_cells = [p.strip() for p in stripped.split("|")]
+    if raw_cells and raw_cells[0] == "":
+        raw_cells = raw_cells[1:]
+    if raw_cells and raw_cells[-1] == "":
+        raw_cells = raw_cells[:-1]
+    return raw_cells
+
+
+def parse_targets_md(path: str = "TARGETS.md") -> tuple[list[dict], int]:
+    """Parse TARGETS.md into sanitized row dicts before any DB mutation (#1052).
+
+    Returns (rows_to_insert, skipped_count).
+    Raises TargetsHeaderError if the table header lacks critical columns — callers
+    must not DELETE FROM targets after this failure.
+    """
+    with open(path, encoding="utf-8") as f:
         lines = f.readlines()
 
-    # Robust markdown table parser using header column mapping.
-    # Resilient to column reordering, extra columns (e.g. future fields), and minor alignment issues.
-    # Still rejects on embedded | in notes or missing critical columns.
-    # Loud warnings + skips instead of silent partial ingest.
     header_map: dict[str, int] | None = None
-    sanitized_count = 0
     skipped_count = 0
     in_table = False
+    pending: list[dict] = []
 
     for line in lines:
         stripped = line.strip()
@@ -215,40 +226,24 @@ def load_targets_to_db():
                 in_table = True
                 header_cells = [p.strip().lower() for p in stripped.split("|") if p.strip()]
                 header_map = {name: idx for idx, name in enumerate(header_cells)}
-                # Harden: require critical columns (#986)
-                crit = ["city/authority", "url", "scraping measures"]
-                missing = [c for c in crit if c not in header_map]
+                missing = [c for c in _CRITICAL_TARGETS_COLUMNS if c not in header_map]
                 if missing:
-                    logger.warning(
-                        "TARGETS.md header missing expected columns %s — parser may misalign rows. "
-                        "Check table format.",
-                        missing,
+                    raise TargetsHeaderError(
+                        f"TARGETS.md header missing critical columns {missing}; "
+                        "refusing to reload targets table (existing DB left intact)"
                     )
                 continue  # skip header
-            else:
-                # pre-header data row (rare); fall back to positional for first row
-                raw_cells = [p.strip() for p in stripped.split("|")]
-                if raw_cells and raw_cells[0] == "":
-                    raw_cells = raw_cells[1:]
-                if raw_cells and raw_cells[-1] == "":
-                    raw_cells = raw_cells[:-1]
-                if header_map is None:
-                    # bootstrap a minimal map from this row length (will be overwritten by header)
-                    header_map = {str(i): i for i in range(len(raw_cells))}
-        else:
-            if stripped.startswith("---"):
-                continue
-            raw_cells = [p.strip() for p in stripped.split("|")]
-            if raw_cells and raw_cells[0] == "":
-                raw_cells = raw_cells[1:]
-            if raw_cells and raw_cells[-1] == "":
-                raw_cells = raw_cells[:-1]
+            # Ignore pre-header pipe lines; require City/Authority header (#1052)
+            continue
 
-        if header_map is None:
-            # fallback
-            header_map = {str(i): i for i in range(len(raw_cells) if raw_cells else 12)}
+        if stripped.startswith("---"):
+            continue
+        raw_cells = _split_md_row(stripped)
+        if not raw_cells:
+            continue
 
-        # Use header map for robust access; fall back to positional if key missing
+        assert header_map is not None
+
         def get_cell(key: str, fallback_idx: int) -> str:
             if key in header_map:
                 idx = header_map[key]
@@ -260,7 +255,7 @@ def load_targets_to_db():
             authority = raw_cells[0] if raw_cells else ""
 
         notes = get_cell("notes", 2)
-        if len(notes) > 2 and "|" in notes:  # still guard embedded |
+        if len(notes) > 2 and "|" in notes:
             logger.warning(
                 "Sanitizer rejected row for authority='%s' — pipe character in notes "
                 "breaks column alignment; escape or rephrase notes",
@@ -294,6 +289,27 @@ def load_targets_to_db():
             skipped_count += 1
             continue
 
+        pending.append(cleaned)
+
+    if not in_table:
+        raise TargetsHeaderError(
+            "TARGETS.md has no City/Authority table header; refusing to reload targets table"
+        )
+
+    return pending, skipped_count
+
+
+def load_targets_to_db():
+    """Parse TARGETS.md then replace the targets table. Header failures abort before DELETE."""
+    init_db()
+    # #1052: parse + validate first so a bad header cannot wipe the registry
+    pending, skipped_count = parse_targets_md("TARGETS.md")
+
+    conn = connect_sqlite(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM targets")
+
+    for cleaned in pending:
         c.execute(
             """INSERT INTO targets 
             (authority, url, notes, scraping_measures, priority, last_seen,
@@ -315,10 +331,10 @@ def load_targets_to_db():
                 cleaned["validated_zero_review_due"],
             ),
         )
-        sanitized_count += 1
 
     conn.commit()
     conn.close()
+    sanitized_count = len(pending)
     print(f"✅ Loaded targets into SQLite registry ({DB_PATH})")
     if sanitized_count:
         print(f"   Sanitizer processed {sanitized_count} rows")
