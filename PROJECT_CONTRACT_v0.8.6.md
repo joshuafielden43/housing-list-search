@@ -17,7 +17,10 @@ This is the short, current contract. Detail lives in `AGENTS.md`, `SOUL.md`, and
 6. Warn when `STALE` count ≥ 5 (configurable constant in `db.py`)
 7. `changelog` (vs `run_prev.csv`) + `daily_summary.md`
 
-**Prune is manual:** `python scripts/db_manage.py prune --not-seen-since 45`
+**Prune is manual.** Preferred after reviewing `diff.csv` STALE rows:
+`python scripts/db_manage.py prune --from-diff` (dry-run first). Age-based:
+`prune --not-seen-since 45` only after human review. Do not prune SCRAPE_FAILED
+as inventory closures (site downtime ≠ gone). Avoid `--all-stale` unless intentional.
 
 ---
 

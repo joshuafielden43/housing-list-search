@@ -39,19 +39,38 @@ def main():
     drop_p = subparsers.add_parser("drop", help="Drop the entire database (DANGEROUS)")
     drop_p.add_argument("--confirm", required=True, help="Must be exactly 'DROP'")
 
-    # prune
-    prune_p = subparsers.add_parser("prune", help="Remove stale records")
-    prune_p.add_argument(
-        "--not-seen-since", type=int, metavar="DAYS", help="Prune records not seen in N days"
+    # prune — safe operator default is --from-diff after reviewing diff.csv (#657)
+    prune_p = subparsers.add_parser(
+        "prune",
+        help="Remove stale records (manual only; never auto-run)",
+        epilog=(
+            "Safe default: review diff.csv STALE rows, then "
+            "`prune --from-diff --dry-run` then `prune --from-diff`. "
+            "Do NOT prune SCRAPE_FAILED as closures (site may be down). "
+            "`--not-seen-since 45` only after human age review. Avoid --all-stale."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    prune_p.add_argument("--all-stale", action="store_true", help="Apply all current stale rules")
+    prune_p.add_argument(
+        "--not-seen-since",
+        type=int,
+        metavar="DAYS",
+        help="Prune records not seen in N days (use after review; default guidance: 45)",
+    )
+    prune_p.add_argument(
+        "--all-stale",
+        action="store_true",
+        help="Apply all current stale rules (dangerous — prefer --from-diff)",
+    )
     prune_p.add_argument("--dry-run", action="store_true", help="Show what would be deleted")
     prune_p.add_argument("--authority", help="Limit to a specific authority")
     prune_p.add_argument(
         "--expires-at-past", action="store_true", help="Prune records past expires_at"
     )
     prune_p.add_argument(
-        "--from-diff", action="store_true", help="Delete rows matching STALE entries in diff.csv"
+        "--from-diff",
+        action="store_true",
+        help="Preferred: delete rows matching STALE entries in diff.csv (after review)",
     )
     prune_p.add_argument("--diff-path", default="diff.csv", help="Path to diff.csv for --from-diff")
 

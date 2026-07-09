@@ -218,6 +218,39 @@ def test_export_diff_csv_no_run_id_marks_stale_after_7_days(temp_db):
             out.unlink()
 
 
+def test_export_csv_confirmed_this_run_column(temp_db):
+    """#659: full dump plus confirmed_this_run when run_id provided."""
+    import csv
+
+    mgr = temp_db
+    mgr.upsert_listings(
+        [{"authority": "City A", "property_name": "A1", "url": "https://a/1"}],
+        run_id="run-new",
+    )
+    # older row not re-seen
+    conn = mgr.connect()
+    conn.execute(
+        "UPDATE housing_records SET last_run_id = 'run-old' WHERE property_name = 'A1'"
+    )
+    conn.commit()
+    mgr.upsert_listings(
+        [{"authority": "City B", "property_name": "B1", "url": "https://b/1"}],
+        run_id="run-new",
+    )
+    out = Path(tempfile.gettempdir()) / "test_export_confirmed.csv"
+    try:
+        mgr.export_csv(str(out), run_id="run-new")
+        rows = list(csv.DictReader(out.read_text(encoding="utf-8").splitlines()))
+        by_name = {r["property_name"]: r for r in rows}
+        assert "confirmed_this_run" in rows[0]
+        assert "last_run_id" in rows[0]
+        assert by_name["B1"]["confirmed_this_run"] == "Y"
+        assert by_name["A1"]["confirmed_this_run"] == "N"
+    finally:
+        if out.exists():
+            out.unlink()
+
+
 def test_export_csv_includes_record_kind(temp_db):
     mgr = temp_db
     mgr.upsert_listings(

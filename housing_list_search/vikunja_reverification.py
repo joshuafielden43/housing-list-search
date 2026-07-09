@@ -47,12 +47,24 @@ def _vikunja_config() -> tuple[str, str, int] | None:
 
 
 def _redacted(token: str) -> str:
+    """#790: never log full bearer tokens."""
     if not token:
         return ""
     t = token.strip()
     if len(t) <= 8:
         return "***"
     return f"{t[:4]}...{t[-4:]}"
+
+
+def _safe_log_url(url: str) -> str:
+    """Log host+path only — strip query (may embed tokens)."""
+    from urllib.parse import urlparse
+
+    try:
+        p = urlparse(url)
+        return f"{p.scheme}://{p.netloc}{p.path}"
+    except Exception:
+        return "(url)"
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -179,7 +191,7 @@ def sync_reverification_tasks(
     try:
         open_tasks = _list_open_tasks(base, token, project_id)
     except Exception as exc:
-        logger.warning("Vikunja list tasks failed (%s): %s", base, exc)
+        logger.warning("Vikunja list tasks failed (%s): %s", _safe_log_url(base), exc)
         return
 
     for authority, signals in sorted(by_authority.items()):

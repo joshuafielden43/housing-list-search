@@ -101,9 +101,14 @@ def notify_needs_review(
             else:
                 logger.warning("Needs Review webhook POST blocked by policy")
         except Exception as exc:
-            # Do not log full webhook URL (may embed tokens)
-            redacted = webhook_raw[:20] + "..." if len(webhook_raw) > 25 else "***"
-            logger.warning("Needs Review webhook POST failed for %s: %s", redacted, exc)
+            # #790: never log full webhook URL or embedded tokens
+            from urllib.parse import urlparse
+
+            try:
+                host = urlparse(webhook_raw).netloc or "webhook"
+            except Exception:
+                host = "webhook"
+            logger.warning("Needs Review webhook POST failed for host=%s: %s", host, exc)
 
     from housing_list_search.vikunja_reverification import sync_reverification_tasks
 

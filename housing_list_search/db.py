@@ -499,12 +499,13 @@ class DatabaseManager:
         )
         return branch, expanded
 
-    def export_csv(self, path: str = "current_full.csv") -> int:
+    def export_csv(self, path: str = "current_full.csv", *, run_id: str | None = None) -> int:
         """
         Export housing_records to a CSV file. Returns row count written.
 
-        Column order matches the historical current_full.csv schema so existing
-        importers and downstream tools require no changes.
+        Full known inventory (not this-run-only). When ``run_id`` is set, also
+        appends ``last_run_id`` and ``confirmed_this_run`` (Y/N) so operators can
+        filter live vs unconfirmed without changing the dump semantics (#659).
         """
         self.init_db()
         conn = self.connect()
@@ -535,28 +536,45 @@ class DatabaseManager:
                 first_seen,
                 source,
                 source_url,
-                expires_at
+                expires_at,
+                last_run_id
             FROM housing_records
             ORDER BY authority, property_name
         """)
         rows = c.fetchall()
         fieldnames = [d[0] for d in c.description]
-        fieldnames, rows = self._enrich_rows_with_record_kind(fieldnames, rows)
+        fieldnames, rows = self._enrich_rows_with_record_kind(
+            fieldnames, rows, run_id=run_id
+        )
 
         self._write_csv_atomic(path, fieldnames, rows)
         return len(rows)
 
     @staticmethod
-    def _enrich_rows_with_record_kind(fieldnames: list[str], rows) -> tuple[list[str], list[tuple]]:
-        """Append derived record_kind column for coverage-aware exports."""
+    def _enrich_rows_with_record_kind(
+        fieldnames: list[str],
+        rows,
+        *,
+        run_id: str | None = None,
+    ) -> tuple[list[str], list[tuple]]:
+        """Append derived record_kind (+ optional confirmed_this_run) columns."""
         out_fields = list(fieldnames)
         if "record_kind" not in out_fields:
             out_fields.append("record_kind")
+        if run_id and "confirmed_this_run" not in out_fields:
+            out_fields.append("confirmed_this_run")
         enriched: list[tuple] = []
         for row in rows:
             data = dict(zip(fieldnames, row))
+            # classify_record_kind expects authority key
+            if "authority" not in data and data.get("source_authority"):
+                data["authority"] = data["source_authority"]
             data["record_kind"] = classify_record_kind(data)
-            enriched.append(tuple(data[col] for col in out_fields))
+            if run_id:
+                data["confirmed_this_run"] = (
+                    "Y" if (data.get("last_run_id") or "") == run_id else "N"
+                )
+            enriched.append(tuple(data.get(col, "") for col in out_fields))
         return out_fields, enriched
 
     @staticmethod

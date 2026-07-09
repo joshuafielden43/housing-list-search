@@ -1,7 +1,7 @@
 # outputs.py
 from datetime import datetime
 
-from housing_list_search.coverage import summarize_coverage
+from housing_list_search.coverage import classify_record_kind, summarize_coverage
 
 PARTIAL_DAILY_SUMMARY_PATH = "daily_summary_partial.md"
 STAFF_DAILY_SUMMARY_PATH = "daily_summary.md"
@@ -21,6 +21,9 @@ def _listing_is_open(listing: dict) -> bool:
 
 
 def _listing_is_summary_candidate(listing: dict) -> bool:
+    """Staff open list: property inventory only (#989 — portals stay in DB/coverage)."""
+    if classify_record_kind(listing) != "property":
+        return False
     name = listing.get("property_name", "")
     name_lower = name.lower()
     nav_prefixes = [
@@ -253,7 +256,9 @@ def generate_daily_summary(
 
         f.write("## 📊 Full Dataset for Import\n")
         f.write(
-            "- `current_full.csv` — full DB snapshot (all ever-seen rows; may exceed this run's count)\n"
+            "- `current_full.csv` — full DB snapshot (all ever-seen rows). "
+            "Filter `confirmed_this_run=Y` for inventory confirmed this run; "
+            "`record_kind=property` for UEO-style property rows only.\n"
         )
         f.write(
             "- `diff.csv` — this run's delta: NEW / UPDATED / STALE / SCRAPE_FAILED rows (use for incremental imports)\n"

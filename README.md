@@ -108,7 +108,11 @@ PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibilit
 
 ## Run discipline
 
-- After each `--run`, check `diff.csv` for `STALE` rows; when the count is high, prune with `scripts/db_manage.py prune`.
+- After each `--run`, check `diff.csv` for `STALE` vs `SCRAPE_FAILED` rows.
+  - **STALE** = not confirmed this run (may still exist). **SCRAPE_FAILED** = source/machinery failed — not a closure; do not prune as “gone.”
+  - Preferred prune after review: `python scripts/db_manage.py prune --from-diff --dry-run` then drop `--dry-run`.
+  - Age-based only when intentional: `python scripts/db_manage.py prune --not-seen-since 45` (never use `--all-stale` casually).
+  - `current_full.csv` is the full known inventory; filter `confirmed_this_run=Y` for this run, `record_kind=property` for UEO-style property rows.
 - `python main.py --run --target "City Name"` is a partial diagnostic run: `diff.csv` scoped to matched authorities; `run_prev.csv` and staff `daily_summary.md` unchanged; writes `daily_summary_partial.md`.
 - CI runs unit tests only (`pytest -m "not integration"`). Weekly live smoke: `.github/workflows/integration-weekly.yml`.
 - See [AGENTS.md](AGENTS.md) for architecture handoff and [CONTRIBUTING.md](CONTRIBUTING.md) if you change adapters.

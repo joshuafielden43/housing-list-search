@@ -1,5 +1,11 @@
 # Optional OCR/layout fallback for hard PDFs (scanned flyers, scrambled text order).
-# Install: uv pip install -r requirements-ocr.txt --python .venv/bin/python
-# Disable at runtime: HLS_DISABLE_MARKER_PDF=1
--r requirements.txt
+# #768: marker-pdf requires Pillow<11; default daily env pins Pillow 12.x in requirements.lock.
+# Install into a dedicated OCR venv (not the daily cron env):
+#   python -m venv .venv-ocr
+#   uv pip install -r requirements-ocr.lock --python .venv-ocr/bin/python
+# Runtime: HLS_DISABLE_MARKER_PDF=1 skips this tier even if installed.
+# Prefer pdfplumber default (ADR-0005) for daily runs.
+#
+# Do NOT `-r requirements.txt` here — that pulls Pillow 12 and conflicts with marker.
 marker-pdf==1.10.2
+pillow>=10.0.0,<11

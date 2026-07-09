@@ -91,20 +91,44 @@ class HousingRecord:
 # ------------------------------------------------------------------
 
 
+def _looks_like_pdf(content: bytes, *, content_type: str = "", url: str = "") -> bool:
+    """True if body starts with PDF magic or Content-Type/url strongly indicate PDF (#791)."""
+    if content[:5] == b"%PDF-":
+        return True
+    # Some servers prepend a BOM or whitespace
+    stripped = content.lstrip()
+    if stripped[:5] == b"%PDF-":
+        return True
+    ct = (content_type or "").lower()
+    if "pdf" in ct and content[:1] != b"<":  # not HTML
+        return True
+    return False
+
+
 def _fetch_pdf(url: str, timeout: int = 30) -> bytes:
     """Download a PDF via polite_get (robots.txt + rate limit). Handles DocumentCenter redirects."""
-    from housing_list_search.scraper import polite_get
+    from housing_list_search.scraper import polite_get, validate_http_url
+
+    # Re-validate final URL (incl. docaccess-unwrapped targets already checked in normalize)
+    try:
+        validate_http_url(url)
+    except Exception as exc:
+        raise ValueError(f"PDF URL failed policy: {url}: {exc}") from exc
 
     resp = polite_get(url)
     if not resp:
         raise ValueError(f"Could not fetch PDF (robots.txt disallow or HTTP failure): {url}")
 
+    content = resp.content
     content_type = resp.headers.get("content-type", "")
-    if "pdf" not in content_type.lower() and not url.lower().endswith(".pdf"):
-        # DocumentCenter may return HTML wrapper — caller may retry at a higher layer
-        pass
+    if not _looks_like_pdf(content, content_type=content_type, url=url):
+        # DocumentCenter may return HTML wrapper — do not feed HTML to pdfplumber
+        head = content[:80].decode("utf-8", errors="replace").replace("\n", " ")
+        raise ValueError(
+            f"Response is not a PDF for {url} (content-type={content_type!r}, head={head!r})"
+        )
 
-    return resp.content
+    return content
 
 
 def _iter_pdf_page_text(pdf_bytes: bytes) -> list[tuple[int, str]]:
