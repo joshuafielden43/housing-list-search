@@ -225,6 +225,15 @@ def coerce_listing(item: Any) -> dict[str, Any]:
     return dict(vars(item))
 
 
+def coerce_adapter_records(raw: list[Any]) -> list[dict[str, Any]]:
+    """Normalize a list of adapter/extractor items to plain dicts (#801).
+
+    Uses coerce_listing per item so HousingRecord and dicts share one path.
+    Dispatch measure handlers and URL extractors must pass through here.
+    """
+    return [coerce_listing(item) for item in (raw or [])]
+
+
 def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
     """
     Convert adapter output to the canonical housing_records row shape.

@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from housing_list_search.listing import coerce_adapter_records
 from housing_list_search.measure_registry import (
     KNOWN_MEASURES,
     MEASURE_ALIASES,
@@ -81,15 +82,8 @@ def register_url_extractor(
 
 
 def _coerce_records(raw: list[Any]) -> list[Record]:
-    out: list[Record] = []
-    for item in raw:
-        if isinstance(item, dict):
-            out.append(item)
-        elif hasattr(item, "to_dict"):
-            out.append(item.to_dict())
-        else:
-            out.append(dict(vars(item)))
-    return out
+    """Delegate to listing.coerce_adapter_records — single boundary (#801)."""
+    return coerce_adapter_records(raw)
 
 
 def extract_target(url: str, authority: str = "") -> list[Any]:
@@ -192,10 +186,10 @@ def dispatch_target(
             exc,
         )
 
-    # Named-measure adapters
+    # Named-measure adapters (always coerce to dict at the Listing boundary — #801)
     for measure_name, handler in _resolve_handlers(ctx.measures):
         try:
-            recs = handler(ctx)
+            recs = _coerce_records(handler(ctx))
             results.extend(recs)
             ran_any = True
             logger.info("[dispatch] %s: %s → %d records", ctx.authority, measure_name, len(recs))
@@ -204,7 +198,7 @@ def dispatch_target(
             # SourceFetchError may carry partial pages already scraped
             partial = getattr(exc, "partial", None) or []
             if partial:
-                results.extend(partial)
+                results.extend(_coerce_records(partial))
                 ran_any = True
             logger.warning("[dispatch] %s: %s failed: %s", ctx.authority, measure_name, exc)
 

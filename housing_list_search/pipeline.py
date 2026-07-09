@@ -1,8 +1,8 @@
 """
 pipeline.py — Run orchestration for the daily scrape loop.
 
-cli.main() parses arguments and delegates here. Tests can call RunPipeline.run()
-directly with a fake run_target_fn — no sys.argv or registry mocking required.
+#782: RunPipeline.run() is a thin spine: collect → persist → publish.
+cli.main() parses arguments and delegates here. Tests inject run_target_fn.
 """
 
 from __future__ import annotations
@@ -111,8 +111,39 @@ class RunResult:
     stale_n: int = 0
 
 
+@dataclass
+class _CollectResult:
+    """Raw scrape outcomes before Listing canonicalization (#782 collect phase)."""
+
+    listings_raw: list[dict]
+    failed_targets: list[str]
+    listings_by_authority: dict[str, list[dict]]
+    suspicious_zero_authorities: list[str]
+    reverification_due_authorities: list[str]
+    low_yield: list[tuple[str, int]]
+
+
+@dataclass
+class _PersistResult:
+    """DB + machine exports after canonicalize/dedupe (#782 persist phase)."""
+
+    listings: list[dict]
+    run_id: str
+    inserted: int
+    updated: int
+    n_full: int
+    n_diff: int
+    diff_counts: dict[str, int]
+    scrape_failed_n: int
+    stale_n: int
+    cov_property: int
+    cov_portal: int
+    cov_program: int
+    cov_total: int
+
+
 class RunPipeline:
-    """Orchestrates scrape → dedupe → persist → export → changelog/summary."""
+    """Orchestrates collect → persist → publish (#782)."""
 
     def run(
         self,
@@ -125,25 +156,64 @@ class RunPipeline:
         run_target_fn: TargetFn | None = None,
         run_id: str | None = None,
     ) -> RunResult:
-        scrape = (
-            run_target_fn or dispatch_module.scrape_target
-        )  # collapsed seam: direct from dispatch (module import for patchability)
+        scrape = run_target_fn or dispatch_module.scrape_target
         skipped = skipped_targets or []
-        # Canonical authority labels so partial-run scope and SCRAPE_FAILED match DB rows (#1049)
         target_authorities = (
             [canonical_authority(t["authority"]) or t["authority"] for t in targets]
             if partial_run
             else None
         )
+        run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
 
-        # Deepened TargetScrapeResult seam: each target returns authority + raw records + explicit had_error.
-        # Pipeline collects raw pre-canonical for suspicious_zero; no phantom mutable failures lists.
+        collected = self._collect(targets, scrape)
+        persisted = self._persist(
+            collected,
+            db=db,
+            run_id=run_id,
+            target_authorities=target_authorities,
+            failed_targets=collected.failed_targets,
+        )
+        self._publish(
+            persisted,
+            collected,
+            db=db,
+            targets=targets,
+            skipped=skipped,
+            partial_run=partial_run,
+            target_filter=target_filter,
+        )
+
+        if collected.failed_targets:
+            logger.error(
+                "%d active target(s) failed this run: %s",
+                len(collected.failed_targets),
+                ", ".join(collected.failed_targets),
+            )
+
+        return RunResult(
+            listings=persisted.listings,
+            run_id=persisted.run_id,
+            inserted=persisted.inserted,
+            updated=persisted.updated,
+            n_full=persisted.n_full,
+            n_diff=persisted.n_diff,
+            diff_counts=persisted.diff_counts,
+            failed_targets=collected.failed_targets,
+            suspicious_zero_authorities=collected.suspicious_zero_authorities,
+            reverification_due_authorities=collected.reverification_due_authorities,
+            targets_attempted=len(targets),
+            partial_run=partial_run,
+            scrape_failed_n=persisted.scrape_failed_n,
+            stale_n=persisted.stale_n,
+        )
+
+    def _collect(self, targets: list[dict[str, Any]], scrape: TargetFn) -> _CollectResult:
+        """Scrape all targets; compute suspicious zero / low-yield (pre-Listing)."""
         try:
             all_listings, failed_targets, listings_by_authority = self._scrape_targets(
                 targets, scrape
             )
         finally:
-            # Release shared Chromium even if scrape aborts (#761/#769)
             try:
                 from housing_list_search.playwright_nav import shutdown_playwright
 
@@ -169,7 +239,6 @@ class RunPipeline:
                 ", ".join(reverification_due_authorities),
             )
 
-        # #789 low-yield gate: inventory targets with 1..threshold-1 property rows
         low_yield = _find_low_yield_targets(
             targets, listings_by_authority, failed_targets, suspicious_zero_authorities
         )
@@ -180,9 +249,26 @@ class RunPipeline:
                 ", ".join(f"{a}={n}" for a, n in low_yield),
             )
 
-        run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
+        return _CollectResult(
+            listings_raw=all_listings,
+            failed_targets=failed_targets,
+            listings_by_authority=listings_by_authority,
+            suspicious_zero_authorities=suspicious_zero_authorities,
+            reverification_due_authorities=reverification_due_authorities,
+            low_yield=low_yield,
+        )
 
-        all_listings = canonicalize_listings(all_listings)
+    def _persist(
+        self,
+        collected: _CollectResult,
+        *,
+        db: DatabaseManager,
+        run_id: str,
+        target_authorities: list[str] | None,
+        failed_targets: list[str],
+    ) -> _PersistResult:
+        """Canonicalize, dedupe, upsert, export machine CSVs."""
+        all_listings = canonicalize_listings(collected.listings_raw)
         all_listings = deduplicate_listings(all_listings, canonical=True)
 
         counts = db.upsert_listings(all_listings, run_id=run_id)
@@ -197,7 +283,6 @@ class RunPipeline:
             cov.total,
         )
 
-        # #659: full inventory dump + confirmed_this_run column for this run_id
         n_full = db.export_csv("current_full.csv", run_id=run_id)
         n_diff = db.export_diff_csv(
             "diff.csv",
@@ -234,46 +319,71 @@ class RunPipeline:
                 DEFAULT_STALE_WARN_THRESHOLD,
             )
 
+        return _PersistResult(
+            listings=all_listings,
+            run_id=run_id,
+            inserted=counts["inserted"],
+            updated=counts["updated"],
+            n_full=n_full,
+            n_diff=n_diff,
+            diff_counts=diff_counts,
+            scrape_failed_n=scrape_failed_n,
+            stale_n=stale_n,
+            cov_property=cov.property_count,
+            cov_portal=cov.portal_count,
+            cov_program=cov.program_count,
+            cov_total=cov.total,
+        )
+
+    def _publish(
+        self,
+        persisted: _PersistResult,
+        collected: _CollectResult,
+        *,
+        db: DatabaseManager,
+        targets: list[dict[str, Any]],
+        skipped: list[tuple[str, str]],
+        partial_run: bool,
+        target_filter: str | None,
+    ) -> None:
+        """Staff artifacts, needs-review, run history, structured RUN_EVENT."""
         run_stats = {
             "targets_attempted": len(targets),
-            "targets_succeeded": len(targets) - len(failed_targets),
-            "failed_authorities": failed_targets,
-            "suspicious_zero_authorities": suspicious_zero_authorities,
-            "reverification_due_authorities": reverification_due_authorities,
-            "stale_n": stale_n,
-            "scrape_failed_n": scrape_failed_n,
+            "targets_succeeded": len(targets) - len(collected.failed_targets),
+            "failed_authorities": collected.failed_targets,
+            "suspicious_zero_authorities": collected.suspicious_zero_authorities,
+            "reverification_due_authorities": collected.reverification_due_authorities,
+            "stale_n": persisted.stale_n,
+            "scrape_failed_n": persisted.scrape_failed_n,
             "stale_warn_threshold": DEFAULT_STALE_WARN_THRESHOLD,
-            "low_yield": low_yield,
+            "low_yield": collected.low_yield,
         }
 
-        # #988 structured run event (local logs; no secrets)
         logger.info(
             "RUN_EVENT run_id=%s targets=%d failed=%d property=%d portal=%d program=%d "
             "stale=%d scrape_failed=%d suspicious_zero=%d low_yield=%d partial=%s",
-            run_id,
+            persisted.run_id,
             len(targets),
-            len(failed_targets),
-            cov.property_count,
-            cov.portal_count,
-            cov.program_count,
-            stale_n,
-            scrape_failed_n,
-            len(suspicious_zero_authorities),
-            len(low_yield),
+            len(collected.failed_targets),
+            persisted.cov_property,
+            persisted.cov_portal,
+            persisted.cov_program,
+            persisted.stale_n,
+            persisted.scrape_failed_n,
+            len(collected.suspicious_zero_authorities),
+            len(collected.low_yield),
             partial_run,
         )
 
         notify_needs_review(
-            run_id=run_id,
-            suspicious_zero_authorities=suspicious_zero_authorities,
-            reverification_due_authorities=reverification_due_authorities,
-            stale_n=stale_n,
-            scrape_failed_n=scrape_failed_n,
+            run_id=persisted.run_id,
+            suspicious_zero_authorities=collected.suspicious_zero_authorities,
+            reverification_due_authorities=collected.reverification_due_authorities,
+            stale_n=persisted.stale_n,
+            scrape_failed_n=persisted.scrape_failed_n,
         )
 
-        # Inlined artifact generation (was artifacts.py thin wrapper)
         if partial_run:
-            # Marker files for partial runs (global run_prev baseline unchanged)
             with open("changelog_diffs.md", "w", encoding="utf-8") as f:
                 f.write("# Housing List Changelog\n\n")
                 f.write(
@@ -293,7 +403,7 @@ class RunPipeline:
                     ]
                 )
             generate_daily_summary(
-                all_listings,
+                persisted.listings,
                 skipped_targets=[],
                 output_path=PARTIAL_DAILY_SUMMARY_PATH,
                 run_stats=run_stats or {},
@@ -306,54 +416,32 @@ class RunPipeline:
                 PARTIAL_DAILY_SUMMARY_PATH,
                 STAFF_DAILY_SUMMARY_PATH,
             )
-        else:
-            previous_run_id = db.get_previous_full_run_id()
-            # #1050: do not advance run_prev baseline when any authority failed.
-            # Down ≠ gone — a thin failed run must not become next run's comparison set.
-            update_baseline = not bool(failed_targets)
-            generate_changelog(
-                all_listings,
-                skipped_targets=skipped,
-                run_id=run_id,
-                previous_run_id=previous_run_id,
-                scrape_failed_authorities=failed_targets,
-                update_run_prev=update_baseline,
-            )
-            if not update_baseline:
-                logger.warning(
-                    "Preserved prior run_prev.csv baseline — %d failed target(s); "
-                    "down/outage is not evidence of inventory removal",
-                    len(failed_targets),
-                )
-            db.log_full_run(run_id, rows_after=counts["inserted"] + counts["updated"])
-            generate_daily_summary(
-                all_listings,
-                skipped_targets=skipped,
-                run_stats=run_stats or {},
-            )
+            return
 
-        if failed_targets:
-            logger.error(
-                "%d active target(s) failed this run: %s",
-                len(failed_targets),
-                ", ".join(failed_targets),
+        previous_run_id = db.get_previous_full_run_id()
+        update_baseline = not bool(collected.failed_targets)
+        generate_changelog(
+            persisted.listings,
+            skipped_targets=skipped,
+            run_id=persisted.run_id,
+            previous_run_id=previous_run_id,
+            scrape_failed_authorities=collected.failed_targets,
+            update_run_prev=update_baseline,
+        )
+        if not update_baseline:
+            logger.warning(
+                "Preserved prior run_prev.csv baseline — %d failed target(s); "
+                "down/outage is not evidence of inventory removal",
+                len(collected.failed_targets),
             )
-
-        return RunResult(
-            listings=all_listings,
-            run_id=run_id,
-            inserted=counts["inserted"],
-            updated=counts["updated"],
-            n_full=n_full,
-            n_diff=n_diff,
-            diff_counts=diff_counts,
-            failed_targets=failed_targets,
-            suspicious_zero_authorities=suspicious_zero_authorities,
-            reverification_due_authorities=reverification_due_authorities,
-            targets_attempted=len(targets),
-            partial_run=partial_run,
-            scrape_failed_n=scrape_failed_n,
-            stale_n=stale_n,
+        db.log_full_run(
+            persisted.run_id,
+            rows_after=persisted.inserted + persisted.updated,
+        )
+        generate_daily_summary(
+            persisted.listings,
+            skipped_targets=skipped,
+            run_stats=run_stats or {},
         )
 
     @staticmethod
@@ -361,15 +449,7 @@ class RunPipeline:
         targets: list[dict[str, Any]],
         scrape: TargetFn,
     ) -> tuple[list[dict], list[str], dict[str, list[dict]]]:
-        """
-        Collect raw results from all Targets.
-
-        The scrape fn is the deepened TargetScrapeResult seam: returns a rich
-        outcome (authority + pre-canonical raw records + had_error).
-
-        listings_by_authority (for Suspicious Zero, pre-Listing) and failed_targets
-        are derived from the outcomes after parallel/serial execution.
-        """
+        """Collect raw results from all Targets via TargetScrapeResult outcomes."""
         workers = max_target_workers()
         if workers > 1 and len(targets) > 1:
             logger.info("Scraping %d targets with up to %d parallel workers", len(targets), workers)
@@ -380,7 +460,6 @@ class RunPipeline:
                 res = scrape(target)
                 if isinstance(res, TargetScrapeResult):
                     return res
-                # support list-returning fakes (e.g. test_performance direct call)
                 return TargetScrapeResult(authority=authority, records=res or [], had_error=False)
             except Exception as exc:
                 logger.error("Error on %s: %s", authority, exc)
@@ -396,13 +475,9 @@ class RunPipeline:
                 for fut in as_completed(futures):
                     outcomes.append(fut.result())
 
-        # Derive collections from the rich seam outcomes (deepened TargetScrapeResult seam)
-        # This makes the per-target Result the source of truth; listings_by_authority
-        # gets the raw pre-canonical records needed by suspicious_zero.
-        all_listings = []
-        listings_by_authority = {}
-        # #1049: canonical labels for SCRAPE_FAILED matching persisted housing_records.authority
-        failed_targets = []
+        all_listings: list[dict] = []
+        listings_by_authority: dict[str, list[dict]] = {}
+        failed_targets: list[str] = []
         seen_failed: set[str] = set()
         for o in outcomes:
             if o.had_error:

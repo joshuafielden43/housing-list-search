@@ -4,6 +4,7 @@ from housing_list_search.extraction.pdf import HousingRecord
 from housing_list_search.listing import (
     canonical_authority,
     canonicalize_listings,
+    coerce_adapter_records,
     coerce_listing,
     listing_to_row,
 )
@@ -46,6 +47,13 @@ class TestCoerceListing:
         d = coerce_listing(rec)
         assert d["property_name"] == "Cedar"
         assert d["document_url"] == "https://x.pdf"
+
+    def test_coerce_adapter_records_mixes_dicts_and_housing_records(self):
+        rec = HousingRecord(authority="City", property_name="Cedar", document_url="https://x.pdf")
+        out = coerce_adapter_records([{"property_name": "A"}, rec])
+        assert len(out) == 2
+        assert out[0]["property_name"] == "A"
+        assert out[1]["property_name"] == "Cedar"
 
 
 class TestListingToRow:

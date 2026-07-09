@@ -77,6 +77,34 @@ def check_requirements() -> bool:
     return True
 
 
+def check_measure_registration() -> bool:
+    """#799: HANDLER_MEASURES must match dispatch runtime handlers."""
+    try:
+        from housing_list_search.dispatch import ensure_registered, registered_handler_measures
+        from housing_list_search.measure_registry import check_handler_registration_drift
+
+        ensure_registered()
+        drift = check_handler_registration_drift(registered_handler_measures())
+        if drift.ok:
+            print(
+                f"✅ Measure handlers match registry "
+                f"({len(drift.registered)} handlers: {', '.join(sorted(drift.registered))})"
+            )
+            return True
+        if drift.missing:
+            print(f"❌ Declared measures with no handler: {', '.join(sorted(drift.missing))}")
+        if drift.extra:
+            print(
+                f"❌ Registered handlers not in HANDLER_MEASURES: "
+                f"{', '.join(sorted(drift.extra))}"
+            )
+        print("   Fix: register_measure in dispatch or update HANDLER_MEASURES in measure_registry.")
+        return False
+    except Exception as exc:
+        print(f"❌ Measure registration check failed: {exc}")
+        return False
+
+
 def check_package_imports() -> bool:
     import importlib
     import sys
@@ -240,6 +268,9 @@ def main():
 
     section("Package Import Health")
     results.append(check_package_imports())
+
+    section("Measure registration")
+    results.append(check_measure_registration())
 
     if args.fix and not dry_run:
         try:

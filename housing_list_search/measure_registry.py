@@ -1,11 +1,15 @@
 """
-measure_registry.py — single source for measure classification.
+measure_registry.py — single source for measure classification (#828).
 
-Handler registration lives in dispatch.py; this module owns measure sets
-used by dispatch, suspicious_zero, coverage routing, and doctor drift checks.
+Declares which measures exist and which imply property inventory.
+Runtime handlers are registered in dispatch.py; this module owns the *declared*
+sets. Doctor and tests call ``check_handler_registration_drift`` so the two
+cannot silently diverge (#799).
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 INFORMATIONAL_MEASURES = frozenset(
     {
@@ -87,3 +91,31 @@ def expects_property_inventory(measures: set[str]) -> bool:
     if adapter_measures <= PORTAL_ONLY_MEASURES:
         return False
     return bool(adapter_measures & INVENTORY_MEASURES)
+
+
+@dataclass(frozen=True)
+class HandlerRegistrationDrift:
+    """Result of comparing declared HANDLER_MEASURES to runtime registrations."""
+
+    declared: frozenset[str]
+    registered: frozenset[str]
+
+    @property
+    def missing(self) -> frozenset[str]:
+        """Declared in measure_registry but no dispatch handler."""
+        return self.declared - self.registered
+
+    @property
+    def extra(self) -> frozenset[str]:
+        """Registered in dispatch but not in HANDLER_MEASURES."""
+        return self.registered - self.declared
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing and not self.extra
+
+
+def check_handler_registration_drift(registered: frozenset[str] | set[str]) -> HandlerRegistrationDrift:
+    """Compare declared HANDLER_MEASURES to live dispatch registrations (#828/#799)."""
+    reg = frozenset(registered)
+    return HandlerRegistrationDrift(declared=HANDLER_MEASURES, registered=reg)

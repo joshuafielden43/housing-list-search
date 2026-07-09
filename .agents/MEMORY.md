@@ -165,6 +165,10 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 **Deferred by design:** #770 portal smoke remains weekly (no daily hammer).
 
+### Deepen-seam hygiene (2026-07-09) — shipped
+
+`…` measure registry drift API + doctor check (#828 #799); RunPipeline collect/persist/publish (#782); coerce_adapter_records at dispatch (#801). Closed outdated arch duplicates #781 #794 #802 #798 as paperwork.
+
 ### Still open (investigate + architecture)
 
 | Priority | Theme | IDs |
