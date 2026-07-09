@@ -75,9 +75,8 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
-from playwright.sync_api import sync_playwright
 
-from housing_list_search.playwright_nav import safe_goto
+from housing_list_search.playwright_nav import browser_page, safe_goto
 from housing_list_search.scraper import polite_get
 
 logger = logging.getLogger(__name__)
@@ -128,17 +127,12 @@ def scrape_alta(authority: str, url: str, timeout: int = 60000) -> list[dict[str
     now_iso = _dt.now().isoformat()
     source_base = f"alta:{authority.lower().replace(' ', '_')}"
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(extra_http_headers=_get_headers())
-        page = context.new_page()
-
-        try:
+    try:
+        with browser_page(extra_http_headers=_get_headers()) as page:
             _jitter(0.6)
             safe_goto(page, url, wait_until="domcontentloaded", timeout=timeout)
             _jitter(1.0)
 
-            # Try to wait for network to settle
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except PlaywrightTimeout:
@@ -147,7 +141,6 @@ def scrape_alta(authority: str, url: str, timeout: int = 60000) -> list[dict[str
             content = page.content()
             soup = BeautifulSoup(content, "html.parser")
 
-            # --- Ownership / Purchase Program ---
             ownership_info = _extract_ownership_section(soup, page)
             if ownership_info:
                 rec = {
@@ -170,7 +163,6 @@ def scrape_alta(authority: str, url: str, timeout: int = 60000) -> list[dict[str
                 }
                 records.append(rec)
 
-            # --- Rental Program ---
             rental_info = _extract_rental_section(soup, page)
             if rental_info:
                 rec = {
@@ -193,7 +185,6 @@ def scrape_alta(authority: str, url: str, timeout: int = 60000) -> list[dict[str
                 }
                 records.append(rec)
 
-            # --- Map / Portfolio Link ---
             map_link = _find_affordable_map(soup)
             if map_link:
                 rec = {
@@ -213,11 +204,8 @@ def scrape_alta(authority: str, url: str, timeout: int = 60000) -> list[dict[str
                     "expires_at": "",
                 }
                 records.append(rec)
-
-        except Exception as e:
-            logger.exception(f"[alta] Error scraping {authority}: {e}")
-        finally:
-            browser.close()
+    except Exception as e:
+        logger.exception(f"[alta] Error scraping {authority}: {e}")
 
     # Per-property availability from Alta's own directory (single static fetch;
     # polite_get applies the rate-limit delay).

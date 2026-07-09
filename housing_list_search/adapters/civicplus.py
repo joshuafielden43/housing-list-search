@@ -41,9 +41,8 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
-from playwright.sync_api import sync_playwright
 
-from housing_list_search.playwright_nav import safe_goto
+from housing_list_search.playwright_nav import browser_page, safe_goto
 from housing_list_search.scraper import is_safe_http_url
 
 logger = logging.getLogger(__name__)
@@ -389,17 +388,13 @@ def extract_underlying_records(
 
     document_urls = _dedupe_document_urls(document_urls)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
+    try:
+        with browser_page(
             extra_http_headers=_get_realistic_headers(),
             viewport={"width": 1366, "height": 768},
             locale="en-US",
             timezone_id="America/Los_Angeles",
-        )
-        page = context.new_page()
-
-        try:
+        ) as page:
             # --- 1. Landing page: availability blocks, tables, flyer links ---
             if not direct_document_mode:
                 _jitter(0.8)
@@ -522,13 +517,11 @@ def extract_underlying_records(
                         "[civicplus] %s: 0 records extracted (screenshot failed)", authority
                     )
 
-        except Exception as exc:
-            logger.exception(
-                "[civicplus] Error during extraction for %s: %s", authority or source, exc
-            )
-            raise
-        finally:
-            browser.close()
+    except Exception as exc:
+        logger.exception(
+            "[civicplus] Error during extraction for %s: %s", authority or source, exc
+        )
+        raise
 
     if not records and extraction_errors[0]:
         raise RuntimeError(

@@ -772,9 +772,7 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
       - The daily run for this target will take longer than usual.
     """
     try:
-        from playwright.sync_api import sync_playwright
-
-        from housing_list_search.playwright_nav import safe_goto
+        from housing_list_search.playwright_nav import browser_page, safe_goto
     except ImportError:
         logger.error(
             "[Bloom] Playwright not installed. Cannot run fallback. "
@@ -782,6 +780,7 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
         )
         return [], []
 
+    # Last-resort path only (#987): SSR/API already returned empty.
     logger.warning(
         "[Bloom] Playwright fallback activated for %s — SSR/API paths yielded no data", listings_url
     )
@@ -806,27 +805,24 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
         except Exception:
             pass  # Non-JSON or connection error; not unusual during page load
 
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.on("response", _on_response)
-
-        # /listings is the SSR route; if we're here it may have changed to CSR,
-        # so we load it and wait for the browser to fetch the data via XHR.
-        try:
-            safe_goto(page, listings_url, wait_until="domcontentloaded", timeout=45_000)
-            page.wait_for_timeout(3_000)  # allow XHR without networkidle (SPAs never settle)
+    try:
+        with browser_page() as page:
+            page.on("response", _on_response)
             try:
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                page.wait_for_timeout(1_500)
-            except Exception:
-                pass
-        except Exception as exc:
-            logger.warning(
-                "[Bloom] Playwright fallback navigation failed for %s: %s", listings_url, exc
-            )
-        finally:
-            browser.close()
+                safe_goto(page, listings_url, wait_until="domcontentloaded", timeout=45_000)
+                page.wait_for_timeout(3_000)  # allow XHR without networkidle (SPAs never settle)
+                try:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(1_500)
+                except Exception:
+                    pass
+            except Exception as exc:
+                logger.warning(
+                    "[Bloom] Playwright fallback navigation failed for %s: %s", listings_url, exc
+                )
+    except Exception as exc:
+        logger.warning("[Bloom] Playwright fallback failed for %s: %s", listings_url, exc)
+        return [], []
 
     logger.info(
         "[Bloom] Playwright fallback: captured %d JSON responses for %s",

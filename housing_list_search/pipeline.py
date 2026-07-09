@@ -18,12 +18,13 @@ from typing import Any
 
 import housing_list_search.dispatch as dispatch_module
 from housing_list_search.changelog import generate_changelog
-from housing_list_search.coverage import summarize_coverage
+from housing_list_search.coverage import classify_record_kind, summarize_coverage
 from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
 from housing_list_search.listing import canonical_authority, canonicalize_listings
+from housing_list_search.measure_registry import expects_property_inventory, parse_target_measures
 from housing_list_search.needs_review import notify_needs_review
 from housing_list_search.outputs import (
     PARTIAL_DAILY_SUMMARY_PATH,
@@ -41,6 +42,45 @@ TargetFn = Callable[
 
 _DEFAULT_MAX_TARGET_WORKERS = 3
 _MAX_TARGET_WORKERS_CAP = 8
+
+
+_DEFAULT_LOW_YIELD_THRESHOLD = 3
+
+
+def low_yield_threshold() -> int:
+    """Warn when inventory target returns fewer than this many property rows (#789)."""
+    raw = os.environ.get("HLS_LOW_YIELD_THRESHOLD", str(_DEFAULT_LOW_YIELD_THRESHOLD))
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return _DEFAULT_LOW_YIELD_THRESHOLD
+
+
+def _find_low_yield_targets(
+    targets: list[dict[str, Any]],
+    listings_by_authority: dict[str, list],
+    failed_targets: list[str],
+    suspicious_zero_authorities: list[str],
+) -> list[tuple[str, int]]:
+    """Inventory measures with 0 < property_count < threshold (not failed / not zero-flagged)."""
+    thr = low_yield_threshold()
+    if thr <= 0:
+        return []
+    failed = set(failed_targets)
+    zeroed = set(suspicious_zero_authorities)
+    out: list[tuple[str, int]] = []
+    for t in targets:
+        auth = (t.get("authority") or "").strip()
+        if not auth or auth in failed or auth in zeroed:
+            continue
+        measures = parse_target_measures(t.get("scraping_measures") or "")
+        if not expects_property_inventory(measures):
+            continue
+        recs = listings_by_authority.get(auth) or []
+        prop_n = sum(1 for r in recs if classify_record_kind(r) == "property")
+        if 0 < prop_n < thr:
+            out.append((auth, prop_n))
+    return out
 
 
 def max_target_workers() -> int:
@@ -98,7 +138,18 @@ class RunPipeline:
 
         # Deepened TargetScrapeResult seam: each target returns authority + raw records + explicit had_error.
         # Pipeline collects raw pre-canonical for suspicious_zero; no phantom mutable failures lists.
-        all_listings, failed_targets, listings_by_authority = self._scrape_targets(targets, scrape)
+        try:
+            all_listings, failed_targets, listings_by_authority = self._scrape_targets(
+                targets, scrape
+            )
+        finally:
+            # Release shared Chromium even if scrape aborts (#761/#769)
+            try:
+                from housing_list_search.playwright_nav import shutdown_playwright
+
+                shutdown_playwright()
+            except Exception:
+                pass
 
         suspicious_zero_authorities = find_suspicious_zeros(
             targets, listings_by_authority, failed_targets
@@ -118,6 +169,17 @@ class RunPipeline:
                 ", ".join(reverification_due_authorities),
             )
 
+        # #789 low-yield gate: inventory targets with 1..threshold-1 property rows
+        low_yield = _find_low_yield_targets(
+            targets, listings_by_authority, failed_targets, suspicious_zero_authorities
+        )
+        if low_yield:
+            logger.warning(
+                "%d low-yield inventory target(s) (possible silent partial scrape): %s",
+                len(low_yield),
+                ", ".join(f"{a}={n}" for a, n in low_yield),
+            )
+
         run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
 
         all_listings = canonicalize_listings(all_listings)
@@ -135,7 +197,8 @@ class RunPipeline:
             cov.total,
         )
 
-        n_full = db.export_csv("current_full.csv")
+        # #659: full inventory dump + confirmed_this_run column for this run_id
+        n_full = db.export_csv("current_full.csv", run_id=run_id)
         n_diff = db.export_diff_csv(
             "diff.csv",
             run_id=run_id,
@@ -180,7 +243,25 @@ class RunPipeline:
             "stale_n": stale_n,
             "scrape_failed_n": scrape_failed_n,
             "stale_warn_threshold": DEFAULT_STALE_WARN_THRESHOLD,
+            "low_yield": low_yield,
         }
+
+        # #988 structured run event (local logs; no secrets)
+        logger.info(
+            "RUN_EVENT run_id=%s targets=%d failed=%d property=%d portal=%d program=%d "
+            "stale=%d scrape_failed=%d suspicious_zero=%d low_yield=%d partial=%s",
+            run_id,
+            len(targets),
+            len(failed_targets),
+            cov.property_count,
+            cov.portal_count,
+            cov.program_count,
+            stale_n,
+            scrape_failed_n,
+            len(suspicious_zero_authorities),
+            len(low_yield),
+            partial_run,
+        )
 
         notify_needs_review(
             run_id=run_id,

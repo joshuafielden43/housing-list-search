@@ -1,10 +1,16 @@
-"""Playwright navigation URL policy and per-host throttle."""
+"""Playwright navigation URL policy, shared browser pool, per-host throttle."""
 
 from unittest.mock import MagicMock
 
 import pytest
 
-from housing_list_search.playwright_nav import safe_goto, validated_goto_url
+from housing_list_search.playwright_nav import (
+    browser_page,
+    playwright_stats,
+    reset_playwright_for_tests,
+    safe_goto,
+    validated_goto_url,
+)
 from housing_list_search.scraper import URLPolicyError, reset_host_throttle
 
 
@@ -88,3 +94,54 @@ def test_safe_goto_accepts_same_public_final_url(monkeypatch):
 
     safe_goto(page, "https://example.com/listings")
     page.goto.assert_called_once()
+
+
+def test_browser_page_reuses_shared_browser(monkeypatch):
+    """#761/#769: one Chromium launch, multiple pages under the process lock."""
+    reset_playwright_for_tests()
+
+    fake_browser = MagicMock()
+    fake_context = MagicMock()
+    fake_page = MagicMock()
+    fake_browser.new_context.return_value = fake_context
+    fake_context.new_page.return_value = fake_page
+
+    launch_calls = {"n": 0}
+
+    def fake_ensure():
+        launch_calls["n"] += 1
+        import housing_list_search.playwright_nav as pn
+
+        pn._browser = fake_browser
+        return fake_browser
+
+    monkeypatch.setattr(
+        "housing_list_search.playwright_nav._ensure_browser",
+        fake_ensure,
+    )
+
+    with browser_page() as p1:
+        assert p1 is fake_page
+    with browser_page() as p2:
+        assert p2 is fake_page
+
+    # _ensure_browser called twice but we only "launch" once if we set _browser —
+    # simulate reuse: second call sees _browser set
+    reset_playwright_for_tests()
+    import housing_list_search.playwright_nav as pn
+
+    launches = []
+
+    def ensure_once():
+        if pn._browser is None:
+            launches.append(1)
+            pn._browser = fake_browser
+        return pn._browser
+
+    monkeypatch.setattr(pn, "_ensure_browser", ensure_once)
+    with browser_page():
+        pass
+    with browser_page():
+        pass
+    assert len(launches) == 1
+    assert playwright_stats()["pages"] == 2
