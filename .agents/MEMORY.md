@@ -155,16 +155,20 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 ---
 
-## Open Vikunja — needs Joshua
+## Open Vikunja — Housing Search (#9)
 
-| Task | Why |
-|------|-----|
-| **#982** [EPIC] Ponytail cleanup batch (13 items) | delete/YAGNI/shrink legacy: normalizer.py, generic_scraper, playwright_scraper fallbacks, run_target wrapper, freshness helpers, doctor prune-snapshots, lint-staged, artifacts wrapper, city shims, records_to_markdown, GIS _normalize, plus 2 shrinks. Net ~-1070 LOC incl. tests/docs. Implemented + committed 6eff813. See subtasks #969–#981. |
-| Deep-critique 2026-07 (autonomous) | High: #983 Listing seam (value type + stable surrogates + tests), #985 retry in polite, partial #984 chore reduction (better prune cmd). Also #990 indexes, #992 lazy reg, #986 parser harden. Committed/pushed 78c467d + prior. See Vikunja #983-992. |
-| Deep-critique failure-semantics (2026-07-09) | #1047 epic + children. Shipped on main: b73f817 security (#1051/#1056/#1057), 12959d5 SourceFetchError (#1048), b3ab73e canonical failed auth + run_prev preserve (#1049/#1050), 3546ec0 TARGETS header hard-fail (#1052), 73f2a0f Bloom partial/throttle/lazy guard (#1058/#1053/#1054). #1055 closed as investigation: #1050 is the cheap publication half; full atomic multi-artifact commit remains optional. Domain bar: down ≠ gone. |
+**Paperwork 2026-07-09:** closed **47** zombie/done tickets (ponytail #969–#981, deep-critique #983–#992 cluster, ops ADR #708–#739/#849, listing/dispatch overlaps #660/#785/#788/#826–#830, etc.). Notes prefixed `DONE (paperwork 2026-07-09)`.
 
-**Deferred (local-first):** **#412** onboarding baseline; **#423** PR live integration tests.
+### Still open (~35 residual)
 
-**Exploratory (optional):** **#407** Playwright host allowlist — scope memo only unless Joshua wants tightening.
+| Priority | Theme | IDs |
+|----------|--------|-----|
+| high | Playwright under parallel workers | **#761** |
+| medium concrete | prune docs, docaccess policy, STALE in current_full, OCR lock, browser reuse, portal smoke cadence, yield gate, token redaction, PDF magic, dead weight, Playwright last-resort, observability, quarantine non-property | **#657 #658 #659 #768 #769 #770 #789 #790 #791 #792 #987 #988 #989** |
+| investigate | dedupe STALE, integration breadth, XHR policy, pagination alert, throttle races, marker license | **#661 #662 #773 #775 #776 #778 #793** |
+| architecture (optional) | seams, RunPipeline phases, measure registry, N+1 upsert, adapters | **#781–#784 #786 #794–#802 #828 #797 #795 #796 #798 #799 #801** |
 
-**Closed epics (2026-07-04 doc groom):** **#388** docs/onboarding (#412 deferred, README operator-focused); **#390** operability (run_daily, throttle, needs_review webhook, CI, integration-weekly).
+**Shipped epics (done on tracker):** #982 ponytail; #1047 failure-semantics; #388/#390 closed; #412/#423 deferred-as-designed and closed; #407 closed.
+
+**Domain bar:** down ≠ gone.
+
