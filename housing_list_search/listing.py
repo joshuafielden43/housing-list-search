@@ -95,6 +95,64 @@ def canonical_authority(auth: str) -> str:
     return a
 
 
+def norm_property_name(name: str) -> str:
+    """Aggressive name normalization for cross-source matching (#797)."""
+    if not name:
+        return ""
+    n = name.lower()
+    suffixes = [
+        " senior apartments",
+        " family apartments",
+        " senior housing",
+        " family housing",
+        " apartments",
+        " apartment",
+        " housing",
+        " homes",
+        " village",
+        " gardens",
+        " court",
+        " plaza",
+        " park",
+        " studios",
+        " lofts",
+        " way",
+        " drive",
+        " senior",
+        " family",
+    ]
+    for s in suffixes:
+        if n.endswith(s):
+            n = n[: -len(s)]
+        else:
+            n = n.replace(s, " ")
+    n = re.sub(r"\s+", " ", n)
+    n = re.sub(r"[^a-z0-9]", "", n)
+    return n.strip()
+
+
+def cross_source_key(row: dict[str, Any]) -> tuple[str, str] | None:
+    """
+    Key for merging the same physical property across authorities (#797).
+
+    Prefer shared hls:addr: surrogates; else street-level address; else name+addr.
+    Lives on the Listing seam so dedupe does not own a parallel identity world.
+    """
+    url = (row.get("url") or "").strip()
+    if url.startswith("hls:addr:"):
+        return ("url", url)
+
+    addr_key = norm_address(row.get("address") or "")
+    if len(addr_key) >= 6 and any(c.isdigit() for c in addr_key):
+        return ("addr", addr_key)
+
+    name_key = norm_property_name(row.get("property_name") or "")
+    if name_key and addr_key:
+        return ("name_addr", f"{name_key}:{addr_key}")
+
+    return None
+
+
 def norm_address(addr: str) -> str:
     """Robust street-level key tolerant of real-world formatting differences.
 

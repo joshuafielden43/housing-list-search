@@ -10,77 +10,14 @@ Naming note: deduping is a cross-source concern, not tied to any one city or too
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from housing_list_search.listing import (
     ListingKey,
     canonicalize_listings,
+    cross_source_key,
     listing_identity,
-    norm_address,
 )
-
-_CROSS_URL_PREFIX = "hls:addr:"
-
-
-def _norm_name(name: str) -> str:
-    """Aggressive but safe normalization for matching across sources."""
-    if not name:
-        return ""
-    n = name.lower()
-
-    suffixes = [
-        " senior apartments",
-        " family apartments",
-        " senior housing",
-        " family housing",
-        " apartments",
-        " apartment",
-        " housing",
-        " homes",
-        " village",
-        " gardens",
-        " court",
-        " plaza",
-        " park",
-        " studios",
-        " lofts",
-        " way",
-        " drive",
-        " senior",
-        " family",
-    ]
-    for s in suffixes:
-        if n.endswith(s):
-            n = n[: -len(s)]
-        else:
-            n = n.replace(s, " ")
-
-    n = re.sub(r"\s+", " ", n)
-    n = re.sub(r"[^a-z0-9]", "", n)
-    return n.strip()
-
-
-def _cross_source_key(row: dict[str, Any]) -> tuple[str, str] | None:
-    """
-    Key for merging the same physical property across authorities.
-
-    Canonical rows share hls:addr: URLs when street addresses match; otherwise
-    fall back to normalized street number + name pairing.
-    """
-    url = (row.get("url") or "").strip()
-    if url.startswith(_CROSS_URL_PREFIX):
-        return ("url", url)
-
-    addr_key = norm_address(row.get("address") or "")
-    if len(addr_key) >= 6 and any(c.isdigit() for c in addr_key):
-        return ("addr", addr_key)
-
-    name_key = _norm_name(row.get("property_name") or "")
-    if name_key and addr_key:
-        return ("name_addr", f"{name_key}:{addr_key}")
-
-    return None
 
 
 def deduplicate_listings(
@@ -118,7 +55,7 @@ def deduplicate_listings(
 
     for rec in sorted_rows:
         ident = listing_identity(rec)
-        cross = _cross_source_key(rec)
+        cross = cross_source_key(rec)
 
         if ident in seen_identity:
             continue

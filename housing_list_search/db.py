@@ -402,18 +402,26 @@ class DatabaseManager:
             )
 
         if to_upsert:
-            # Batch existence check (keys only, very light) so we can report accurate
-            # inserted/updated counts without fetching full old rows (the old N+1 data hit).
+            # One batch existence probe for inserted/updated counts (#786) — not per-row SELECT.
             existing: set[tuple[str, str, str]] = set()
-            for r in to_upsert:
+            keys = [(r["authority"], r["property_name"], r["url"]) for r in to_upsert]
+            # Chunk IN-lists to stay under SQLite variable limits
+            chunk = 200
+            for i in range(0, len(keys), chunk):
+                part = keys[i : i + chunk]
+                placeholders = ",".join("(?,?,?)" for _ in part)
+                flat: list[str] = []
+                for a, p, u in part:
+                    flat.extend([a, p, u])
                 c.execute(
-                    "SELECT 1 FROM housing_records WHERE authority=? AND property_name=? AND url=? LIMIT 1",
-                    (r["authority"], r["property_name"], r["url"]),
+                    f"SELECT authority, property_name, url FROM housing_records "
+                    f"WHERE (authority, property_name, url) IN ({placeholders})",
+                    flat,
                 )
-                if c.fetchone():
-                    existing.add((r["authority"], r["property_name"], r["url"]))
+                for row in c.fetchall():
+                    existing.add((row[0], row[1], row[2]))
 
-            # Single-statement upsert using ON CONFLICT. Eliminates full-row N+1.
+            # Single-statement upsert using ON CONFLICT.
             upsert_sql = """
                 INSERT INTO housing_records
                     (authority, property_name, address, phone, email, url,

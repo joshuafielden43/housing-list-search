@@ -25,7 +25,7 @@ from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
 from housing_list_search.listing import canonical_authority, canonicalize_listings
 from housing_list_search.measure_registry import expects_property_inventory, parse_target_measures
-from housing_list_search.needs_review import notify_needs_review
+from housing_list_search.needs_review import surface_run_review
 from housing_list_search.outputs import (
     PARTIAL_DAILY_SUMMARY_PATH,
     STAFF_DAILY_SUMMARY_PATH,
@@ -375,7 +375,7 @@ class RunPipeline:
             partial_run,
         )
 
-        notify_needs_review(
+        surface_run_review(
             run_id=persisted.run_id,
             suspicious_zero_authorities=collected.suspicious_zero_authorities,
             reverification_due_authorities=collected.reverification_due_authorities,
