@@ -4,6 +4,19 @@ Persistent notes for AI contributors. **Not** a global skill — lives only in t
 
 ---
 
+## Architecture review (2026-07-10) — residual deepen candidates
+
+Report: `$TMPDIR/architecture-review-20260710-090510.html` (temp; not in repo).
+
+| Vikunja | Topic | Priority |
+|---------|-------|----------|
+| **#1070** | Machine Persist — extract `pipeline._persist` → `persist_run` | **done** (`machine_persist.py`) |
+| **#1071** | Cross-source mirror confirm locality — `deduplicate_for_run` | **done** (`DedupeResult`) |
+| **#1072** | Split Inventory Store vs Operator Maintenance (`db.py`) | open (worth exploring) |
+| **#1073** | Narrow Access public interface; retarget tests | open (worth exploring) |
+| **#1074** | Paginated inventory walk helper (#776) | open (worth exploring) |
+| **#1075** | Machine Diff export module (optional) | open (speculative) |
+
 ## Architecture review (2026-07-09) — deepen candidates
 
 Report: `$TMPDIR/architecture-review-20260709-162428.html` (temp; not in repo).

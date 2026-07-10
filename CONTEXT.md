@@ -12,7 +12,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Schema** | `schema.py` — sole DDL owner for `housing_registry.db`; `registry.py` ingests targets, `db.py` persists listings |
 | **Listing** | One property or registration opportunity. `canonicalize_listings()` applies `listing_to_row()` before dedupe; empty URLs get `hls:` surrogate keys via listing module (persistence_url logic) |
 | **Run** | One `python main.py --run` invocation; identified by `run_id` (`YYYYMMDDTHHMMSS`) |
-| **RunPipeline** | `pipeline.py` — collect → persist → publish; `cli.py` delegates here |
+| **RunPipeline** | `pipeline.py` — collect → Machine Persist → Staff Publish; `cli.py` delegates here |
+| **Machine Persist** | `machine_persist.py` — post-collect machine path: canonicalize → dedupe (+ mirror confirm set) → upsert → machine CSVs (`current_full` / `diff`) → STALE/SCRAPE_FAILED thresholds (`persist_run`) |
 | **Staff Publish** | `staff_publish.py` — post-persist staff artifact policy: partial stubs, run_prev baseline, changelog, daily_summary, RUN_EVENT, Needs Review surface |
 | **Measure** | Token in `scraping_measures` routing to an adapter (`bloom`, `housekeys`, `civicplus`, `waf_blocked`, …) |
 | **DispatchRegistry** | `dispatch.py` — measures → adapter handlers; URL predicates → extraction handlers |
@@ -25,7 +26,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | Term | Meaning |
 |------|---------|
 | **STALE** | DB record not confirmed in current `run_id` |
-| **Cross-source mirror confirm** | When dedupe keeps one survivor for the same physical property across authorities, other identities still seen this run get `last_run_id` touched (`confirm_listing_identities`) so they are not false-STALE (#661 / #773) |
+| **Cross-source mirror confirm** | When dedupe keeps one survivor for the same physical property across authorities, other identities still seen this run get `last_run_id` touched (`confirm_listing_identities`) so they are not false-STALE (#661 / #773 / #1071). `deduplicate_for_run` returns `DedupeResult(survivors, mirrors_to_confirm)`; Machine Persist applies confirm — callers do not re-derive the set |
 | **SCRAPE_FAILED** | DB record not confirmed because the authority scrape failed in current `run_id`; not evidence of closure or removal |
 | **Pagination cap** | Safety max page count on multi-page inventory adapters. Hitting the cap with a full final page is incomplete inventory → `SourceFetchError` / SCRAPE_FAILED, not silent truncate (#776). Bloom already used this pattern; MidPen and jsco.net aligned |
 | **REMOVED** | Staff-facing changelog event for a record absent after a successful scrape of its authority; do not emit for failed authorities |

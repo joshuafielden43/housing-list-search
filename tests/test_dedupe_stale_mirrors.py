@@ -1,11 +1,11 @@
-"""#661 / #773: cross-source dedupe must not false-STALE the dropped authority."""
+"""#661 / #773 / #1071: cross-source dedupe must not false-STALE the dropped authority."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from housing_list_search.db import DatabaseManager
-from housing_list_search.dedupe import deduplicate_listings
+from housing_list_search.dedupe import deduplicate_for_run, deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
 from housing_list_search.listing import canonicalize_listings, listing_identity
 from housing_list_search.pipeline import RunPipeline
@@ -140,3 +140,87 @@ def test_dedupe_still_drops_loser_from_run_set():
     ]
     result = deduplicate_listings(records)
     assert len(result) == 1
+
+
+def test_deduplicate_for_run_returns_mirror_identities():
+    """#1071: mirrors_to_confirm is part of the dedupe interface, not pipeline set-diff."""
+    records = [
+        {
+            "property_name": "Oak Creek",
+            "authority": "SCCHA",
+            "address": "100 Oak St, San Jose, CA",
+            "url": "",
+            "confidence": "high",
+        },
+        {
+            "property_name": "Oak Creek",
+            "authority": "SJ Portal",
+            "address": "100 Oak St, San Jose, CA",
+            "url": "",
+            "confidence": "medium",
+        },
+    ]
+    out = deduplicate_for_run(records)
+    assert len(out.survivors) == 1
+    assert listing_identity(out.survivors[0])[0]  # authority present
+    # Loser authority identity must be confirmed separately
+    assert len(out.mirrors_to_confirm) == 1
+    loser = next(iter(out.mirrors_to_confirm))
+    assert "SJ" in loser[0] or "Portal" in loser[0] or loser[0] != listing_identity(out.survivors[0])[0]
+    assert loser not in {listing_identity(s) for s in out.survivors}
+
+
+def test_persist_run_confirms_mirrors(tmp_path, monkeypatch):
+    """Machine Persist applies mirrors_to_confirm without pipeline set arithmetic."""
+    import os
+
+    from housing_list_search.machine_persist import persist_run
+
+    orig = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        db = DatabaseManager(Path("housing_registry.db"))
+        db.init_db()
+        prior = canonicalize_listings(
+            [
+                {
+                    "authority": "SJ Portal",
+                    "property_name": "Oak Creek",
+                    "address": "100 Oak St, San Jose, CA",
+                    "url": "",
+                    "confidence": "medium",
+                },
+                {
+                    "authority": "SCCHA",
+                    "property_name": "Oak Creek",
+                    "address": "100 Oak St, San Jose, CA",
+                    "url": "",
+                    "confidence": "high",
+                },
+            ]
+        )
+        db.upsert_listings(prior, run_id="run1")
+
+        raw = [
+            {
+                "authority": "SCCHA",
+                "property_name": "Oak Creek",
+                "address": "100 Oak St, San Jose, CA",
+                "url": "",
+                "confidence": "high",
+            },
+            {
+                "authority": "SJ Portal",
+                "property_name": "Oak Creek",
+                "address": "100 Oak St, San Jose, CA",
+                "url": "",
+                "confidence": "medium",
+            },
+        ]
+        result = persist_run(raw, db=db, run_id="run2")
+        assert len(result.listings) == 1
+        assert result.mirrors_confirmed >= 1
+        assert result.stale_n == 0
+        assert result.diff_counts.get("STALE", 0) == 0
+    finally:
+        os.chdir(orig)

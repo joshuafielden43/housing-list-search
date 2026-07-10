@@ -1,7 +1,7 @@
 """
 pipeline.py — Run orchestration for the daily scrape loop.
 
-#782: RunPipeline.run() is a thin spine: collect → persist → publish.
+#782 / #1070: RunPipeline.run() is a thin spine: collect → Machine Persist → Staff Publish.
 cli.main() parses arguments and delegates here. Tests inject run_target_fn.
 """
 
@@ -16,15 +16,10 @@ from datetime import datetime
 from typing import Any
 
 import housing_list_search.dispatch as dispatch_module
-from housing_list_search.coverage import summarize_coverage
-from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
-from housing_list_search.dedupe import deduplicate_listings
+from housing_list_search.db import DatabaseManager
 from housing_list_search.dispatch import TargetScrapeResult
-from housing_list_search.listing import (
-    canonical_authority,
-    canonicalize_listings,
-    listing_identity,
-)
+from housing_list_search.listing import canonical_authority
+from housing_list_search.machine_persist import PersistResult, persist_run
 from housing_list_search.needs_review import assess_collect_review
 from housing_list_search.staff_publish import StaffPublishInput, publish_staff_run
 
@@ -78,27 +73,8 @@ class _CollectResult:
     low_yield: list[tuple[str, int]]
 
 
-@dataclass
-class _PersistResult:
-    """DB + machine exports after canonicalize/dedupe (#782 persist phase)."""
-
-    listings: list[dict]
-    run_id: str
-    inserted: int
-    updated: int
-    n_full: int
-    n_diff: int
-    diff_counts: dict[str, int]
-    scrape_failed_n: int
-    stale_n: int
-    cov_property: int
-    cov_portal: int
-    cov_program: int
-    cov_total: int
-
-
 class RunPipeline:
-    """Orchestrates collect → persist → publish (#782)."""
+    """Orchestrates collect → Machine Persist → Staff Publish (#782 / #1070)."""
 
     def run(
         self,
@@ -121,8 +97,8 @@ class RunPipeline:
         run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
 
         collected = self._collect(targets, scrape)
-        persisted = self._persist(
-            collected,
+        persisted = persist_run(
+            collected.listings_raw,
             db=db,
             run_id=run_id,
             target_authorities=target_authorities,
@@ -190,97 +166,9 @@ class RunPipeline:
             low_yield=collect_review.low_yield,
         )
 
-    def _persist(
-        self,
-        collected: _CollectResult,
-        *,
-        db: DatabaseManager,
-        run_id: str,
-        target_authorities: list[str] | None,
-        failed_targets: list[str],
-    ) -> _PersistResult:
-        """Canonicalize, dedupe, upsert, export machine CSVs."""
-        all_listings = canonicalize_listings(collected.listings_raw)
-        # Identities before cross-source dedupe — mirrors must still confirm this run (#661/#773)
-        pre_dedupe_identities = {listing_identity(r) for r in all_listings}
-        all_listings = deduplicate_listings(all_listings, canonical=True)
-        survivor_identities = {listing_identity(r) for r in all_listings}
-        dropped_mirrors = pre_dedupe_identities - survivor_identities
-
-        counts = db.upsert_listings(all_listings, run_id=run_id)
-        logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
-        if dropped_mirrors:
-            touched = db.confirm_listing_identities(dropped_mirrors, run_id=run_id)
-            if touched:
-                logger.info(
-                    "Confirmed %d cross-source dedupe mirror(s) (no content overwrite; #661)",
-                    touched,
-                )
-
-        cov = summarize_coverage(all_listings)
-        logger.info(
-            "Coverage: %d property, %d portal, %d program (%d total)",
-            cov.property_count,
-            cov.portal_count,
-            cov.program_count,
-            cov.total,
-        )
-
-        n_full = db.export_csv("current_full.csv", run_id=run_id)
-        n_diff = db.export_diff_csv(
-            "diff.csv",
-            run_id=run_id,
-            authorities=target_authorities,
-            scrape_failed_authorities=failed_targets,
-        )
-
-        diff_counts = db.diff_counts(
-            run_id,
-            authorities=target_authorities,
-            scrape_failed_authorities=failed_targets,
-        )
-        scrape_failed_n = diff_counts.get("SCRAPE_FAILED", 0)
-        if scrape_failed_n:
-            logger.warning(
-                "%d SCRAPE_FAILED record(s) in diff.csv — scrape errors, not confirmed closures",
-                scrape_failed_n,
-            )
-
-        stale_n = diff_counts.get("STALE", 0)
-        if stale_n >= DEFAULT_STALE_WARN_THRESHOLD:
-            logger.warning(
-                "%d STALE record(s) in diff.csv (not confirmed this run; threshold=%d). "
-                "Review diff.csv, then (safely) prune with: "
-                "python scripts/db_manage.py prune --from-diff  [or --not-seen-since 45 after review]",
-                stale_n,
-                DEFAULT_STALE_WARN_THRESHOLD,
-            )
-        elif stale_n > 0:
-            logger.info(
-                "%d STALE record(s) in diff.csv (below warn threshold of %d)",
-                stale_n,
-                DEFAULT_STALE_WARN_THRESHOLD,
-            )
-
-        return _PersistResult(
-            listings=all_listings,
-            run_id=run_id,
-            inserted=counts["inserted"],
-            updated=counts["updated"],
-            n_full=n_full,
-            n_diff=n_diff,
-            diff_counts=diff_counts,
-            scrape_failed_n=scrape_failed_n,
-            stale_n=stale_n,
-            cov_property=cov.property_count,
-            cov_portal=cov.portal_count,
-            cov_program=cov.program_count,
-            cov_total=cov.total,
-        )
-
     def _publish(
         self,
-        persisted: _PersistResult,
+        persisted: PersistResult,
         collected: _CollectResult,
         *,
         db: DatabaseManager,

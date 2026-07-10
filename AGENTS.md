@@ -187,7 +187,7 @@ When adding a new adapter:
 
 ## Run pipeline (pipeline.py)
 
-`cli.main()` parses args, loads targets from registry, and calls `RunPipeline().run()`. The pipeline owns scrape → dedupe → `listing_to_row` upsert → CSV export → changelog/summary. Tests inject a fake `run_target_fn` without mocking `sys.argv`.
+`cli.main()` parses args, loads targets from registry, and calls `RunPipeline().run()`. The spine is collect → **Machine Persist** (`machine_persist.persist_run`) → **Staff Publish** (`staff_publish.publish_staff_run`). Machine Persist owns canonicalize/dedupe (with `mirrors_to_confirm`) / upsert / machine CSVs. Staff Publish owns staff artifacts. Tests inject a fake `run_target_fn` without mocking `sys.argv`.
 
 ## Listing shape (listing.py)
 
@@ -205,7 +205,7 @@ Listing identity is `(authority, property_name, url)` everywhere. Machine `diff.
 
 ## Run artifacts
 
-After canonical Listings + machine exports, the partial/full artifact branch + snapshot side-effects live inline in pipeline.py (previously a thin artifacts.py wrapper). Coordinates generate_changelog, generate_daily_summary, db.log_full_run. See pipeline.py.
+Staff-facing artifacts (changelog, daily_summary, run_prev baseline, RUN_EVENT, Needs Review surface) live in `staff_publish.py`. Machine-facing exports (`current_full.csv`, `diff.csv`) live in `machine_persist.py` via `DatabaseManager`.
 
 ---
 
@@ -249,7 +249,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/dispatch.py` | DispatchRegistry + collapsed Target Scrape seam (scrape_target → TargetScrapeResult; the core of "scrape a Target") |
 | `housing_list_search/access.py` | Deep outbound Access seam — sole public HTTP + browser import surface (#1060) |
 | `housing_list_search/scraper.py` | HTTP impl behind Access (private; do not import from adapters) |
-| `housing_list_search/pipeline.py` | Run orchestration: collect → persist → publish |
+| `housing_list_search/pipeline.py` | Run orchestration: collect → Machine Persist → Staff Publish |
+| `housing_list_search/machine_persist.py` | Machine Persist: canonicalize, dedupe + mirror confirm, upsert, machine CSVs (#1070/#1071) |
 | `housing_list_search/staff_publish.py` | Staff Publish: partial/full artifact policy, run_prev baseline, changelog, daily_summary (#1063) |
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row / listing_identity; all shape, surrogate, authority canon, identity here |
