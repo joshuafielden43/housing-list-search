@@ -24,7 +24,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from housing_list_search.scraper import polite_get
+from housing_list_search.access import polite_get
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ def scrape_first_housing(authority: str = "", url: str = "") -> list[dict[str, A
     now_iso = _dt.now().isoformat()
     target = url or PORTFOLIO_URL
 
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = require_response(polite_get(target), target, context="first_housing")
 

@@ -9,8 +9,8 @@ import logging
 import re
 import sqlite3
 
+from housing_list_search.access import is_safe_http_url
 from housing_list_search.schema import init_schema
-from housing_list_search.scraper import is_safe_http_url
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
 from housing_list_search.validated_zero import parse_validated_zero_date
 

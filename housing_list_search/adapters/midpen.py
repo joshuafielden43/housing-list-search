@@ -32,7 +32,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from housing_list_search.scraper import polite_get
+from housing_list_search.access import polite_get
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ def scrape_midpen(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
 
-    from housing_list_search.scraper import SourceFetchError
+    from housing_list_search.access import SourceFetchError
 
     for page_num in range(1, MAX_PAGES + 1):
         page_slot = "" if page_num == 1 else f"{page_num}/"

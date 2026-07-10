@@ -42,8 +42,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
-from housing_list_search.playwright_nav import browser_page, safe_goto
-from housing_list_search.scraper import is_safe_http_url
+from housing_list_search.access import browser_page, is_safe_http_url, safe_goto
 
 logger = logging.getLogger(__name__)
 

@@ -129,8 +129,8 @@ except ImportError:
 
 from datetime import UTC
 
+from housing_list_search.access import polite_get
 from housing_list_search.extraction.pdf import HousingRecord
-from housing_list_search.scraper import polite_get
 
 logger = logging.getLogger(__name__)
 
@@ -583,7 +583,7 @@ def _fetch_via_api(
     """
     from urllib.parse import urlparse
 
-    from housing_list_search.scraper import URLPolicyError, polite_post, validate_http_url
+    from housing_list_search.access import URLPolicyError, polite_post, validate_http_url
 
     parsed = urlparse(listings_url)
     host = parsed.netloc  # e.g. "housingbayarea.mtc.ca.gov"
@@ -772,7 +772,7 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
       - The daily run for this target will take longer than usual.
     """
     try:
-        from housing_list_search.playwright_nav import browser_page, safe_goto
+        from housing_list_search.access import browser_page, safe_goto
     except ImportError:
         logger.error(
             "[Bloom] Playwright not installed. Cannot run fallback. "
@@ -959,7 +959,7 @@ def extract_bloom_housing_listings(
     if not authority:
         authority = urlparse(url).netloc
 
-    from housing_list_search.scraper import SourceFetchError
+    from housing_list_search.access import SourceFetchError
 
     # Path 1: SSR via __NEXT_DATA__
     open_items, closed_items = _fetch_via_ssr(url)

@@ -30,7 +30,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from housing_list_search.scraper import polite_get
+from housing_list_search.access import polite_get
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ def scrape_eden(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     now_iso = _dt.now().isoformat()
     target = url or COUNTY_LIST_URL
 
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = polite_get(target)
     if not resp:

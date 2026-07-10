@@ -107,7 +107,7 @@ def _looks_like_pdf(content: bytes, *, content_type: str = "", url: str = "") ->
 
 def _fetch_pdf(url: str, timeout: int = 30) -> bytes:
     """Download a PDF via polite_get (robots.txt + rate limit). Handles DocumentCenter redirects."""
-    from housing_list_search.scraper import polite_get, validate_http_url
+    from housing_list_search.access import polite_get, validate_http_url
 
     # Re-validate final URL (incl. docaccess-unwrapped targets already checked in normalize)
     try:
@@ -430,7 +430,7 @@ def parse_housing_line(
 
 def normalize_docaccess_url(url: str) -> tuple[str, str]:
     """Unwrap docaccess.com viewer URLs; returns (real_url, wrapper_url)."""
-    from housing_list_search.scraper import URLPolicyError, validate_http_url
+    from housing_list_search.access import URLPolicyError, validate_http_url
 
     parsed = urlparse(url)
     if parsed.hostname in {"docaccess.com", "www.docaccess.com"} and "docviewer" in parsed.path:

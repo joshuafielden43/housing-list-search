@@ -197,7 +197,7 @@ The deep module at the canonical transformation seam. All adapter output crosses
 
 Sole PDF adapter. **Default stack:** pdfplumber only (no PyMuPDF — see ADR-0005 / Vikunja #413). Path order: pdfplumber tables → flyer heuristics → line-regex → optional `marker-pdf` fallback (`requirements-ocr.txt`, disable with `HLS_DISABLE_MARKER_PDF=1`). `pdf_scraper.py` is a deprecated shim.
 
-Playwright navigation uses `playwright_nav.safe_goto()` — URL policy + per-host throttle (same seam as `polite_get`).
+Outbound access goes through `access.py` (`polite_get`, `safe_goto`, `browser_page`, …). `scraper.py` / `playwright_nav.py` are private implementation (#1060).
 
 ## Disappearance (disappearance.py + changelog.py)
 
@@ -247,7 +247,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `docs/adr/` | Architecture decision records (disappearance semantics, Suspicious Zero) |
 | `housing_list_search/dispatch.py` | Unified dispatch registry (measures + URL extractors) |
 | `housing_list_search/dispatch.py` | DispatchRegistry + collapsed Target Scrape seam (scrape_target → TargetScrapeResult; the core of "scrape a Target") |
-| `housing_list_search/scraper.py` | Consolidated safe fetch (polite_get etc.; was split across 5 files) |
+| `housing_list_search/access.py` | Deep outbound Access seam — sole public HTTP + browser import surface (#1060) |
+| `housing_list_search/scraper.py` | HTTP impl behind Access (private; do not import from adapters) |
 | `housing_list_search/pipeline.py` | Run orchestration: scrape → dedupe → persist → export (db) + inlined artifact generation (changelog etc.) |
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row / listing_identity; all shape, surrogate, authority canon, identity here |
@@ -259,7 +260,7 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/db.py` | DatabaseManager: upsert_listings, export_csv, export_diff_csv, prune |
 | `housing_list_search/changelog.py` | Staff-facing changelog; reads STALE from diff.csv |
 | `housing_list_search/registry.py` | TARGETS.md → SQLite `targets` ingest + sanitization |
-| `housing_list_search/scraper.py` | `polite_get()` / safe fetch — the only approved HTTP entry point (consolidated: policy, throttle, robots, limits) |
+| `housing_list_search/playwright_nav.py` | Browser pool / safe_goto impl behind Access (private) |
 | `housing_list_search/extraction/bloom_housing.py` | Bloom Housing platform adapter (`BLOOM_DOMAINS`) |
 | `housing_list_search/extraction/pdf.py` | PDF extraction (tables, flyers, marker fallback) |
 | `housing_list_search/extraction/__init__.py` | Public `extract_target()` API (delegates to dispatch) |

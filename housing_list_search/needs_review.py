@@ -15,8 +15,8 @@ import logging
 import os
 from typing import Any
 
+from housing_list_search.access import URLPolicyError, polite_post, validate_http_url
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD
-from housing_list_search.scraper import URLPolicyError, polite_post, validate_http_url
 
 logger = logging.getLogger(__name__)
 

@@ -103,7 +103,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from housing_list_search.scraper import polite_get
+from housing_list_search.access import polite_get
 
 # Fallback canonical authority label for John Stewart sources when no
 # TargetContext authority is supplied. The listing seam (canonical_authority
@@ -141,7 +141,7 @@ def _scrape_sccha_directory(url: str, *, authority: str = "") -> list[dict[str, 
     print(f"🧩 Running John Stewart adapter (SCCHA custom directory mode) on {url}")
     auth = authority or JOHN_STEWART_AUTHORITY
 
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = require_response(polite_get(url), url, context="john_stewart/sccha_directory")
 
@@ -269,7 +269,7 @@ def _scrape_direct_john_stewart(url: str, *, authority: str = "") -> list[dict[s
     print(f"🧩 Running John Stewart adapter (direct vendor site mode) on {url}")
     auth = authority or JOHN_STEWART_AUTHORITY
 
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = require_response(polite_get(url), url, context="john_stewart/vendor_site")
 
@@ -438,7 +438,7 @@ def _scrape_jsco_portfolio(url: str, *, authority: str = "") -> list[dict[str, A
     listings: list[dict[str, Any]] = []
     page_num = 1
 
-    from housing_list_search.scraper import SourceFetchError
+    from housing_list_search.access import SourceFetchError
 
     while page_num <= 3:  # 67 properties fit in one page of 100; cap defensively
         api_url = f"{_JSCO_API_BASE}/property?city={city_filter}&per_page=100&page={page_num}"

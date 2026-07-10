@@ -215,7 +215,7 @@ class RunPipeline:
             )
         finally:
             try:
-                from housing_list_search.playwright_nav import shutdown_playwright
+                from housing_list_search.access import shutdown_playwright
 
                 shutdown_playwright()
             except Exception:

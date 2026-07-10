@@ -1,18 +1,12 @@
 # scraper.py
 """
-Safe, polite HTTP fetching for housing-list-search.
+HTTP implementation behind the Access seam (private to access.py).
 
-This is the deep module for "look at a link". All outbound HTTP (polite_get, polite_post,
-robots checks) goes through here. It encapsulates:
-- URL policy / SSRF protection (no private nets, metadata, etc.)
-- Robots.txt checking and caching
-- Per-host rate limiting
-- Bounded response sizes
-- Redirect following with policy on each hop
-- Nonprofit User-Agent
+Do not import this module from adapters, extraction, or pipeline.
+Use ``housing_list_search.access`` instead (#1060).
 
-Public interface is small and stable. Implementation details (caches, throttles, policy)
-are hidden here for locality and depth.
+Owns: URL policy / SSRF, robots, per-host throttle, bounded bodies, redirects,
+nonprofit User-Agent, polite_get / polite_post.
 """
 
 import ipaddress

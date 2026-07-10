@@ -76,8 +76,7 @@ from typing import Any
 from bs4 import BeautifulSoup
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
-from housing_list_search.playwright_nav import browser_page, safe_goto
-from housing_list_search.scraper import polite_get
+from housing_list_search.access import browser_page, polite_get, safe_goto
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +223,7 @@ def scrape_property_directory(authority: str = "") -> list[dict[str, Any]]:
     city lives in the address while `authority` records which TARGETS.md row
     triggered the scrape.
     """
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = require_response(
         polite_get(PROPERTY_DIRECTORY_URL),

@@ -47,6 +47,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 
 | Term | Meaning |
 |------|---------|
-| **polite_get** | Sole approved HTTP entry (`scraper.py`); robots.txt + delay |
+| **Access** | `access.py` — sole outbound seam (HTTP + browser): `polite_get` / `polite_post` / `browser_page` / `safe_goto`; policy, robots, throttle. Implementation: `scraper.py`, `playwright_nav.py` (private) |
+| **polite_get** | Approved HTTP fetch via Access; robots.txt + delay |
 | **no_public_list** | Intentional skip — no ethical public inventory |
 | **waf_blocked** | Hard skip before network I/O |

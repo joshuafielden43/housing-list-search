@@ -1,10 +1,10 @@
-"""Playwright navigation helpers — shared browser pool + outbound policy.
+"""Browser implementation behind the Access seam (private to access.py).
 
-#761 / #769 / #987: one process-wide lock serializes Playwright so parallel
-target workers cannot launch concurrent Chromium instances. A single browser
-is reused for the lifetime of the process (or until shutdown_playwright()).
-Named adapters that require a browser still use it; Bloom keeps Playwright as
-SSR/API last-resort only (call-site discipline, not this module).
+Do not import this module from adapters, extraction, or pipeline.
+Use ``housing_list_search.access`` (browser_page, safe_goto, …) instead (#1060).
+
+#761 / #769 / #987: process-wide lock serializes Playwright under parallel
+target workers; one browser reused until shutdown_playwright().
 """
 
 from __future__ import annotations

@@ -123,7 +123,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from housing_list_search.scraper import polite_get
+from housing_list_search.access import polite_get
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +210,7 @@ def _parse_embedded_geojson_js(
     """
     logger.debug(f"GIS (embedded JS) on {url}")
 
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = require_response(polite_get(url), url, context="gis/embedded_js")
 
@@ -248,7 +248,7 @@ def _parse_direct_geojson(url: str, authority: str) -> list[dict[str, Any]]:
     """Handles direct .geojson or JSON FeatureCollection endpoints."""
     logger.debug(f"GIS (direct GeoJSON) on {url}")
 
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = require_response(polite_get(url), url, context="gis/geojson")
 
@@ -281,7 +281,7 @@ def _parse_arcgis_rest(url: str, authority: str) -> list[dict[str, Any]]:
     if not query_url.rstrip("/").endswith("/query"):
         query_url = query_url.rstrip("/") + "/query"
 
-    from housing_list_search.scraper import SourceFetchError, require_response
+    from housing_list_search.access import SourceFetchError, require_response
 
     full = f"{query_url}?where=1%3D1&outFields=*&f=json"
     resp = require_response(polite_get(full), full, context="gis/arcgis")
@@ -385,7 +385,7 @@ def _parse_page_for_embedded_gis(
     """
     logger.debug(f"GIS (page scan) on {url}")
 
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = require_response(polite_get(url), url, context="gis/page_scan")
 

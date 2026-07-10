@@ -34,7 +34,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from housing_list_search.scraper import polite_get
+from housing_list_search.access import polite_get
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ def _parse_find_a_home(html_text: str, now_iso: str) -> list[dict[str, Any]]:
 
 def _fetch_portfolio_api(now_iso: str, known_urls: set[str]) -> list[dict[str, Any]]:
     """Backfill the full portfolio from the WordPress REST API."""
-    from housing_list_search.scraper import require_response
+    from housing_list_search.access import require_response
 
     resp = require_response(polite_get(API_URL), API_URL, context="charities_housing/api")
     try:
@@ -117,7 +117,7 @@ def _fetch_portfolio_api(now_iso: str, known_urls: set[str]) -> list[dict[str, A
         logger.warning("[charities_housing] API returned non-JSON")
         raise
     if not isinstance(items, list):
-        from housing_list_search.scraper import SourceFetchError
+        from housing_list_search.access import SourceFetchError
 
         raise SourceFetchError(f"charities_housing/api: unexpected payload from {API_URL}")
 
@@ -163,7 +163,7 @@ def scrape_charities_housing(authority: str = "", url: str = "") -> list[dict[st
     print("🧩 Running Charities Housing adapter (find-a-home + portfolio API)")
     now_iso = _dt.now().isoformat()
 
-    from housing_list_search.scraper import SourceFetchError
+    from housing_list_search.access import SourceFetchError
 
     records: list[dict[str, Any]] = []
     find_url = url or FIND_A_HOME_URL

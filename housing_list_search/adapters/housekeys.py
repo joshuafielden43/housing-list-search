@@ -59,7 +59,7 @@ proliferating.
 
 import logging
 
-from housing_list_search.scraper import polite_get
+from housing_list_search.access import polite_get
 
 logger = logging.getLogger(__name__)
 
