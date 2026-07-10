@@ -188,7 +188,7 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 | Priority | Theme | IDs |
 |----------|--------|-----|
-| investigate | pagination alert, throttle races, marker license | **#776 #778 #793** (#775 done — Playwright XHR egress) |
+| investigate | throttle races, marker license | **#778 #793** (#776 done — pagination cap fails scrape) |
 | architecture (optional) | seams, RunPipeline phases, measure registry, N+1 upsert, adapters | **#781–#784 #786 #794–#802 #828 #797 #795 #796 #798 #799 #801** |
 
 **Domain bar:** down ≠ gone.

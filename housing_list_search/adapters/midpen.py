@@ -46,7 +46,7 @@ SEARCH_URL_TEMPLATE = (
     "&aspf%5Bcounty__4%5D=Santa%20Clara"
     "&asp_gen%5B%5D=title&customset%5B%5D=properties&asp_ls="
 )
-MAX_PAGES = 4  # ~30 cards/page; county portfolio fits in 2 today
+MAX_PAGES = 4  # ~30 cards/page; county portfolio fits in 2 today. Cap hit → fail (#776).
 
 _STATUS_FLAGS = [
     "Wait List Open",
@@ -140,6 +140,7 @@ def scrape_midpen(authority: str = "", url: str = "") -> list[dict[str, Any]]:
 
     from housing_list_search.access import SourceFetchError
 
+    last_new = 0
     for page_num in range(1, MAX_PAGES + 1):
         page_slot = "" if page_num == 1 else f"{page_num}/"
         page_url = SEARCH_URL_TEMPLATE.format(page=page_slot)
@@ -162,8 +163,24 @@ def scrape_midpen(authority: str = "", url: str = "") -> list[dict[str, Any]]:
                 records.append(rec)
                 new_on_page += 1
 
+        last_new = new_on_page
         if new_on_page == 0:
             break
+    else:
+        # Exhausted MAX_PAGES without an empty page — may have truncated inventory (#776).
+        if last_new > 0:
+            logger.error(
+                "midpen: pagination hit MAX_PAGES=%d with new cards on last page "
+                "(%d records so far)",
+                MAX_PAGES,
+                len(records),
+            )
+            raise SourceFetchError.pagination_cap(
+                "midpen",
+                max_pages=MAX_PAGES,
+                partial=records,
+                detail=f"{len(records)} records so far",
+            )
 
     print(f"   → MidPen: {len(records)} Santa Clara County properties")
     return records

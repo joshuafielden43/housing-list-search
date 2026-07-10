@@ -97,6 +97,7 @@ centralized logging is adopted.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime as _dt
 from typing import Any
@@ -104,6 +105,8 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 from housing_list_search.access import polite_get
+
+logger = logging.getLogger(__name__)
 
 # Fallback canonical authority label for John Stewart sources when no
 # TargetContext authority is supplied. The listing seam (canonical_authority
@@ -437,11 +440,18 @@ def _scrape_jsco_portfolio(url: str, *, authority: str = "") -> list[dict[str, A
     city_filter = ",".join(str(i) for i in _JSCO_SCC_CITIES)
     listings: list[dict[str, Any]] = []
     page_num = 1
+    # 67 SCC properties fit in one page of 100; cap is a safety net. Hitting it
+    # with a full page means silent inventory loss — fail the authority (#776).
+    max_pages = 3
+    per_page = 100
 
     from housing_list_search.access import SourceFetchError
 
-    while page_num <= 3:  # 67 properties fit in one page of 100; cap defensively
-        api_url = f"{_JSCO_API_BASE}/property?city={city_filter}&per_page=100&page={page_num}"
+    while page_num <= max_pages:
+        api_url = (
+            f"{_JSCO_API_BASE}/property?city={city_filter}"
+            f"&per_page={per_page}&page={page_num}"
+        )
         resp = polite_get(api_url)
         if not resp:
             raise SourceFetchError(
@@ -489,9 +499,23 @@ def _scrape_jsco_portfolio(url: str, *, authority: str = "") -> list[dict[str, A
                 }
             )
 
-        if len(items) < 100:
+        if len(items) < per_page:
             break
         page_num += 1
+    else:
+        # while-else: exited because page_num exceeded max without a short page
+        logger.error(
+            "john_stewart/jsco: pagination hit max_pages=%d with full final page "
+            "(%d records so far)",
+            max_pages,
+            len(listings),
+        )
+        raise SourceFetchError.pagination_cap(
+            "john_stewart/jsco",
+            max_pages=max_pages,
+            partial=listings,
+            detail=f"{len(listings)} records so far",
+        )
 
     print(f"   → jsco.net portfolio: {len(listings)} Santa Clara County properties")
     return listings

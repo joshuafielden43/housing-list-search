@@ -9,6 +9,8 @@ Owns: URL policy / SSRF, robots, per-host throttle, bounded bodies, redirects,
 nonprofit User-Agent, polite_get / polite_post.
 """
 
+from __future__ import annotations
+
 import ipaddress
 import logging
 import socket
@@ -84,6 +86,27 @@ class SourceFetchError(RuntimeError):
     def __init__(self, message: str, *, partial: list | None = None):
         super().__init__(message)
         self.partial: list = list(partial or [])
+
+    @classmethod
+    def pagination_cap(
+        cls,
+        adapter: str,
+        *,
+        max_pages: int,
+        partial: list | None = None,
+        detail: str = "",
+    ) -> SourceFetchError:
+        """Build error when a safety page cap is hit with a full final page (#776).
+
+        Inventory may be truncated — callers must not treat this as a clean success
+        (dispatch → had_error → SCRAPE_FAILED). Partial rows are still upsertable.
+        """
+        extra = f" ({detail})" if detail else ""
+        return cls(
+            f"{adapter}: pagination hit max_pages={max_pages} with a full final page"
+            f"{extra} — inventory may be truncated; mark SCRAPE_FAILED",
+            partial=list(partial or []),
+        )
 
 
 def require_response(resp, url: str, *, context: str = ""):
@@ -248,7 +271,7 @@ def reset_host_throttle() -> None:
 
 
 # --- robots cache (inlined) ---
-_ROBOTS_CACHE: dict[str, "RobotsEntry"] = {}
+_ROBOTS_CACHE: dict[str, RobotsEntry] = {}
 _CACHE_LOCK = threading.Lock()
 
 

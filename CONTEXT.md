@@ -27,6 +27,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **STALE** | DB record not confirmed in current `run_id` |
 | **Cross-source mirror confirm** | When dedupe keeps one survivor for the same physical property across authorities, other identities still seen this run get `last_run_id` touched (`confirm_listing_identities`) so they are not false-STALE (#661 / #773) |
 | **SCRAPE_FAILED** | DB record not confirmed because the authority scrape failed in current `run_id`; not evidence of closure or removal |
+| **Pagination cap** | Safety max page count on multi-page inventory adapters. Hitting the cap with a full final page is incomplete inventory → `SourceFetchError` / SCRAPE_FAILED, not silent truncate (#776). Bloom already used this pattern; MidPen and jsco.net aligned |
 | **REMOVED** | Staff-facing changelog event for a record absent after a successful scrape of its authority; do not emit for failed authorities |
 | **Disappearance semantics** | How the system explains records absent from this run. `diff.csv` is the source of truth: staff-facing outputs project these labels rather than deriving closure/removal independently |
 | **Partial run** | `--target "City"` — scopes `diff.csv` STALE; preserves global `run_prev.csv` |
