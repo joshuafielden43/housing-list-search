@@ -188,7 +188,7 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 | Priority | Theme | IDs |
 |----------|--------|-----|
-| investigate | throttle races, marker license | **#778 #793** (#776 done — pagination cap fails scrape) |
+| investigate | marker license | **#778** (#793 done — robots single-flight + throttle tests) |
 | architecture (optional) | seams, RunPipeline phases, measure registry, N+1 upsert, adapters | **#781–#784 #786 #794–#802 #828 #797 #795 #796 #798 #799 #801** |
 
 **Domain bar:** down ≠ gone.

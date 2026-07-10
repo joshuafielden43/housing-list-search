@@ -40,6 +40,47 @@ class TestRobotsCache:
 
         assert mock_get.call_count == 1
 
+    def test_concurrent_miss_single_flight_fetch(self):
+        """#793: concurrent cache misses share one robots.txt network fetch."""
+        clear_robots_cache()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.iter_content.return_value = [b"User-agent: *\nDisallow:\n"]
+        fetch_started = threading.Event()
+        release_fetch = threading.Event()
+        call_count = {"n": 0}
+        lock = threading.Lock()
+
+        def slow_get(*_a, **_k):
+            with lock:
+                call_count["n"] += 1
+            fetch_started.set()
+            release_fetch.wait(timeout=2)
+            return mock_resp
+
+        results: list[RobotsEntry] = []
+
+        def worker() -> None:
+            results.append(
+                get_robots_entry("https://race.example.gov", "https://race.example.gov/robots.txt")
+            )
+
+        with patch("housing_list_search.scraper.requests.get", side_effect=slow_get):
+            t1 = threading.Thread(target=worker)
+            t2 = threading.Thread(target=worker)
+            t1.start()
+            t2.start()
+            assert fetch_started.wait(timeout=2)
+            # Give the second thread time to hit the fetch lock
+            time.sleep(0.05)
+            release_fetch.set()
+            t1.join(timeout=5)
+            t2.join(timeout=5)
+
+        assert call_count["n"] == 1
+        assert len(results) == 2
+        assert results[0] is results[1]
+
     def test_is_allowed_uses_cache(self):
         from housing_list_search.scraper import is_allowed_by_robots
 
@@ -84,6 +125,28 @@ class TestHostThrottle:
         t1.join()
         t2.join()
         assert time.monotonic() - start < 0.18
+
+    def test_concurrent_same_host_claims_are_serialized(self):
+        """#793: two workers on one host cannot both pass wait_for_host at once."""
+        reset_host_throttle()
+        claim_times: list[float] = []
+        barrier = threading.Barrier(2)
+
+        def worker() -> None:
+            barrier.wait(timeout=2)
+            wait_for_host("https://same-host.example.gov/x", delay=0.12)
+            claim_times.append(time.monotonic())
+
+        t1 = threading.Thread(target=worker)
+        t2 = threading.Thread(target=worker)
+        t1.start()
+        t2.start()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+        assert len(claim_times) == 2
+        claim_times.sort()
+        # Second claim must start ~delay after first claim reserved the slot
+        assert claim_times[1] - claim_times[0] >= 0.10
 
 
 class TestParallelTargets:

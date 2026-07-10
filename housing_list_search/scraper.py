@@ -211,6 +211,11 @@ def is_safe_http_url(url: str, *, resolve_dns: bool = True) -> bool:
 
 
 # --- host throttle (inlined) ---
+# Thread-safe under pipeline ThreadPool workers (#793 / #1053):
+# - _META_LOCK protects lock-dict creation only
+# - per-host lock serializes wait_for_host claim + mark_host_fetched
+# - wait claims the slot before releasing so two workers cannot both pass
+# Lock objects are retained for process lifetime (small host set for this tool).
 _HOST_LOCKS: dict[str, threading.Lock] = {}
 _HOST_LAST_FETCH: dict[str, float] = {}
 _META_LOCK = threading.Lock()
@@ -265,13 +270,16 @@ def mark_host_fetched(url_or_host: str) -> None:
 
 
 def reset_host_throttle() -> None:
-    """Clear throttle state (tests)."""
+    """Clear last-fetch times (tests). Does not drop lock objects (thread safety)."""
     with _META_LOCK:
         _HOST_LAST_FETCH.clear()
 
 
 # --- robots cache (inlined) ---
+# Single-flight fetch per origin under ThreadPool (#793): first miss fetches;
+# concurrent misses wait on a per-origin lock and re-check the cache.
 _ROBOTS_CACHE: dict[str, RobotsEntry] = {}
+_ROBOTS_FETCH_LOCKS: dict[str, threading.Lock] = {}
 _CACHE_LOCK = threading.Lock()
 
 
@@ -284,23 +292,35 @@ class RobotsEntry:
 
 
 def clear_robots_cache() -> None:
-    """Reset cache (tests)."""
+    """Reset cache (tests). Leaves fetch-lock objects in place."""
     with _CACHE_LOCK:
         _ROBOTS_CACHE.clear()
 
 
 def get_robots_entry(base: str, robots_url: str) -> RobotsEntry:
-    """Return cached robots entry for ``base`` (scheme://host), fetching on miss."""
+    """Return cached robots entry for ``base`` (scheme://host), fetching on miss.
+
+    Thread-safe single-flight: concurrent misses for the same origin share one
+    network fetch (#793).
+    """
     with _CACHE_LOCK:
         cached = _ROBOTS_CACHE.get(base)
         if cached is not None:
             return cached
+        fetch_lock = _ROBOTS_FETCH_LOCKS.get(base)
+        if fetch_lock is None:
+            fetch_lock = threading.Lock()
+            _ROBOTS_FETCH_LOCKS[base] = fetch_lock
 
-    entry = _fetch_robots_entry(robots_url)
-
-    with _CACHE_LOCK:
-        _ROBOTS_CACHE[base] = entry
-        return entry
+    with fetch_lock:
+        with _CACHE_LOCK:
+            cached = _ROBOTS_CACHE.get(base)
+            if cached is not None:
+                return cached
+        entry = _fetch_robots_entry(robots_url)
+        with _CACHE_LOCK:
+            _ROBOTS_CACHE[base] = entry
+            return entry
 
 
 def _fetch_robots_entry(robots_url: str) -> RobotsEntry:
