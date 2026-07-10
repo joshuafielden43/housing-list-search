@@ -7,7 +7,6 @@ cli.main() parses arguments and delegates here. Tests inject run_target_fn.
 
 from __future__ import annotations
 
-import csv
 import logging
 import os
 from collections.abc import Callable
@@ -17,24 +16,13 @@ from datetime import datetime
 from typing import Any
 
 import housing_list_search.dispatch as dispatch_module
-from housing_list_search.changelog import generate_changelog
 from housing_list_search.coverage import summarize_coverage
-from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
 from housing_list_search.listing import canonical_authority, canonicalize_listings
-from housing_list_search.needs_review import (
-    CollectReview,
-    assess_collect_review,
-    build_run_review,
-    surface_run_review,
-)
-from housing_list_search.outputs import (
-    PARTIAL_DAILY_SUMMARY_PATH,
-    STAFF_DAILY_SUMMARY_PATH,
-    generate_daily_summary,
-)
+from housing_list_search.needs_review import assess_collect_review
+from housing_list_search.staff_publish import StaffPublishInput, publish_staff_run
 
 logger = logging.getLogger("housing_list_search")
 
@@ -286,101 +274,28 @@ class RunPipeline:
         partial_run: bool,
         target_filter: str | None,
     ) -> None:
-        """Staff artifacts, Needs Review surface, run history, structured RUN_EVENT."""
-        run_review = build_run_review(
-            CollectReview(
+        """Delegate staff artifact policy to Staff Publish (#1063)."""
+        publish_staff_run(
+            StaffPublishInput(
+                listings=persisted.listings,
+                run_id=persisted.run_id,
+                targets_attempted=len(targets),
+                failed_targets=collected.failed_targets,
                 suspicious_zero_authorities=collected.suspicious_zero_authorities,
                 reverification_due_authorities=collected.reverification_due_authorities,
                 low_yield=collected.low_yield,
+                stale_n=persisted.stale_n,
+                scrape_failed_n=persisted.scrape_failed_n,
+                cov_property=persisted.cov_property,
+                cov_portal=persisted.cov_portal,
+                cov_program=persisted.cov_program,
+                inserted=persisted.inserted,
+                updated=persisted.updated,
+                skipped=skipped,
+                partial_run=partial_run,
+                target_filter=target_filter,
             ),
-            stale_n=persisted.stale_n,
-            scrape_failed_n=persisted.scrape_failed_n,
-            stale_warn_threshold=DEFAULT_STALE_WARN_THRESHOLD,
-        )
-        run_stats = {
-            "targets_attempted": len(targets),
-            "targets_succeeded": len(targets) - len(collected.failed_targets),
-            "failed_authorities": collected.failed_targets,
-            **run_review.to_run_stats_fields(),
-        }
-
-        logger.info(
-            "RUN_EVENT run_id=%s targets=%d failed=%d property=%d portal=%d program=%d "
-            "stale=%d scrape_failed=%d suspicious_zero=%d low_yield=%d partial=%s",
-            persisted.run_id,
-            len(targets),
-            len(collected.failed_targets),
-            persisted.cov_property,
-            persisted.cov_portal,
-            persisted.cov_program,
-            persisted.stale_n,
-            persisted.scrape_failed_n,
-            len(collected.suspicious_zero_authorities),
-            len(collected.low_yield),
-            partial_run,
-        )
-
-        surface_run_review(run_review, run_id=persisted.run_id)
-
-        if partial_run:
-            with open("changelog_diffs.md", "w", encoding="utf-8") as f:
-                f.write("# Housing List Changelog\n\n")
-                f.write(
-                    f"Partial --target run for {(target_filter or '')!r}; "
-                    "global run_prev.csv baseline was not updated.\n"
-                )
-            with open("changelog_diffs.csv", "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["change_type", "authority", "property_name", "url", "details"])
-                writer.writerow(
-                    [
-                        sanitize_csv_field("PARTIAL_RUN"),
-                        sanitize_csv_field("target"),
-                        sanitize_csv_field(target_filter or ""),
-                        sanitize_csv_field(""),
-                        sanitize_csv_field("global changelog baseline not updated"),
-                    ]
-                )
-            generate_daily_summary(
-                persisted.listings,
-                skipped_targets=[],
-                output_path=PARTIAL_DAILY_SUMMARY_PATH,
-                run_stats=run_stats or {},
-            )
-            logger.info(
-                "Partial --target run: left global run_prev.csv changelog baseline unchanged"
-            )
-            logger.info(
-                "Partial --target run: wrote %s; left staff-facing %s unchanged",
-                PARTIAL_DAILY_SUMMARY_PATH,
-                STAFF_DAILY_SUMMARY_PATH,
-            )
-            return
-
-        previous_run_id = db.get_previous_full_run_id()
-        update_baseline = not bool(collected.failed_targets)
-        generate_changelog(
-            persisted.listings,
-            skipped_targets=skipped,
-            run_id=persisted.run_id,
-            previous_run_id=previous_run_id,
-            scrape_failed_authorities=collected.failed_targets,
-            update_run_prev=update_baseline,
-        )
-        if not update_baseline:
-            logger.warning(
-                "Preserved prior run_prev.csv baseline — %d failed target(s); "
-                "down/outage is not evidence of inventory removal",
-                len(collected.failed_targets),
-            )
-        db.log_full_run(
-            persisted.run_id,
-            rows_after=persisted.inserted + persisted.updated,
-        )
-        generate_daily_summary(
-            persisted.listings,
-            skipped_targets=skipped,
-            run_stats=run_stats or {},
+            db=db,
         )
 
     @staticmethod

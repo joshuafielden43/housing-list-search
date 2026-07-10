@@ -249,7 +249,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/dispatch.py` | DispatchRegistry + collapsed Target Scrape seam (scrape_target → TargetScrapeResult; the core of "scrape a Target") |
 | `housing_list_search/access.py` | Deep outbound Access seam — sole public HTTP + browser import surface (#1060) |
 | `housing_list_search/scraper.py` | HTTP impl behind Access (private; do not import from adapters) |
-| `housing_list_search/pipeline.py` | Run orchestration: scrape → dedupe → persist → export (db) + inlined artifact generation (changelog etc.) |
+| `housing_list_search/pipeline.py` | Run orchestration: collect → persist → publish |
+| `housing_list_search/staff_publish.py` | Staff Publish: partial/full artifact policy, run_prev baseline, changelog, daily_summary (#1063) |
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row / listing_identity; all shape, surrogate, authority canon, identity here |
 

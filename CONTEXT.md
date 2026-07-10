@@ -12,7 +12,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Schema** | `schema.py` — sole DDL owner for `housing_registry.db`; `registry.py` ingests targets, `db.py` persists listings |
 | **Listing** | One property or registration opportunity. `canonicalize_listings()` applies `listing_to_row()` before dedupe; empty URLs get `hls:` surrogate keys via listing module (persistence_url logic) |
 | **Run** | One `python main.py --run` invocation; identified by `run_id` (`YYYYMMDDTHHMMSS`) |
-| **RunPipeline** | `pipeline.py` — scrape → dedupe → persist → export; `cli.py` delegates here |
+| **RunPipeline** | `pipeline.py` — collect → persist → publish; `cli.py` delegates here |
+| **Staff Publish** | `staff_publish.py` — post-persist staff artifact policy: partial stubs, run_prev baseline, changelog, daily_summary, RUN_EVENT, Needs Review surface |
 | **Measure** | Token in `scraping_measures` routing to an adapter (`bloom`, `housekeys`, `civicplus`, `waf_blocked`, …) |
 | **DispatchRegistry** | `dispatch.py` — measures → adapter handlers; URL predicates → extraction handlers |
 | **Adapter** | Platform-scoped scraper in `adapters/` or `extraction/` — named after vendor, never city |
