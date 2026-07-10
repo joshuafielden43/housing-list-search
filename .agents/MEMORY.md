@@ -4,6 +4,27 @@ Persistent notes for AI contributors. **Not** a global skill — lives only in t
 
 ---
 
+## Deep critique (2026-07-10) — adapters/scrapers
+
+Council on `adapters/`, `extraction/`, Access. Theme: **soft success → STALE ages out live inventory**.
+
+| Vikunja | Severity | Topic |
+|---------|----------|--------|
+| **#1076** | critical | Empty/partial scrapes must SCRAPE_FAILED (Bloom/PDF/GIS/Alta) |
+| **#1077** | high | Fail-loud Bloom max_results + CivicPlus max_documents |
+| **#1078** | high | Alta synthetic wrong URLs; directory is inventory |
+| **#1079** | medium | ArcGIS pagination / exceedTransferLimit |
+| **#1080** | medium | PDF single-fetch cascade |
+| **#1081** | high | robots.txt fetch SSRF (no blind redirects) |
+| **#1082** | medium | Playwright egress DNS resolve |
+| **#1083** | medium | low_yield → Needs Review + portfolio floors |
+| **#1084** | medium | MidPen/EAH absolute URLs |
+| **#1085** | medium | Don't log_full_run on failed targets |
+| **#1086** | trivial | AGENTS Sunnyvale GIS docs |
+| **#1087** | low/explore | Housing Group / Hello Housing sources |
+
+Start with **#1076** then **#1077/#1078/#1081**.
+
 ## Architecture review (2026-07-10) — residual deepen candidates
 
 Report: `$TMPDIR/architecture-review-20260710-090510.html` (temp; not in repo).
