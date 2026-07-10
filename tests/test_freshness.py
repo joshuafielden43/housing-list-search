@@ -1,9 +1,10 @@
-"""Tests for unified freshness / change semantics."""
+"""Tests for change helpers (compat: freshness re-exports disappearance)."""
 
-from housing_list_search.freshness import (
+from housing_list_search.disappearance import (
     compute_run_diff,
     listing_identity,
 )
+from housing_list_search.freshness import compute_run_diff as shim_compute_run_diff
 
 
 class TestListingIdentity:
@@ -23,6 +24,8 @@ class TestComputeRunDiff:
         diff = compute_run_diff(prev, curr)
         assert diff.removed[0][1] == "Old"
         assert diff.added[0][1] == "New"
+        # shim stays wired
+        assert shim_compute_run_diff(prev, curr).added == diff.added
 
     def test_same_name_different_url_not_deduped(self):
         prev = [{"authority": "C", "property_name": "Oak", "url": "https://a"}]

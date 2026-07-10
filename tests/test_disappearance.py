@@ -1,6 +1,97 @@
-"""Tests for disappearance projection (ADR-0001)."""
+"""Tests for disappearance: machine Diff labels + staff projection (ADR-0001)."""
 
-from housing_list_search.disappearance import project_disappearance
+from housing_list_search.disappearance import (
+    classify_machine_change,
+    classify_machine_change_without_run_id,
+    expand_scrape_failed_authorities,
+    project_disappearance,
+)
+
+
+class TestClassifyMachineChange:
+    def test_new_when_first_run_id_matches(self):
+        assert (
+            classify_machine_change(
+                run_id="run1",
+                last_run_id="run1",
+                first_run_id="run1",
+                authority="City",
+            )
+            == "NEW"
+        )
+
+    def test_new_legacy_null_first_run_id_and_equal_seen(self):
+        assert (
+            classify_machine_change(
+                run_id="run1",
+                last_run_id="run1",
+                first_run_id=None,
+                first_seen="t",
+                last_seen="t",
+                authority="City",
+            )
+            == "NEW"
+        )
+
+    def test_updated_when_confirmed_and_existed(self):
+        assert (
+            classify_machine_change(
+                run_id="run2",
+                last_run_id="run2",
+                first_run_id="run1",
+                authority="City",
+            )
+            == "UPDATED"
+        )
+
+    def test_scrape_failed_when_unconfirmed_and_failed_authority(self):
+        failed = expand_scrape_failed_authorities(
+            ["MidPen Housing (Santa Clara County portfolio)"]
+        )
+        assert "MidPen Housing" in failed
+        assert (
+            classify_machine_change(
+                run_id="run2",
+                last_run_id="run1",
+                first_run_id="run1",
+                authority="MidPen Housing",
+                scrape_failed=failed,
+            )
+            == "SCRAPE_FAILED"
+        )
+
+    def test_stale_when_unconfirmed_and_scrape_ok(self):
+        assert (
+            classify_machine_change(
+                run_id="run2",
+                last_run_id="run1",
+                first_run_id="run1",
+                authority="City",
+                scrape_failed=frozenset(),
+            )
+            == "STALE"
+        )
+
+    def test_without_run_id_stale_after_7_days(self):
+        from datetime import datetime
+
+        now = datetime(2026, 7, 4, 12, 0, 0)
+        assert (
+            classify_machine_change_without_run_id(
+                first_seen="2019-01-01T00:00:00",
+                last_seen="2020-01-01T00:00:00",
+                now=now,
+            )
+            == "STALE"
+        )
+        assert (
+            classify_machine_change_without_run_id(
+                first_seen="2026-06-01T00:00:00",
+                last_seen="2026-07-01T00:00:00",
+                now=now,
+            )
+            == "UPDATED"
+        )
 
 
 class TestProjectDisappearance:

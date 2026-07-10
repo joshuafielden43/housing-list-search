@@ -3,8 +3,13 @@ import csv
 from datetime import datetime
 
 from housing_list_search.csv_safety import sanitize_csv_field
-from housing_list_search.disappearance import DisappearanceResult, project_disappearance
-from housing_list_search.freshness import ListingKey, listing_identity, load_diff_csv_rows
+from housing_list_search.disappearance import (
+    DisappearanceResult,
+    ListingKey,
+    listing_identity,
+    load_diff_csv_rows,
+    project_disappearance,
+)
 
 
 def _load_run_prev(path: str) -> list[dict]:

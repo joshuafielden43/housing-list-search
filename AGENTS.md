@@ -199,9 +199,9 @@ Sole PDF adapter. **Default stack:** pdfplumber only (no PyMuPDF — see ADR-000
 
 Playwright navigation uses `playwright_nav.safe_goto()` — URL policy + per-host throttle (same seam as `polite_get`).
 
-## Freshness (freshness.py + changelog.py)
+## Disappearance (disappearance.py + changelog.py)
 
-Listing identity is `(authority, property_name, url)` everywhere. `diff.csv` (machine: NEW/UPDATED/STALE/SCRAPE_FAILED) and `changelog_diffs` (staff: ADDED/REMOVED/STATUS_CHANGE/STALE) are aligned via `freshness.py`. `run_prev.csv` snapshots the deduped run set (includes `url` column) — not `current_full.csv`.
+Listing identity is `(authority, property_name, url)` everywhere. Machine `diff.csv` labels (`NEW` / `UPDATED` / `STALE` / `SCRAPE_FAILED`) come from pure `classify_machine_change` in `disappearance.py`; staff `changelog_diffs` project from those labels via `project_disappearance` (ADR-0001). `db.export_diff_csv` / `diff_counts` are storage adapters over the same rules. `freshness.py` is a compat re-export. `run_prev.csv` snapshots the deduped run set (includes `url` column) — not `current_full.csv`.
 
 ## Run artifacts
 
@@ -252,7 +252,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row / listing_identity; all shape, surrogate, authority canon, identity here |
 
-| `housing_list_search/freshness.py` | Unified change semantics (diff.csv ↔ changelog) |
+| `housing_list_search/disappearance.py` | Deep module: machine Diff labels + staff Disappearance projection (ADR-0001) |
+| `housing_list_search/freshness.py` | Compat shim re-exporting helpers from disappearance |
 | `housing_list_search/schema.py` | Sole owner of `housing_registry.db` DDL (`targets`, `housing_records`, `run_history`) |
 | `housing_list_search/sqlite_config.py` | `DEFAULT_DB_PATH`, WAL + busy-timeout connection helper |
 | `housing_list_search/db.py` | DatabaseManager: upsert_listings, export_csv, export_diff_csv, prune |
