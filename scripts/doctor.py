@@ -253,7 +253,12 @@ def check_marker_ocr_safety() -> bool:
         "true",
         "yes",
     }
-    marker_present = find_spec("marker.converters.pdf") is not None
+    # find_spec("marker.converters.pdf") imports the parent package and raises
+    # ModuleNotFoundError when marker is absent (CI / default env) — use top-level.
+    try:
+        marker_present = find_spec("marker") is not None
+    except ModuleNotFoundError:
+        marker_present = False
     if not marker_present:
         print("✅ marker-pdf not in this env (daily-safe; OCR tier not installed)")
         return True
