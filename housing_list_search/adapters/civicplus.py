@@ -17,8 +17,10 @@ What it does, in order:
 2. Parses Froala availability blocks ("Property Name - N available units").
 3. Extracts any HTML tables on the page.
 4. Harvests per-property "Official Flyer" links with their property names.
-5. Follows discovered DocumentCenter / PDF links (capped at max_documents)
-   and extracts tables, viewer titles, and PDF flyer data.
+5. Follows discovered DocumentCenter / PDF links (inventory-class only;
+   capped at DEFAULT_MAX_DOCUMENTS) and extracts tables, viewer titles,
+   and PDF flyer data. Non-inventory URLs (ordinances, etc.) are filtered
+   before the budget and do not trigger fail-loud.
 6. Merges property names harvested from list pages into PDF-derived records.
 
 Out of scope: login walls, CAPTCHA solving, fingerprint evasion.
@@ -313,6 +315,7 @@ def _looks_like_flyer(url: str) -> bool:
 
 # Program/legal docs that are not property inventory — skip before cascade (#1091).
 # These previously auto-armed multi-GB marker OCR after empty pdfplumber parse.
+# Bare DocumentCenter/View/<id> URLs without a slug cannot be classified here.
 _NON_INVENTORY_PDF_HINTS = (
     "ordinance",
     "ord-",
@@ -335,13 +338,55 @@ _NON_INVENTORY_PDF_HINTS = (
     "ceqa",
     "eir-",
     "negative-declaration",
+    # City hub / footer noise seen on Gilroy + Los Gatos landings (probe 2026-07-10)
+    "police-records",
+    "police_records",
+    "police-report",
+    "application-for-release",
+    "approving-modifications",
+    "program-and-guidelines",
+    "purchase-program-presentation",
+    "manufactured-home-purchase",
 )
+
+# Default budget for inventory-class DocumentCenter/PDF follows. Fail-loud only when
+# inventory candidates still exceed this after non-inventory filter (#1077 + Gilroy/LG).
+DEFAULT_MAX_DOCUMENTS = 15
 
 
 def _is_non_inventory_pdf(url: str) -> bool:
     """True when URL slug/path looks like ordinance/program noise, not a flyer list."""
     lower = (url or "").lower()
     return any(h in lower for h in _NON_INVENTORY_PDF_HINTS)
+
+
+def partition_document_candidates(urls: list[str]) -> tuple[list[str], list[str]]:
+    """Split discovered docs into inventory-class vs non-inventory noise.
+
+    Pure / testable. Noise must not consume max_documents or trigger fail-loud.
+    """
+    inventory: list[str] = []
+    noise: list[str] = []
+    for u in urls:
+        if _is_non_inventory_pdf(u):
+            noise.append(u)
+        else:
+            inventory.append(u)
+    return inventory, noise
+
+
+def rank_inventory_documents(urls: list[str]) -> list[str]:
+    """Prefer AMI/flyer-looking URLs; preserve relative order within each tier."""
+    flyers = [u for u in urls if _looks_like_flyer(u)]
+    rest = [u for u in urls if not _looks_like_flyer(u)]
+    return flyers + rest
+
+
+def inventory_document_overflow(n_inventory: int, max_documents: int) -> int:
+    """How many inventory-class docs would be skipped under the budget."""
+    if max_documents < 0:
+        return 0
+    return max(0, int(n_inventory) - int(max_documents))
 
 
 def _process_pdfs(
@@ -388,7 +433,7 @@ def extract_underlying_records(
     source: str,
     authority: str = "",
     timeout: int = 45000,
-    max_documents: int = 5,
+    max_documents: int = DEFAULT_MAX_DOCUMENTS,
     known_document_urls: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -396,10 +441,11 @@ def extract_underlying_records(
     from the page itself and the published documents it links to.
 
     Args:
-        source: The human-facing URL (e.g. Gilroy Housing & Community Services).
+        source: The human-facing URL (e.g. Gilroy Affordable Apartments).
         authority: Name of the city/authority (for traceability).
         timeout: Playwright navigation timeout in milliseconds.
-        max_documents: Cap on how many discovered documents to process.
+        max_documents: Cap on inventory-class documents to process (after
+            non-inventory filter). Overflow → SourceFetchError (#1077).
         known_document_urls: Extra document URLs to process alongside whatever
             the page discovery finds.
 
@@ -411,9 +457,7 @@ def extract_underlying_records(
     records: list[dict[str, Any]] = []
     extraction_errors = [False]
     document_urls: list[str] = list(known_document_urls or [])
-    documents_truncated = False
-    docs_over_cap = 0
-    pdfs_over_cap = 0
+    inventory_over_cap = 0
 
     host = urlparse(source).netloc.lower()
     for seed in CITY_SEED_DOCUMENTS.get(host, []):
@@ -471,23 +515,39 @@ def extract_underlying_records(
                 document_urls.extend(r["flyer_url"] for r in flyer_records)
                 document_urls.extend(_discover_document_links(soup, page.url))
                 document_urls = _dedupe_document_urls(document_urls)
+
+            # Drop ordinance/program noise before budget accounting so hub-page
+            # DocumentCenter dumps do not self-trigger SCRAPE_FAILED (#1077).
+            inventory_urls, noise_urls = partition_document_candidates(document_urls)
+            if noise_urls:
                 logger.info(
-                    "[civicplus] %s: %d page records, %d candidate documents",
-                    authority,
-                    len(records),
-                    len(document_urls),
+                    "[civicplus] %s: skipping %d non-inventory document(s)",
+                    authority or source,
+                    len(noise_urls),
                 )
+                for nu in noise_urls:
+                    logger.info("[civicplus] Skipping non-inventory document: %s", nu)
 
-            # --- 2. Discovered documents: viewer pages and PDF flyers ---
-            pdf_urls = [u for u in document_urls if u.lower().endswith(".pdf")]
-            html_doc_urls = [u for u in document_urls if not u.lower().endswith(".pdf")]
-            # Property/AMI flyers are the highest-value documents — process first.
-            pdf_urls.sort(key=lambda u: 0 if _looks_like_flyer(u) else 1)
-            html_doc_urls.sort(key=lambda u: 0 if _looks_like_flyer(u) else 1)
+            inventory_urls = rank_inventory_documents(inventory_urls)
+            inventory_over_cap = inventory_document_overflow(len(inventory_urls), max_documents)
+            budgeted = inventory_urls[:max_documents]
 
-            # Track overflow before slicing — silent truncate → STALE (#1077)
-            docs_over_cap = max(0, len(html_doc_urls) - max_documents)
-            for doc_url in html_doc_urls[:max_documents]:
+            logger.info(
+                "[civicplus] %s: %d page records, %d inventory docs "
+                "(budget=%d, noise_skipped=%d, over_cap=%d)",
+                authority or source,
+                len(records),
+                len(inventory_urls),
+                max_documents,
+                len(noise_urls),
+                inventory_over_cap,
+            )
+
+            # --- 2. Budgeted inventory documents: viewers then PDF cascade ---
+            pdf_urls = [u for u in budgeted if u.lower().endswith(".pdf")]
+            html_doc_urls = [u for u in budgeted if not u.lower().endswith(".pdf")]
+
+            for doc_url in html_doc_urls:
                 _jitter(0.9)
                 try:
                     safe_goto(page, doc_url, wait_until="domcontentloaded", timeout=timeout)
@@ -522,16 +582,19 @@ def extract_underlying_records(
                         extraction_errors[0] = True
                         logger.warning("[civicplus] Error on document page %s: %s", doc_url, exc)
 
+            # HTML viewers that force a download join the PDF set; keep one budget
+            # for the whole inventory set rather than a second independent cap.
             pdf_urls = _dedupe_document_urls(pdf_urls)
-            pdfs_over_cap = max(0, len(pdf_urls) - max_documents)
+            pdf_inventory, pdf_noise = partition_document_candidates(pdf_urls)
+            for nu in pdf_noise:
+                logger.info("[civicplus] Skipping non-inventory PDF: %s", nu)
             records.extend(
                 _process_pdfs(
-                    pdf_urls[:max_documents],
+                    rank_inventory_documents(pdf_inventory),
                     authority,
                     extraction_errors=extraction_errors,
                 )
             )
-            documents_truncated = docs_over_cap > 0 or pdfs_over_cap > 0
 
             # --- 3. Merge list-page property names into PDF-derived records ---
             flyer_context = {
@@ -574,19 +637,19 @@ def extract_underlying_records(
             f"[civicplus] {authority or source}: zero records after extraction errors"
         )
 
-    if documents_truncated:
+    # Fail-loud only when inventory-class docs still exceed budget after filter.
+    if inventory_over_cap > 0:
         from housing_list_search.access import SourceFetchError
 
         logger.error(
-            "[civicplus] %s: document candidates exceeded max_documents=%d "
-            "(html_over=%d pdf_over=%d) — mark SCRAPE_FAILED (#1077)",
+            "[civicplus] %s: inventory document candidates exceeded max_documents=%d "
+            "(over=%d) — mark SCRAPE_FAILED (#1077)",
             authority or source,
             max_documents,
-            docs_over_cap,
-            pdfs_over_cap,
+            inventory_over_cap,
         )
         raise SourceFetchError(
-            f"civicplus: document candidates exceed max_documents={max_documents} "
+            f"civicplus: inventory document candidates exceed max_documents={max_documents} "
             f"for {authority or source}",
             partial=records,
         )
