@@ -17,9 +17,9 @@ Council on `adapters/`, `extraction/`, Access. Theme: **soft success → STALE a
 | **#1080** | medium | PDF single-fetch cascade | **done** (with #1076 single-fetch) |
 | **#1081** | high | robots.txt fetch SSRF (no blind redirects) | **done** |
 | **#1082** | medium | Playwright egress DNS resolve |
-| **#1083** | medium | low_yield → Needs Review + portfolio floors |
-| **#1084** | medium | MidPen/EAH absolute URLs |
-| **#1085** | medium | Don't log_full_run on failed targets |
+| **#1083** | medium | low_yield → Needs Review + portfolio floors | **done** |
+| **#1084** | medium | MidPen/EAH absolute URLs | **done** |
+| **#1085** | medium | Don't log_full_run on failed targets | **done** |
 | **#1086** | trivial | AGENTS Sunnyvale GIS docs |
 | **#1087** | low/explore | Housing Group / Hello Housing sources |
 

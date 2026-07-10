@@ -86,7 +86,9 @@ def publish_staff_run(inp: StaffPublishInput, *, db: DatabaseManager) -> None:
 
     - Partial: stub changelog, partial daily_summary, preserve global run_prev
     - Full success: changelog (update run_prev), log_full_run, staff summary
-    - Full with failed targets: changelog without updating run_prev (down ≠ gone)
+    - Full with failed targets: changelog without updating run_prev; skip
+      log_full_run so previous successful run_id remains disappearance baseline
+      (down ≠ gone; #1085)
     """
     run_review = build_run_review(
         CollectReview(
@@ -157,10 +159,18 @@ def publish_staff_run(inp: StaffPublishInput, *, db: DatabaseManager) -> None:
             "down/outage is not evidence of inventory removal",
             len(inp.failed_targets),
         )
-    db.log_full_run(
-        inp.run_id,
-        rows_after=inp.inserted + inp.updated,
-    )
+        # #1085: do not log_full_run when targets failed — get_previous_full_run_id
+        # would otherwise point at this outage day and degrade REMOVED → STALE.
+        logger.warning(
+            "Skipped log_full_run for run_id=%s — failed targets; "
+            "previous successful full run_id remains the disappearance baseline",
+            inp.run_id,
+        )
+    else:
+        db.log_full_run(
+            inp.run_id,
+            rows_after=inp.inserted + inp.updated,
+        )
     generate_daily_summary(
         inp.listings,
         skipped_targets=inp.skipped,

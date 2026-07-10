@@ -68,6 +68,19 @@ def test_should_notify_on_scrape_failed():
     )
 
 
+def test_should_notify_on_low_yield():
+    """#1083: low-yield is a Needs Review signal, not log-only."""
+    assert should_notify_needs_review(
+        suspicious_zero_authorities=[],
+        reverification_due_authorities=[],
+        low_yield=[("MidPen Housing", 4)],
+        stale_n=0,
+        scrape_failed_n=0,
+    )
+    plan = run_review_from_signals(low_yield=[("MidPen Housing", 4)])
+    assert plan.needs_attention
+
+
 def test_webhook_blocked_by_url_policy(monkeypatch, caplog):
     monkeypatch.setenv("HLS_NEEDS_REVIEW_WEBHOOK", "http://169.254.169.254/hook")
     synced: list[str] = []

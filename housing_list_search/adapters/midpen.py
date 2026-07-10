@@ -29,6 +29,7 @@ import logging
 import re
 from datetime import datetime as _dt
 from typing import Any
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -111,11 +112,15 @@ def _parse_card(card, now_iso: str, page_url: str) -> dict[str, Any] | None:
     if status == "Referral Only":
         notes_bits.append("units filled by agency referral only (e.g. Coordinated Entry)")
 
+    # Absolute URL for stable listing_identity (#1084) — CMS relative↔absolute thrash
+    raw_href = link.get("href", "") or ""
+    detail_url = urljoin(page_url, raw_href) if raw_href else ""
+
     return {
         "authority": "MidPen Housing (Santa Clara County portfolio)",
         "property_name": name,
         "address": f"{city}, CA" if city else "",
-        "url": link.get("href", ""),
+        "url": detail_url,
         "status": status or "See property page",
         "listing_status": _LISTING_STATUS.get(status.lower(), ""),
         "eligibility_flags": [p.lower() for p in _POPULATION_TYPES if p in populations],

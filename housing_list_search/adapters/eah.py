@@ -25,6 +25,7 @@ import logging
 import re
 from datetime import datetime as _dt
 from typing import Any
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -79,13 +80,15 @@ def parse_search_results(html_text: str, now_iso: str, source_url: str) -> list[
         if city.lower() not in SANTA_CLARA_CITIES:
             continue
 
-        seen.add(href)
+        # Absolute URL for stable listing_identity (#1084)
+        detail_url = urljoin(source_url, href) if href else ""
+        seen.add(detail_url or href)
         records.append(
             {
                 "authority": "EAH Housing (Santa Clara County portfolio)",
                 "property_name": name,
                 "address": re.sub(r"\s*,\s*California\s*", ", CA ", address).strip(),
-                "url": href,
+                "url": detail_url,
                 "status": "Check with property",
                 "administrator": "EAH Housing",
                 "administrator_url": "https://www.eahhousing.org/",

@@ -32,6 +32,21 @@ logger = logging.getLogger(__name__)
 _WEBHOOK_ENV = "HLS_NEEDS_REVIEW_WEBHOOK"
 _DEFAULT_LOW_YIELD_THRESHOLD = 3
 
+# Soft floors for large known inventory measures (#1083). Half-broken CSS/HTML
+# often still returns a few cards — absolute threshold of 3 never catches that.
+# Values are well under today's portfolio sizes (MidPen ~46, Eden ~36, …).
+_INVENTORY_FLOOR_BY_MEASURE: dict[str, int] = {
+    "midpen": 15,
+    "charities_housing": 15,
+    "eden": 12,
+    "eah": 10,
+    "first_housing": 8,
+    "bloom": 15,
+    "gis": 10,
+    "john_stewart": 15,
+    "alta": 8,
+}
+
 
 # ---------------------------------------------------------------------------
 # Value types
@@ -64,6 +79,7 @@ class RunReview:
         return should_notify_needs_review(
             suspicious_zero_authorities=self.suspicious_zero_authorities,
             reverification_due_authorities=self.reverification_due_authorities,
+            low_yield=self.low_yield,
             stale_n=self.stale_n,
             scrape_failed_n=self.scrape_failed_n,
             stale_warn_threshold=self.stale_warn_threshold,
@@ -87,12 +103,18 @@ class RunReview:
 
 
 def low_yield_threshold() -> int:
-    """Warn when inventory target returns fewer than this many property rows (#789)."""
+    """Global floor: warn when inventory target returns fewer property rows (#789)."""
     raw = os.environ.get("HLS_LOW_YIELD_THRESHOLD", str(_DEFAULT_LOW_YIELD_THRESHOLD))
     try:
         return max(0, int(raw))
     except ValueError:
         return _DEFAULT_LOW_YIELD_THRESHOLD
+
+
+def inventory_floor_for_measures(measures: set[str]) -> int:
+    """Per-measure soft floor for large portfolios (#1083); 0 if none apply."""
+    floors = [_INVENTORY_FLOOR_BY_MEASURE[m] for m in measures if m in _INVENTORY_FLOOR_BY_MEASURE]
+    return max(floors) if floors else 0
 
 
 def find_low_yield_targets(
@@ -101,10 +123,12 @@ def find_low_yield_targets(
     failed_targets: list[str],
     suspicious_zero_authorities: list[str],
 ) -> list[tuple[str, int]]:
-    """Inventory measures with 0 < property_count < threshold (not failed / not zero)."""
-    thr = low_yield_threshold()
-    if thr <= 0:
-        return []
+    """Inventory measures with 0 < property_count < effective floor (not failed / not zero).
+
+    Effective floor = max(global HLS_LOW_YIELD_THRESHOLD, measure portfolio floor).
+    Measure floors catch half-broken CSS on 40–70 property vendors (#1083).
+    """
+    global_thr = low_yield_threshold()
     failed = set(failed_targets)
     zeroed = set(suspicious_zero_authorities)
     out: list[tuple[str, int]] = []
@@ -114,6 +138,9 @@ def find_low_yield_targets(
             continue
         measures = parse_target_measures(t.get("scraping_measures") or "")
         if not expects_property_inventory(measures):
+            continue
+        thr = max(global_thr, inventory_floor_for_measures(measures))
+        if thr <= 0:
             continue
         recs = listings_by_authority.get(auth) or []
         prop_n = sum(1 for r in recs if classify_record_kind(r) == "property")
@@ -222,12 +249,15 @@ def should_notify_needs_review(
     *,
     suspicious_zero_authorities: list[str],
     reverification_due_authorities: list[str],
+    low_yield: list[tuple[str, int]] | None = None,
     stale_n: int = 0,
     scrape_failed_n: int = 0,
     stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
 ) -> bool:
-    """True when any Needs Review signal is present."""
+    """True when any Needs Review signal is present (#1083: low_yield pages)."""
     if suspicious_zero_authorities or reverification_due_authorities:
+        return True
+    if low_yield:
         return True
     if scrape_failed_n > 0:
         return True
@@ -242,6 +272,7 @@ def surface_run_review(
     run_id: str = "",
     suspicious_zero_authorities: list[str] | None = None,
     reverification_due_authorities: list[str] | None = None,
+    low_yield: list[tuple[str, int]] | None = None,
     stale_n: int = 0,
     scrape_failed_n: int = 0,
     stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
@@ -256,6 +287,7 @@ def surface_run_review(
         review = run_review_from_signals(
             suspicious_zero_authorities=suspicious_zero_authorities,
             reverification_due_authorities=reverification_due_authorities,
+            low_yield=low_yield,
             stale_n=stale_n,
             scrape_failed_n=scrape_failed_n,
             stale_warn_threshold=stale_warn_threshold,
@@ -298,6 +330,7 @@ def notify_needs_review(
     run_id: str,
     suspicious_zero_authorities: list[str],
     reverification_due_authorities: list[str],
+    low_yield: list[tuple[str, int]] | None = None,
     stale_n: int = 0,
     scrape_failed_n: int = 0,
     stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
@@ -307,6 +340,7 @@ def notify_needs_review(
         run_id=run_id,
         suspicious_zero_authorities=suspicious_zero_authorities,
         reverification_due_authorities=reverification_due_authorities,
+        low_yield=low_yield,
         stale_n=stale_n,
         scrape_failed_n=scrape_failed_n,
         stale_warn_threshold=stale_warn_threshold,
