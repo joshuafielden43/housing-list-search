@@ -5,7 +5,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from housing_list_search.playwright_nav import (
+    assert_playwright_egress_url,
+    attach_playwright_egress_policy,
     browser_page,
+    playwright_response_url_allowed,
     playwright_stats,
     reset_playwright_for_tests,
     safe_goto,
@@ -21,6 +24,48 @@ def test_validated_goto_url_accepts_public_https():
 def test_validated_goto_url_blocks_loopback():
     with pytest.raises(URLPolicyError):
         validated_goto_url("http://127.0.0.1/secret")
+
+
+def test_assert_playwright_egress_blocks_metadata_and_loopback():
+    """#775: XHR/subresource URLs use the same host policy as HTTP."""
+    with pytest.raises(URLPolicyError):
+        assert_playwright_egress_url("http://169.254.169.254/latest/meta-data/")
+    with pytest.raises(URLPolicyError):
+        assert_playwright_egress_url("http://127.0.0.1/admin")
+    assert assert_playwright_egress_url("https://example.com/api.json").startswith("https://")
+
+
+def test_playwright_response_url_allowed():
+    assert playwright_response_url_allowed("https://housing.sanjoseca.gov/api/x") is True
+    assert playwright_response_url_allowed("http://169.254.169.254/") is False
+    assert playwright_response_url_allowed("data:application/json,{}") is False
+
+
+def test_attach_egress_policy_aborts_blocked_request():
+    """Route handler aborts policy-blocked XHR without continue()."""
+    page = MagicMock()
+    handlers: list = []
+
+    def capture_route(pattern, handler):
+        handlers.append((pattern, handler))
+
+    page.route.side_effect = capture_route
+    attach_playwright_egress_policy(page)
+    assert handlers
+    _, handler = handlers[0]
+
+    route = MagicMock()
+    route.request.url = "http://127.0.0.1/secret"
+    route.request.is_navigation_request = lambda: False
+    handler(route)
+    route.abort.assert_called()
+    route.continue_.assert_not_called()
+
+    route2 = MagicMock()
+    route2.request.url = "https://example.com/xhr.json"
+    route2.request.is_navigation_request = lambda: False
+    handler(route2)
+    route2.continue_.assert_called()
 
 
 def test_safe_goto_waits_for_host_throttle(monkeypatch):
@@ -122,6 +167,7 @@ def test_browser_page_reuses_shared_browser(monkeypatch):
 
     with browser_page() as p1:
         assert p1 is fake_page
+        fake_page.route.assert_called()  # #775 egress policy installed
     with browser_page() as p2:
         assert p2 is fake_page
 

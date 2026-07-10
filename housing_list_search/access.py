@@ -20,7 +20,9 @@ from __future__ import annotations
 
 from housing_list_search.playwright_nav import (
     DEFAULT_PLAYWRIGHT_DELAY,
+    attach_playwright_egress_policy,
     browser_page,
+    playwright_response_url_allowed,
     playwright_stats,
     reset_playwright_for_tests,
     safe_goto,
@@ -50,10 +52,12 @@ __all__ = [
     "USER_AGENT",
     "URLPolicyError",
     "SourceFetchError",
+    "attach_playwright_egress_policy",
     "browser_page",
     "is_allowed_by_robots",
     "is_safe_http_url",
     "mark_host_fetched",
+    "playwright_response_url_allowed",
     "playwright_stats",
     "polite_get",
     "polite_post",

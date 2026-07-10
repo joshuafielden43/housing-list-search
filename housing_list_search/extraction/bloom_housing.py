@@ -794,7 +794,11 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
       - The daily run for this target will take longer than usual.
     """
     try:
-        from housing_list_search.access import browser_page, safe_goto
+        from housing_list_search.access import (
+            browser_page,
+            playwright_response_url_allowed,
+            safe_goto,
+        )
     except ImportError:
         logger.error(
             "[Bloom] Playwright not installed. Cannot run fallback. "
@@ -811,10 +815,14 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
 
     def _on_response(response):
         """
-        Network spy: intercept every JSON response the browser receives.
-        We cast a wide net here — filtering happens in _find_listing_arrays().
+        Network spy: intercept JSON responses the browser receives.
+        Only policy-allowed response URLs are read (#775); body parsing still
+        filtered by _find_listing_arrays().
         """
         try:
+            resp_url = getattr(response, "url", "") or ""
+            if not playwright_response_url_allowed(resp_url):
+                return
             ct = (response.headers.get("content-type") or "").lower()
             if "json" not in ct:
                 return
@@ -823,7 +831,7 @@ def _fetch_via_playwright(listings_url: str) -> tuple[list[dict], list[dict]]:
                 # Safety valve: skip enormous blobs that can't be listing data
                 return
             payload = response.json()
-            captured_payloads.append({"url": response.url, "data": payload})
+            captured_payloads.append({"url": resp_url, "data": payload})
         except Exception:
             pass  # Non-JSON or connection error; not unusual during page load
 

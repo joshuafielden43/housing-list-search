@@ -18,6 +18,7 @@ from typing import Any
 
 from housing_list_search.scraper import (
     URLPolicyError,
+    is_safe_http_url,
     mark_host_fetched,
     validate_http_url,
     wait_for_host,
@@ -26,6 +27,9 @@ from housing_list_search.scraper import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_PLAYWRIGHT_DELAY = 3
+
+# In-page schemes that are not HTTP egress (do not run URL policy).
+_NON_HTTP_SCHEMES = ("data:", "blob:", "about:")
 
 # Serialize all Playwright use under parallel target workers (#761)
 _PLAYWRIGHT_LOCK = threading.RLock()
@@ -40,12 +44,62 @@ def validated_goto_url(url: str) -> str:
     return validate_http_url(url, resolve_dns=True)
 
 
+def assert_playwright_egress_url(url: str, *, is_navigation: bool = False) -> str:
+    """Validate a browser request or response URL (#775).
+
+    Navigations use DNS resolution (same bar as polite_get / safe_goto).
+    Subresources and XHR use host/IP policy without DNS so asset storms stay cheap;
+    literal private IPs, localhost, and metadata hostnames are still blocked.
+    """
+    return validate_http_url(url, resolve_dns=is_navigation)
+
+
+def playwright_response_url_allowed(url: str) -> bool:
+    """True if a captured response URL is safe to read (Bloom spy, etc.)."""
+    if not url or str(url).startswith(_NON_HTTP_SCHEMES):
+        return False
+    return is_safe_http_url(url, resolve_dns=False)
+
+
+def attach_playwright_egress_policy(page) -> None:
+    """Abort Playwright requests to policy-blocked hosts (#775).
+
+    Installed automatically by ``browser_page``. Covers XHR/fetch/img after the
+    seed navigation — not only the initial ``safe_goto`` URL.
+    """
+
+    def handle_route(route) -> None:
+        req = route.request
+        url = getattr(req, "url", "") or ""
+        if str(url).startswith(_NON_HTTP_SCHEMES):
+            route.continue_()
+            return
+        try:
+            is_nav = False
+            is_nav_fn = getattr(req, "is_navigation_request", None)
+            if callable(is_nav_fn):
+                is_nav = bool(is_nav_fn())
+            assert_playwright_egress_url(url, is_navigation=is_nav)
+        except URLPolicyError as exc:
+            logger.warning("[playwright] blocked egress to %s: %s", url, exc)
+            try:
+                route.abort("blockedbyclient")
+            except TypeError:
+                route.abort()
+            return
+        route.continue_()
+
+    page.route("**/*", handle_route)
+
+
 def safe_goto(page, url: str, *, delay: int = DEFAULT_PLAYWRIGHT_DELAY, **kwargs) -> None:
     """page.goto() after outbound URL policy check and per-host throttle.
 
     After navigation, re-validates ``page.url`` so a redirect chain that lands
     on a private / metadata / disallowed host is rejected (Playwright follows
     redirects internally; the initial URL check alone is not enough).
+    XHR/subresource egress is filtered by ``attach_playwright_egress_policy``
+    on the page (installed by browser_page).
     """
     validated = validated_goto_url(url)
     try:
@@ -156,6 +210,7 @@ def browser_page(
             ctx_kwargs["viewport"] = viewport
         context = browser.new_context(**ctx_kwargs)
         page = context.new_page()
+        attach_playwright_egress_policy(page)
         _page_count += 1
         try:
             yield page
