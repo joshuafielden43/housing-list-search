@@ -20,7 +20,11 @@ from housing_list_search.coverage import summarize_coverage
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
-from housing_list_search.listing import canonical_authority, canonicalize_listings
+from housing_list_search.listing import (
+    canonical_authority,
+    canonicalize_listings,
+    listing_identity,
+)
 from housing_list_search.needs_review import assess_collect_review
 from housing_list_search.staff_publish import StaffPublishInput, publish_staff_run
 
@@ -197,10 +201,21 @@ class RunPipeline:
     ) -> _PersistResult:
         """Canonicalize, dedupe, upsert, export machine CSVs."""
         all_listings = canonicalize_listings(collected.listings_raw)
+        # Identities before cross-source dedupe — mirrors must still confirm this run (#661/#773)
+        pre_dedupe_identities = {listing_identity(r) for r in all_listings}
         all_listings = deduplicate_listings(all_listings, canonical=True)
+        survivor_identities = {listing_identity(r) for r in all_listings}
+        dropped_mirrors = pre_dedupe_identities - survivor_identities
 
         counts = db.upsert_listings(all_listings, run_id=run_id)
         logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
+        if dropped_mirrors:
+            touched = db.confirm_listing_identities(dropped_mirrors, run_id=run_id)
+            if touched:
+                logger.info(
+                    "Confirmed %d cross-source dedupe mirror(s) (no content overwrite; #661)",
+                    touched,
+                )
 
         cov = summarize_coverage(all_listings)
         logger.info(

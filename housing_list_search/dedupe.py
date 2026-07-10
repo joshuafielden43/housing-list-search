@@ -31,6 +31,11 @@ def deduplicate_listings(
     Exact duplicates share a ListingKey (authority, property_name, url).
     Cross-source mirrors merge on shared hls:addr: URL or street-level address.
 
+    Survivors are the only rows upserted with full content. Mirror identities
+    dropped here are still *confirmed* for the run via
+    ``DatabaseManager.confirm_listing_identities`` in the pipeline (#661 / #773)
+    so a preferred authority does not false-STALE the other source's DB row.
+
     When canonical=False, listing_to_row() runs first (backward-compatible entry).
     """
     if not listings:

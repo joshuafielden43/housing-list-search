@@ -487,6 +487,56 @@ class DatabaseManager:
         )
         return {"inserted": inserted, "updated": updated}
 
+    def confirm_listing_identities(
+        self,
+        identities: list[tuple[str, str, str]] | set[tuple[str, str, str]],
+        *,
+        run_id: str,
+    ) -> int:
+        """Bump last_run_id for existing rows without changing content (#661 / #773).
+
+        Used when cross-source dedupe drops a mirror authority's row: the property
+        was still seen on that source this run, so it must not become STALE merely
+        because a higher-scoring authority was chosen as the survivor. Does not
+        INSERT missing keys (no fabricated inventory).
+        """
+        keys = [(a, p, u) for a, p, u in identities if a and p]
+        if not keys or not run_id:
+            return 0
+
+        self.init_db()
+        conn = self.connect()
+        c = conn.cursor()
+        now = datetime.now().isoformat()
+        touched = 0
+        chunk = 200
+        for i in range(0, len(keys), chunk):
+            part = keys[i : i + chunk]
+            placeholders = ",".join("(?,?,?)" for _ in part)
+            flat: list[str] = []
+            for a, p, u in part:
+                flat.extend([a, p, u])
+            c.execute(
+                f"""
+                UPDATE housing_records
+                SET last_run_id = ?,
+                    last_seen = COALESCE(last_seen, ?)
+                WHERE (authority, property_name, url) IN ({placeholders})
+                """,
+                [run_id, now, *flat],
+            )
+            touched += c.rowcount if c.rowcount and c.rowcount > 0 else 0
+        conn.commit()
+        if touched:
+            self._log_run(
+                "confirm_identities",
+                "",
+                0,
+                self.get_record_count(),
+                f"touched={touched} run_id={run_id}",
+            )
+        return touched
+
     def export_csv(self, path: str = "current_full.csv", *, run_id: str | None = None) -> int:
         """
         Export housing_records to a CSV file. Returns row count written.
