@@ -188,7 +188,7 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 | Priority | Theme | IDs |
 |----------|--------|-----|
-| investigate | dedupe STALE, XHR policy, pagination alert, throttle races, marker license | **#661 #773 #775 #776 #778 #793** (#662 done — ground_truth expand) |
+| investigate | XHR policy, pagination alert, throttle races, marker license | **#775 #776 #778 #793** (#661/#773 done — mirror confirm) |
 | architecture (optional) | seams, RunPipeline phases, measure registry, N+1 upsert, adapters | **#781–#784 #786 #794–#802 #828 #797 #795 #796 #798 #799 #801** |
 
 **Domain bar:** down ≠ gone.
