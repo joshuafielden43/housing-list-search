@@ -178,7 +178,7 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 `df7669d` Playwright pool (#761 #769 #987) + low-yield (#789); `bf399c3` export confirmed_this_run (#659), property-only open list (#989), PDF magic (#791), prune docs (#657), OCR lock (#768), token logs (#790), RUN_EVENT (#988), docaccess/policy (#658), dead-weight N/A (#792).
 
-**Deferred by design:** #770 portal smoke remains weekly (no daily hammer).
+**DNF (2026-07-10):** #770 more-than-weekly portal smoke — closed; weekly + #662 coverage stands.
 
 ### Deepen-seam hygiene (2026-07-09) — shipped
 
@@ -188,7 +188,7 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 | Priority | Theme | IDs |
 |----------|--------|-----|
-| investigate | (cleared) | **#778 done** — marker OpenRAIL-M + GPL documented; **#770** still deferred weekly smoke |
+| investigate | (cleared) | **#778 done**; **#770 DNF** (weekly smoke only) |
 | architecture (optional) | seams, RunPipeline phases, measure registry, N+1 upsert, adapters | **#781–#784 #786 #794–#802 #828 #797 #795 #796 #798 #799 #801** |
 
 **Domain bar:** down ≠ gone.
