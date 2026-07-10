@@ -96,6 +96,15 @@ class RunPipeline:
         )
         run_id = run_id or datetime.now().strftime("%Y%m%dT%H%M%S")
 
+        # #1094: heartbeat before collect so logs show run_id if process is SIGKILL'd mid-scrape
+        logger.info(
+            "COLLECT_START run_id=%s targets=%d workers=%d partial=%s",
+            run_id,
+            len(targets),
+            max_target_workers(),
+            partial_run,
+        )
+
         collected = self._collect(targets, scrape)
         persisted = persist_run(
             collected.listings_raw,

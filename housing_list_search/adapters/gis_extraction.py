@@ -462,9 +462,18 @@ def _parse_page_for_embedded_gis(
             full_url = urljoin(base_url, src)
             candidates.append(full_url)
 
-    # Deduplicate while preserving order
+    # Deduplicate while preserving order; hard cap avoids Cupertino-style thrash (#1093)
+    _MAX_PAGE_SCAN_CANDIDATES = 8
     seen = set()
     candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+    if len(candidates) > _MAX_PAGE_SCAN_CANDIDATES:
+        logger.info(
+            "[gis] page-scan: capping candidates %d → %d for %s",
+            len(candidates),
+            _MAX_PAGE_SCAN_CANDIDATES,
+            url,
+        )
+        candidates = candidates[:_MAX_PAGE_SCAN_CANDIDATES]
 
     for candidate in candidates:
         try:

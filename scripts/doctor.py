@@ -235,6 +235,46 @@ def check_playwright() -> bool:
         return True  # Optional — not fatal in CI or envs without browsers (matches prior behavior)
 
 
+def check_marker_ocr_safety() -> bool:
+    """Warn if marker-pdf is importable without daily-safe OCR posture (#1092 / #1088).
+
+    Not fatal: daily --run should set HLS_DISABLE_MARKER_PDF=1 (run_daily.sh does).
+    OCR requires HLS_ENABLE_MARKER_PDF=1 and should use a dedicated host/job.
+    """
+    import os
+
+    disable = os.environ.get("HLS_DISABLE_MARKER_PDF", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    enable = os.environ.get("HLS_ENABLE_MARKER_PDF", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    marker_present = find_spec("marker.converters.pdf") is not None
+    if not marker_present:
+        print("✅ marker-pdf not in this env (daily-safe; OCR tier not installed)")
+        return True
+    if disable and not enable:
+        print("✅ marker-pdf present but HLS_DISABLE_MARKER_PDF=1 (OCR dark — good for daily)")
+        return True
+    if enable and not disable:
+        print(
+            "⚠️  HLS_ENABLE_MARKER_PDF=1 — OCR opt-in is ON "
+            "(multi-GB models; use only on a dedicated OCR job, not daily cron)"
+        )
+        return True
+    # Package present, enable not set, disable not set — the 9GB --run posture
+    print(
+        "⚠️  marker-pdf is importable but OCR is not disabled "
+        "(set HLS_DISABLE_MARKER_PDF=1 for daily --run; #1088/#1089)"
+    )
+    print("   OCR requires explicit HLS_ENABLE_MARKER_PDF=1 and still runs out-of-process.")
+    return True  # warn only — not fatal
+
+
 def main():
     parser = argparse.ArgumentParser(description="Housing List Search Doctor + Registry Fixer")
     parser.add_argument(
@@ -292,6 +332,7 @@ def main():
 
     section("Optional but Recommended")
     results.append(check_playwright())
+    results.append(check_marker_ocr_safety())
 
     if not dry_run:
         # Network smoke tests — skipped in dry-run / CI mode

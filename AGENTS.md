@@ -200,7 +200,7 @@ The deep module at the canonical transformation seam. All adapter output crosses
 
 ## PDF extraction (extraction/pdf.py)
 
-Sole PDF adapter. **Default stack:** pdfplumber only (no PyMuPDF — see ADR-0005 / Vikunja #413). Path order: pdfplumber tables → flyer heuristics → line-regex → optional `marker-pdf` fallback (`requirements-ocr.txt`, disable with `HLS_DISABLE_MARKER_PDF=1`). OCR tier is **opt-in**: GPL code + OpenRAIL-M model weights (not covered by repo MIT) — see ADR-0005 “OCR tier license obligations” (#778). `pdf_scraper.py` is a deprecated shim.
+Sole PDF adapter. **Default stack:** pdfplumber only (no PyMuPDF — see ADR-0005 / Vikunja #413). Path order: pdfplumber tables → flyer heuristics → line-regex → optional `marker-pdf` only if **`HLS_ENABLE_MARKER_PDF=1`** (#1088; package presence alone is not enough). Daily `run_daily.sh` forces `HLS_DISABLE_MARKER_PDF=1` (#1089). OCR runs in a **subprocess** (#1090) so multi-GB models never stay in the scrape process. OCR tier install: `requirements-ocr.txt` (GPL code + OpenRAIL-M weights — not MIT; #778).
 
 Outbound access goes through `access.py` (`polite_get`, `safe_goto`, `browser_page`, …). `scraper.py` / `playwright_nav.py` are private implementation (#1060).
 

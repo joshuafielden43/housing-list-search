@@ -64,6 +64,12 @@ fi
 # shellcheck source=/dev/null
 source "${ROOT}/.venv/bin/activate"
 
+# ADR-0005 / #1089: daily scrape must never auto-load multi-GB marker OCR.
+# Opt-in OCR is a separate job with HLS_ENABLE_MARKER_PDF=1 on a capable host.
+export HLS_DISABLE_MARKER_PDF=1
+# Ensure enable cannot ride in from a polluted environment on the cron host.
+unset HLS_ENABLE_MARKER_PDF || true
+
 if ! python scripts/doctor.py --dry-run >>"$LOG_FILE" 2>&1; then
   echo "$(date -Iseconds) ERROR: doctor --dry-run failed; aborting run" | tee -a "$LOG_FILE"
   exit 1
@@ -75,6 +81,7 @@ fi
 
 {
   echo "=== Housing List Run started at $(date -Iseconds) ==="
+  echo "HLS_DISABLE_MARKER_PDF=${HLS_DISABLE_MARKER_PDF:-} (daily posture: OCR dark)"
   python main.py --run
   echo "=== Housing List Run finished at $(date -Iseconds) ==="
   echo "Output files in ${ROOT}:"

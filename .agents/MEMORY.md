@@ -4,6 +4,20 @@ Persistent notes for AI contributors. **Not** a global skill — lives only in t
 
 ---
 
+## Deep critique (2026-07-10) — 9GB --run memory balloon
+
+**Incident:** Full `main.py --run` RSS **>9GB**, SIGKILL. Log: CivicPlus Los Gatos PDFs → empty pdfplumber path → **marker-pdf** `create_model_dict()` (multi-GB models + layout) in scrape process. Marker is importable in daily `.venv`; `run_daily.sh` does **not** set `HLS_DISABLE_MARKER_PDF=1` (only check*.sh do). ADR-0005 violated in practice.
+
+| Vikunja | Sev | Topic |
+|---------|-----|--------|
+| **#1088** | critical | OCR opt-in — empty PDF must not auto-load torch | **done** |
+| **#1089** | critical | `run_daily.sh` force `HLS_DISABLE_MARKER_PDF=1` | **done** |
+| **#1090** | high | Marker only in short-lived OCR subprocess | **done** |
+| **#1091** | high | CivicPlus refuse non-inventory PDFs before cascade | **done** |
+| **#1092** | medium | doctor warn if marker importable without disable | **done** |
+| **#1093** | medium | GIS page-scan candidate cap (Cupertino thrash) | **done** |
+| **#1094** | low/explore | SIGKILL mid-collect → COLLECT_START heartbeat | **done** (log only) |
+
 ## Deep critique (2026-07-10) — adapters/scrapers
 
 Council on `adapters/`, `extraction/`, Access. Theme: **soft success → STALE ages out live inventory**.

@@ -637,7 +637,24 @@ def extract_records_from_pdf(
         logger.info("[pdf] Line extraction produced %d records from %s", len(records), real_url)
         return records
 
-    from housing_list_search.extraction.marker_pdf import extract_records_via_marker
+    # OCR tier: opt-in only (#1088). Never auto-load torch because package exists.
+    from housing_list_search.extraction.marker_pdf import (
+        extract_records_via_marker,
+        marker_available,
+        marker_ocr_explicitly_enabled,
+    )
+
+    if not marker_ocr_explicitly_enabled():
+        logger.debug(
+            "[pdf] Skipping marker OCR for %s — set HLS_ENABLE_MARKER_PDF=1 to opt in "
+            "(ADR-0005; multi-GB models; not for daily --run)",
+            real_url,
+        )
+        return []
+
+    if not marker_available():
+        logger.debug("[pdf] Marker OCR enabled but package unavailable for %s", real_url)
+        return []
 
     marker_records = extract_records_via_marker(pdf_bytes, authority, real_url)
     if marker_records:

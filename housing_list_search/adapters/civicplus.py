@@ -311,6 +311,39 @@ def _looks_like_flyer(url: str) -> bool:
     return "flyer" in lower or any(hint in lower for hint in ("50ami", "60ami", "ami"))
 
 
+# Program/legal docs that are not property inventory — skip before cascade (#1091).
+# These previously auto-armed multi-GB marker OCR after empty pdfplumber parse.
+_NON_INVENTORY_PDF_HINTS = (
+    "ordinance",
+    "ord-",
+    "ord_",
+    "zoning",
+    "chapter-",
+    "chapter_",
+    "housing-element",
+    "housing_element",
+    "general-plan",
+    "general_plan",
+    "municipal-code",
+    "municipal_code",
+    "amending",
+    "resolution",
+    "staff-report",
+    "staff_report",
+    "agenda",
+    "minutes",
+    "ceqa",
+    "eir-",
+    "negative-declaration",
+)
+
+
+def _is_non_inventory_pdf(url: str) -> bool:
+    """True when URL slug/path looks like ordinance/program noise, not a flyer list."""
+    lower = (url or "").lower()
+    return any(h in lower for h in _NON_INVENTORY_PDF_HINTS)
+
+
 def _process_pdfs(
     pdf_urls: list[str],
     authority: str,
@@ -322,6 +355,12 @@ def _process_pdfs(
 
     records: list[dict] = []
     for pdf_url in pdf_urls:
+        if _is_non_inventory_pdf(pdf_url):
+            logger.info(
+                "[civicplus] Skipping non-inventory PDF (ordinance/program noise): %s",
+                pdf_url,
+            )
+            continue
         try:
             logger.info("[civicplus] Extracting PDF: %s", pdf_url)
             for rec in extract_records_from_pdf(pdf_url, authority):

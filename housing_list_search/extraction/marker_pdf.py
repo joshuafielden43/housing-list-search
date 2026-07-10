@@ -1,8 +1,13 @@
 """
 Optional marker-pdf fallback for hard PDFs (scanned flyers, scrambled layout).
 
-Loaded lazily — torch/model init is expensive (~30–60s first call).
-Disabled when HLS_DISABLE_MARKER_PDF=1 is set.
+**Opt-in only (#1088 / ADR-0005):** models load only when
+``HLS_ENABLE_MARKER_PDF=1`` (or true/yes). ``HLS_DISABLE_MARKER_PDF=1`` always
+wins and keeps OCR dark.
+
+**Process isolation (#1090):** conversion runs in a short-lived subprocess so
+torch/Surya multi-GB RSS is reclaimed on child exit — never co-resident in the
+scrape process for the rest of --run.
 
 License (operator must accept when enabling this tier — ADR-0005 / #778):
   - marker *code*: GPL-3.0
@@ -14,9 +19,11 @@ License (operator must accept when enabling this tier — ADR-0005 / #778):
 
 from __future__ import annotations
 
-import io
 import logging
 import os
+import subprocess
+import sys
+import tempfile
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -24,15 +31,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CONVERTER = None
 _MARKER_CHECKED = False
 _MARKER_AVAILABLE = False
 
+# Child conversion budget (models + inference). Kill rather than hang the host.
+_MARKER_SUBPROCESS_TIMEOUT_S = int(os.environ.get("HLS_MARKER_TIMEOUT_S", "600"))
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
+
+
+def marker_ocr_explicitly_enabled() -> bool:
+    """True only when operator opted in AND did not force-disable."""
+    if _env_truthy("HLS_DISABLE_MARKER_PDF"):
+        return False
+    return _env_truthy("HLS_ENABLE_MARKER_PDF")
+
 
 def marker_available() -> bool:
-    """Return True if marker-pdf is installed and not explicitly disabled."""
+    """Return True if OCR may run: opt-in env + package importable + not disabled.
+
+    #1088: presence of marker-pdf alone is NOT permission (was the 9GB --run bug).
+    """
     global _MARKER_CHECKED, _MARKER_AVAILABLE
-    if os.environ.get("HLS_DISABLE_MARKER_PDF", "").strip() in {"1", "true", "yes"}:
+    if not marker_ocr_explicitly_enabled():
         return False
     if _MARKER_CHECKED:
         return _MARKER_AVAILABLE
@@ -44,21 +67,6 @@ def marker_available() -> bool:
     except ImportError:
         _MARKER_AVAILABLE = False
     return _MARKER_AVAILABLE
-
-
-def _get_converter():
-    global _CONVERTER
-    if _CONVERTER is not None:
-        return _CONVERTER
-    from marker.converters.pdf import PdfConverter
-    from marker.models import create_model_dict
-
-    logger.info(
-        "[pdf] Loading marker-pdf models (first use may take ~30–60s). "
-        "OCR tier: GPL code + OpenRAIL-M weights — see ADR-0005 / requirements-ocr.txt (#778)"
-    )
-    _CONVERTER = PdfConverter(artifact_dict=create_model_dict())
-    return _CONVERTER
 
 
 def records_from_marker_markdown(
@@ -88,11 +96,9 @@ def records_from_marker_markdown(
         seen.add(key)
         records.append(rec)
 
-    # Whole-document flyer pass
     for rec in _extract_flyer_page(authority, document_url, 1, text):
         _add(rec)
 
-    # Per-page chunks (marker paginate_output uses repeated dash lines)
     page_chunks = _split_marker_pages(text)
     for page_number, chunk in enumerate(page_chunks, start=1):
         for rec in _extract_flyer_page(authority, document_url, page_number, chunk):
@@ -138,21 +144,83 @@ def _iter_marker_lines(text: str):
         page_number += 1
 
 
+def _markdown_via_subprocess(pdf_bytes: bytes, document_url: str) -> str:
+    """Run marker in a child process; parent never imports torch (#1090)."""
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(pdf_bytes)
+        pdf_path = tmp.name
+    out_path = pdf_path + ".md"
+    try:
+        env = os.environ.copy()
+        # Child is the only place that loads models; ensure enable is set for worker.
+        env["HLS_ENABLE_MARKER_PDF"] = "1"
+        env.pop("HLS_DISABLE_MARKER_PDF", None)
+        cmd = [
+            sys.executable,
+            "-m",
+            "housing_list_search.extraction.marker_worker",
+            pdf_path,
+            out_path,
+        ]
+        logger.info(
+            "[pdf] Spawning marker OCR subprocess for %s (timeout=%ss)",
+            document_url,
+            _MARKER_SUBPROCESS_TIMEOUT_S,
+        )
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=_MARKER_SUBPROCESS_TIMEOUT_S,
+            env=env,
+            check=False,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()[:500]
+            logger.warning(
+                "[pdf] Marker subprocess failed (exit %s) for %s: %s",
+                proc.returncode,
+                document_url,
+                err or "(no stderr)",
+            )
+            return ""
+        try:
+            with open(out_path, encoding="utf-8") as f:
+                return f.read()
+        except OSError as exc:
+            logger.warning("[pdf] Marker subprocess wrote no output for %s: %s", document_url, exc)
+            return ""
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "[pdf] Marker subprocess timed out after %ss for %s",
+            _MARKER_SUBPROCESS_TIMEOUT_S,
+            document_url,
+        )
+        return ""
+    finally:
+        for p in (pdf_path, out_path):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+
 def extract_records_via_marker(
     pdf_bytes: bytes,
     authority: str,
     document_url: str,
 ) -> list[HousingRecord]:
-    """Run marker-pdf on in-memory PDF bytes; return parsed HousingRecords."""
+    """Run marker-pdf on PDF bytes via subprocess; return parsed HousingRecords."""
     if not marker_available():
         return []
 
     try:
-        converter = _get_converter()
-        rendered = converter(io.BytesIO(pdf_bytes))
-        markdown = getattr(rendered, "markdown", "") or ""
+        markdown = _markdown_via_subprocess(pdf_bytes, document_url)
     except Exception as exc:
         logger.warning("[pdf] Marker extraction failed for %s: %s", document_url, exc)
+        return []
+
+    if not markdown.strip():
         return []
 
     records = records_from_marker_markdown(markdown, authority, document_url)

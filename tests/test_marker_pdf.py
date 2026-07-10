@@ -6,6 +6,7 @@ import pytest
 
 from housing_list_search.extraction.marker_pdf import (
     marker_available,
+    marker_ocr_explicitly_enabled,
     records_from_marker_markdown,
 )
 
@@ -20,13 +21,24 @@ def _reset_marker_cache() -> None:
 class TestMarkerAvailable:
     def test_disabled_by_env(self, monkeypatch):
         monkeypatch.setenv("HLS_DISABLE_MARKER_PDF", "1")
+        monkeypatch.setenv("HLS_ENABLE_MARKER_PDF", "1")
         _reset_marker_cache()
+        assert marker_ocr_explicitly_enabled() is False
         assert marker_available() is False
 
-    def test_available_when_installed(self, monkeypatch):
-        """Skipped on CI — marker-pdf is optional (requirements-ocr.txt only)."""
+    def test_not_enabled_by_default(self, monkeypatch):
+        """#1088: package presence alone must not enable OCR."""
+        monkeypatch.delenv("HLS_DISABLE_MARKER_PDF", raising=False)
+        monkeypatch.delenv("HLS_ENABLE_MARKER_PDF", raising=False)
+        _reset_marker_cache()
+        assert marker_ocr_explicitly_enabled() is False
+        assert marker_available() is False
+
+    def test_available_when_opted_in_and_installed(self, monkeypatch):
+        """Skipped on CI when marker-pdf not installed."""
         pytest.importorskip("marker.converters.pdf")
         monkeypatch.delenv("HLS_DISABLE_MARKER_PDF", raising=False)
+        monkeypatch.setenv("HLS_ENABLE_MARKER_PDF", "1")
         _reset_marker_cache()
         assert marker_available() is True
 
@@ -62,8 +74,10 @@ Rent $1,822.00
 
 
 class TestExtractRecordsFromPdfMarkerFallback:
-    def test_marker_called_when_prior_paths_empty(self, monkeypatch):
-        monkeypatch.setenv("HLS_DISABLE_MARKER_PDF", "1")
+    def test_marker_not_called_without_opt_in(self, monkeypatch):
+        """#1088: empty prior paths must not invoke marker without HLS_ENABLE_MARKER_PDF."""
+        monkeypatch.delenv("HLS_ENABLE_MARKER_PDF", raising=False)
+        monkeypatch.delenv("HLS_DISABLE_MARKER_PDF", raising=False)
         from housing_list_search.extraction.pdf import extract_records_from_pdf
 
         with (
@@ -77,6 +91,35 @@ class TestExtractRecordsFromPdfMarkerFallback:
             ),
             patch(
                 "housing_list_search.extraction.pdf.extract_text_lines_from_pdf", return_value=[]
+            ),
+            patch(
+                "housing_list_search.extraction.marker_pdf.extract_records_via_marker"
+            ) as mock_marker,
+        ):
+            result = extract_records_from_pdf("https://example.com/x.pdf", "Test")
+            mock_marker.assert_not_called()
+            assert result == []
+
+    def test_marker_called_when_opted_in(self, monkeypatch):
+        monkeypatch.setenv("HLS_ENABLE_MARKER_PDF", "1")
+        monkeypatch.delenv("HLS_DISABLE_MARKER_PDF", raising=False)
+        from housing_list_search.extraction.pdf import extract_records_from_pdf
+
+        with (
+            patch("housing_list_search.extraction.pdf._fetch_pdf", return_value=b"%PDF-1.4"),
+            patch(
+                "housing_list_search.extraction.pdf.extract_records_from_pdf_bytes",
+                return_value=[],
+            ),
+            patch(
+                "housing_list_search.extraction.pdf._extract_flyer_pages_from_pdf", return_value=[]
+            ),
+            patch(
+                "housing_list_search.extraction.pdf.extract_text_lines_from_pdf", return_value=[]
+            ),
+            patch(
+                "housing_list_search.extraction.marker_pdf.marker_available",
+                return_value=True,
             ),
             patch(
                 "housing_list_search.extraction.marker_pdf.extract_records_via_marker"
