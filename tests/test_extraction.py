@@ -58,6 +58,46 @@ def test_housing_record_to_dict_roundtrip():
     assert d["url"] == ""  # because we didn't set document_url
 
 
+def test_bloom_ssr_path_alone_without_api_or_playwright(monkeypatch):
+    """#1064: SSR adapter is unit-testable without loading API/Playwright paths."""
+    from housing_list_search.extraction import bloom_housing as bh
+
+    calls: list[str] = []
+
+    def fake_ssr(url):
+        calls.append("ssr")
+        return (
+            [
+                {
+                    "id": "1",
+                    "name": "Oak",
+                    "status": "active",
+                    "listingsBuildingAddress": {"city": "San Jose"},
+                }
+            ],
+            [],
+        )
+
+    def boom(*_a, **_k):
+        raise AssertionError("other paths must not run when SSR succeeds")
+
+    monkeypatch.setattr(bh, "_fetch_via_ssr", fake_ssr)
+    monkeypatch.setattr(bh, "_fetch_via_api", boom)
+    monkeypatch.setattr(bh, "_fetch_via_playwright", boom)
+
+    inv = bh.resolve_bloom_inventory("https://housing.sanjoseca.gov/listings")
+    assert inv.path == "ssr"
+    assert not inv.empty
+    assert calls == ["ssr"]
+    recs = bh.map_bloom_inventory_to_records(
+        inv,
+        listings_url="https://housing.sanjoseca.gov/listings",
+        authority="City of San José",
+    )
+    assert len(recs) == 1
+    assert recs[0].property_name == "Oak"
+
+
 def test_bloom_ssr_extraction_robust(monkeypatch):
     """Unit regression for Bloom SSR path (tolerant parsing)."""
     from housing_list_search.extraction.bloom_housing import _fetch_via_ssr

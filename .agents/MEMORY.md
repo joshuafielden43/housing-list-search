@@ -15,7 +15,7 @@ Report: `$TMPDIR/architecture-review-20260709-162428.html` (temp; not in repo).
 | **#1061** | RunReview / Needs Review spine (#4) | **done** (assess→build→surface) |
 | **#1062** | Finish or delete CanonicalListing (#5) | **done** (deleted half-depth type) |
 | **#1063** | Staff Publish (#6) | **done** (staff_publish.publish_staff_run) |
-| #1064 | Bloom path adapters (#7, speculative) | backlog |
+| **#1064** | Bloom path adapters (#7) | **done** (BloomRawInventory + resolve + map) |
 
 ---
 

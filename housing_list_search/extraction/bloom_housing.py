@@ -120,7 +120,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 try:
     from bs4 import BeautifulSoup
@@ -133,6 +134,27 @@ from housing_list_search.access import polite_get
 from housing_list_search.extraction.pdf import HousingRecord
 
 logger = logging.getLogger(__name__)
+
+BloomPathName = Literal["ssr", "api", "playwright", "empty"]
+
+
+@dataclass
+class BloomRawInventory:
+    """Raw listing items from one Bloom fetch path (#1064).
+
+    Path adapters (SSR / API / Playwright) return this shape; the shared mapper
+    turns items into HousingRecord. pagination_complete=False means partial feed
+    (#1058 → SCRAPE_FAILED after mapping).
+    """
+
+    open_items: list[dict] = field(default_factory=list)
+    closed_items: list[dict] = field(default_factory=list)
+    pagination_complete: bool = True
+    path: BloomPathName = "empty"
+
+    @property
+    def empty(self) -> bool:
+        return not self.open_items and not self.closed_items
 
 # Bloom instances that use the REST API rather than SSR.
 # Key: hostname. Value: dict of API config for that instance.
@@ -921,6 +943,110 @@ def _find_listing_arrays(obj: Any, depth: int = 0, max_depth: int = 8) -> list[l
 
 
 # =============================================================================
+# PATH ORCHESTRATION + SHARED MAPPER (#1064)
+# =============================================================================
+
+
+def _filter_items_by_city(items: list[dict], city_filter: str) -> list[dict]:
+    """Keep items whose listingsBuildingAddress.city matches city_filter."""
+    if not city_filter:
+        return items
+    cf = city_filter.lower()
+    return [
+        it
+        for it in items
+        if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
+    ]
+
+
+def map_bloom_inventory_to_records(
+    inventory: BloomRawInventory,
+    *,
+    listings_url: str,
+    authority: str,
+    max_results: int = 200,
+) -> list[HousingRecord]:
+    """Shared mapper: raw open/closed items → HousingRecord (all fetch paths)."""
+    records: list[HousingRecord] = []
+    seen: set[str] = set()
+
+    # Open listings first — higher priority for the nonprofit's daily use
+    for item in inventory.open_items:
+        uid = str(item.get("id") or item.get("name") or "")
+        if uid in seen:
+            continue
+        seen.add(uid)
+        rec = _bloom_record_from_item(item, listings_url, authority)
+        if rec:
+            records.append(rec)
+        if len(records) >= max_results:
+            break
+
+    for item in inventory.closed_items:
+        if len(records) >= max_results:
+            break
+        uid = str(item.get("id") or item.get("name") or "")
+        if uid in seen:
+            continue
+        seen.add(uid)
+        rec = _bloom_record_from_item(item, listings_url, authority)
+        if rec:
+            records.append(rec)
+
+    return records
+
+
+def resolve_bloom_inventory(
+    url: str,
+    *,
+    city_filter: str = "",
+) -> BloomRawInventory:
+    """
+    Try Bloom fetch-path adapters in order: SSR → REST API → Playwright.
+
+    Each path is independently testable via ``_fetch_via_*``. This function only
+    sequences them and normalizes to BloomRawInventory.
+    """
+    from urllib.parse import urlparse
+
+    # Path 1 — SSR adapter
+    open_items, closed_items = _fetch_via_ssr(url)
+    if open_items or closed_items:
+        return BloomRawInventory(
+            open_items=_filter_items_by_city(open_items, city_filter),
+            closed_items=_filter_items_by_city(closed_items, city_filter),
+            pagination_complete=True,
+            path="ssr",
+        )
+
+    # Path 2 — REST API adapter (CSR instances)
+    open_items, closed_items, pagination_complete = _fetch_via_api(
+        url, city_filter=city_filter
+    )
+    if open_items or closed_items or not pagination_complete:
+        return BloomRawInventory(
+            open_items=open_items,
+            closed_items=closed_items,
+            pagination_complete=pagination_complete,
+            path="api",
+        )
+
+    # Path 3 — Playwright adapter (last resort; skip known API hosts)
+    api_host = urlparse(url).netloc
+    if api_host not in _API_INSTANCES:
+        open_items, closed_items = _fetch_via_playwright(url)
+        if open_items or closed_items:
+            return BloomRawInventory(
+                open_items=_filter_items_by_city(open_items, city_filter),
+                closed_items=_filter_items_by_city(closed_items, city_filter),
+                pagination_complete=True,
+                path="playwright",
+            )
+
+    return BloomRawInventory(path="empty")
+
+
+# =============================================================================
 # PUBLIC ENTRY POINT
 # =============================================================================
 
@@ -934,11 +1060,8 @@ def extract_bloom_housing_listings(
     """
     Main entry point. Returns HousingRecord objects for any Bloom Housing instance.
 
-    Works with both SSR instances (e.g. housing.sanjoseca.gov) and CSR/API
-    instances (e.g. housingbayarea.mtc.ca.gov). The three-path strategy:
-      1. SSR via __NEXT_DATA__ (fast, preferred)
-      2. REST API (for instances in _API_INSTANCES, e.g. MTC Doorway)
-      3. Playwright network interception (last resort fallback)
+    Path adapters (SSR / API / Playwright) feed BloomRawInventory; one shared
+    mapper produces HousingRecord objects (#1064).
 
     url: the /listings URL of the Bloom instance to extract from.
     authority: label for records (e.g. "City of San José"). Inferred from URL
@@ -948,65 +1071,18 @@ def extract_bloom_housing_listings(
         county (e.g. MTC Doorway) when you only want one city.
     max_results: cap on combined open+closed records returned. Default 200 is
         intentionally high — the nonprofit wants the full inventory picture.
-
-    Both openListings and closedListings are returned:
-      - openListings: actively accepting applications right now.
-      - closedListings: not currently accepting applications but represent real
-        inventory (waitlist sizes, contact info, unit types) for outreach/referral.
     """
     from urllib.parse import urlparse
+
+    from housing_list_search.access import SourceFetchError
 
     if not authority:
         authority = urlparse(url).netloc
 
-    from housing_list_search.access import SourceFetchError
+    inventory = resolve_bloom_inventory(url, city_filter=city_filter)
 
-    # Path 1: SSR via __NEXT_DATA__
-    open_items, closed_items = _fetch_via_ssr(url)
-    api_pagination_complete = True
-
-    # Path 2: REST API (CSR instances)
-    if not open_items and not closed_items:
-        open_items, closed_items, api_pagination_complete = _fetch_via_api(
-            url, city_filter=city_filter
-        )
-    elif city_filter:
-        # SSR gave us results but we still need to filter by city
-        cf = city_filter.lower()
-        open_items = [
-            it
-            for it in open_items
-            if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
-        ]
-        closed_items = [
-            it
-            for it in closed_items
-            if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
-        ]
-
-    # Path 3: Playwright fallback — re-apply city_filter afterwards because the
-    # Playwright heuristic captures all JSON on the page (potentially a full
-    # regional feed) and does not know about our filter.
-    # Skip for _API_INSTANCES hosts: API is the canonical CSR path; Playwright
-    # networkidle on MTC Doorway deadlocks daily runs when API returns non-200 2xx.
-    api_host = urlparse(url).netloc
-    if not open_items and not closed_items and api_host not in _API_INSTANCES:
-        open_items, closed_items = _fetch_via_playwright(url)
-        if city_filter and (open_items or closed_items):
-            cf = city_filter.lower()
-            open_items = [
-                it
-                for it in open_items
-                if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
-            ]
-            closed_items = [
-                it
-                for it in closed_items
-                if (it.get("listingsBuildingAddress") or {}).get("city", "").lower() == cf
-            ]
-
-    if not open_items and not closed_items:
-        if not api_pagination_complete:
+    if inventory.empty:
+        if not inventory.pagination_complete:
             raise SourceFetchError(
                 f"[Bloom] API pagination failed with zero listings for {url}"
             )
@@ -1020,33 +1096,14 @@ def extract_bloom_housing_listings(
         )
         return []
 
-    records: list[HousingRecord] = []
-    seen: set[str] = set()
+    records = map_bloom_inventory_to_records(
+        inventory,
+        listings_url=url,
+        authority=authority,
+        max_results=max_results,
+    )
 
-    # Open listings first — higher priority for the nonprofit's daily use
-    for item in open_items:
-        uid = str(item.get("id") or item.get("name") or "")
-        if uid in seen:
-            continue
-        seen.add(uid)
-        rec = _bloom_record_from_item(item, url, authority)
-        if rec:
-            records.append(rec)
-        if len(records) >= max_results:
-            break
-
-    for item in closed_items:
-        if len(records) >= max_results:
-            break
-        uid = str(item.get("id") or item.get("name") or "")
-        if uid in seen:
-            continue
-        seen.add(uid)
-        rec = _bloom_record_from_item(item, url, authority)
-        if rec:
-            records.append(rec)
-
-    if not api_pagination_complete:
+    if not inventory.pagination_complete:
         # #1058: partial regional feed is not a successful complete inventory
         raise SourceFetchError(
             f"[Bloom] incomplete API pagination for {url} "
@@ -1055,13 +1112,17 @@ def extract_bloom_housing_listings(
         )
 
     logger.info(
-        "[Bloom] Produced %d HousingRecord objects from %s (%d open + %d closed source items)",
+        "[Bloom] Produced %d HousingRecord objects from %s via %s "
+        "(%d open + %d closed source items)",
         len(records),
         url,
-        len(open_items),
-        len(closed_items),
+        inventory.path,
+        len(inventory.open_items),
+        len(inventory.closed_items),
     )
     print(
-        f"   [bloom_housing] {len(records)} records ({len(open_items)} open + {len(closed_items)} closed) from {url}"
+        f"   [bloom_housing] {len(records)} records "
+        f"({len(inventory.open_items)} open + {len(inventory.closed_items)} closed) "
+        f"via {inventory.path} from {url}"
     )
     return records

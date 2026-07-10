@@ -82,7 +82,7 @@ This rule exists because the same platform is used by multiple cities. A city-na
 
 ## Bloom Housing platform (most complex adapter)
 
-`extraction/bloom_housing.py` handles any deployment of the open-source Bloom Housing platform (github.com/bloom-housing/bloom). Three extraction paths tried in order:
+`extraction/bloom_housing.py` handles any deployment of the open-source Bloom Housing platform (github.com/bloom-housing/bloom). Three **path adapters** feed `BloomRawInventory`; one shared mapper (`map_bloom_inventory_to_records`) produces records. Orchestration: `resolve_bloom_inventory` (SSR → API → Playwright). Tried in order:
 
 ### Path 1 — SSR via `__NEXT_DATA__` (preferred)
 
