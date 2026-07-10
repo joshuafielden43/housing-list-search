@@ -10,12 +10,12 @@ Council on `adapters/`, `extraction/`, Access. Theme: **soft success → STALE a
 
 | Vikunja | Severity | Topic |
 |---------|----------|--------|
-| **#1076** | critical | Empty/partial scrapes must SCRAPE_FAILED (Bloom/PDF/GIS/Alta) |
-| **#1077** | high | Fail-loud Bloom max_results + CivicPlus max_documents |
-| **#1078** | high | Alta synthetic wrong URLs; directory is inventory |
-| **#1079** | medium | ArcGIS pagination / exceedTransferLimit |
-| **#1080** | medium | PDF single-fetch cascade |
-| **#1081** | high | robots.txt fetch SSRF (no blind redirects) |
+| **#1076** | critical | Empty/partial scrapes must SCRAPE_FAILED (Bloom/PDF/GIS/Alta) | **done** |
+| **#1077** | high | Fail-loud Bloom max_results + CivicPlus max_documents | **done** |
+| **#1078** | high | Alta synthetic wrong URLs; directory is inventory | **done** |
+| **#1079** | medium | ArcGIS pagination / exceedTransferLimit | open |
+| **#1080** | medium | PDF single-fetch cascade | **done** (with #1076 single-fetch) |
+| **#1081** | high | robots.txt fetch SSRF (no blind redirects) | **done** |
 | **#1082** | medium | Playwright egress DNS resolve |
 | **#1083** | medium | low_yield → Needs Review + portfolio floors |
 | **#1084** | medium | MidPen/EAH absolute URLs |

@@ -584,28 +584,38 @@ def extract_records_from_pdf(
     High-level entry point.
     Tries table extraction first, then flyer pages, then line-by-line parsing,
     then marker-pdf (optional, when installed).
+
+    Fetch/policy failures raise SourceFetchError so dispatch marks SCRAPE_FAILED
+    (#1076). A successful PDF with zero parseable rows still returns [] (real empty).
     """
+    from housing_list_search.access import SourceFetchError
+
     real_url, _wrapper = normalize_docaccess_url(pdf_url)
     logger.info("[pdf] Extracting: %s", real_url)
 
-    table_records = extract_records_from_pdf_tables(real_url, authority=authority)
-    if table_records:
-        if not include_low_confidence:
-            table_records = [r for r in table_records if r.confidence != "low"]
-        logger.info(
-            "[pdf] Table extraction produced %d records from %s", len(table_records), real_url
-        )
-        return table_records
-
+    # Single fetch for table + flyer + line + marker cascade (#1080 / #1076)
     try:
         pdf_bytes = _fetch_pdf(real_url)
     except Exception as e:
         logger.warning("[pdf] Failed to fetch %s: %s", real_url, e)
-        return []
+        raise SourceFetchError(f"pdf: fetch failed for {real_url}: {e}") from e
 
-    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
-        logger.warning("[pdf] Response does not start with PDF magic signature for %s", real_url)
-        return []
+    if not pdf_bytes or not _looks_like_pdf(pdf_bytes):
+        raise SourceFetchError(
+            f"pdf: response is not a PDF for {real_url}"
+        )
+
+    table_records = extract_records_from_pdf_bytes(pdf_bytes, authority=authority, document_url=real_url)
+    if table_records:
+        if not include_low_confidence:
+            table_records = [r for r in table_records if r.confidence != "low"]
+        if table_records:
+            logger.info(
+                "[pdf] Table extraction produced %d records from %s",
+                len(table_records),
+                real_url,
+            )
+            return table_records
 
     flyer_records = _extract_flyer_pages_from_pdf(pdf_bytes, authority, real_url)
     if flyer_records:
@@ -643,23 +653,14 @@ def extract_records_from_pdf(
 # ------------------------------------------------------------------
 
 
-def extract_records_from_pdf_tables(
-    pdf_url: str,
+def extract_records_from_pdf_bytes(
+    pdf_bytes: bytes,
+    *,
     authority: str = "",
+    document_url: str = "",
 ) -> list[HousingRecord]:
-    """
-    Table-aware extraction using pdfplumber.
-    Preferred path for well-structured lists (like the Gilroy ones).
-    """
-    if pdfplumber is None:
-        return []
-
-    pdf_url, _wrapper = normalize_docaccess_url(pdf_url)
-
-    try:
-        pdf_bytes = _fetch_pdf(pdf_url)
-    except Exception as e:
-        print(f"   [pdf] Could not fetch {pdf_url}: {e}")
+    """Table-aware extraction from already-fetched PDF bytes (pdfplumber)."""
+    if pdfplumber is None or not pdf_bytes:
         return []
 
     records: list[HousingRecord] = []
@@ -716,7 +717,7 @@ def extract_records_from_pdf_tables(
                         rec = record_from_table_row(
                             row=row,
                             field_map=field_map,
-                            document_url=pdf_url,
+                            document_url=document_url,
                             page_number=page_number,
                         )
                         if rec:
@@ -724,9 +725,40 @@ def extract_records_from_pdf_tables(
                             records.append(rec)
 
     except Exception as e:
-        print(f"   [pdf] Table extraction failed for {pdf_url}: {e}")
+        logger.warning("[pdf] Table extraction failed for %s: %s", document_url, e)
 
     if records:
-        print(f"   [pdf] Table extraction produced {len(records)} records from {pdf_url}")
+        logger.info(
+            "[pdf] Table extraction produced %d records from %s", len(records), document_url
+        )
 
     return records
+
+
+def extract_records_from_pdf_tables(
+    pdf_url: str,
+    authority: str = "",
+) -> list[HousingRecord]:
+    """
+    Table-aware extraction using pdfplumber.
+    Preferred path for well-structured lists (like the Gilroy ones).
+
+    Fetch failures raise SourceFetchError (#1076). Prefer
+    extract_records_from_pdf() which cascades table→flyer→line on one fetch.
+    """
+    from housing_list_search.access import SourceFetchError
+
+    if pdfplumber is None:
+        return []
+
+    pdf_url, _wrapper = normalize_docaccess_url(pdf_url)
+
+    try:
+        pdf_bytes = _fetch_pdf(pdf_url)
+    except Exception as e:
+        logger.warning("[pdf] Could not fetch %s: %s", pdf_url, e)
+        raise SourceFetchError(f"pdf: fetch failed for {pdf_url}: {e}") from e
+
+    return extract_records_from_pdf_bytes(
+        pdf_bytes, authority=authority, document_url=pdf_url
+    )

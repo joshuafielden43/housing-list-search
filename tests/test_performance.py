@@ -32,9 +32,14 @@ class TestRobotsCache:
     def test_cache_hits_once_per_host(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
+        mock_resp.headers = {}
         mock_resp.iter_content.return_value = [b"User-agent: *\nDisallow:\n"]
 
-        with patch("housing_list_search.scraper.requests.get", return_value=mock_resp) as mock_get:
+        # robots fetch now goes through redirect policy (URL policy + DNS) (#1081)
+        with (
+            patch("housing_list_search.scraper._check_resolved_addresses"),
+            patch("housing_list_search.scraper.requests.get", return_value=mock_resp) as mock_get,
+        ):
             get_robots_entry("https://example.gov", "https://example.gov/robots.txt")
             get_robots_entry("https://example.gov", "https://example.gov/robots.txt")
 
@@ -45,6 +50,7 @@ class TestRobotsCache:
         clear_robots_cache()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
+        mock_resp.headers = {}
         mock_resp.iter_content.return_value = [b"User-agent: *\nDisallow:\n"]
         fetch_started = threading.Event()
         release_fetch = threading.Event()
@@ -65,7 +71,10 @@ class TestRobotsCache:
                 get_robots_entry("https://race.example.gov", "https://race.example.gov/robots.txt")
             )
 
-        with patch("housing_list_search.scraper.requests.get", side_effect=slow_get):
+        with (
+            patch("housing_list_search.scraper._check_resolved_addresses"),
+            patch("housing_list_search.scraper.requests.get", side_effect=slow_get),
+        ):
             t1 = threading.Thread(target=worker)
             t2 = threading.Thread(target=worker)
             t1.start()

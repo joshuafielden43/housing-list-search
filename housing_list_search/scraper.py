@@ -324,13 +324,41 @@ def get_robots_entry(base: str, robots_url: str) -> RobotsEntry:
 
 
 def _fetch_robots_entry(robots_url: str) -> RobotsEntry:
+    """Fetch robots.txt with the same redirect URL policy as inventory traffic (#1081).
+
+    Never follows redirects blindly — each hop is validated so a compromised
+    origin cannot bounce robots.txt to metadata/LAN (SSRF next to polite_get).
+    Unreachable robots still fail-open (treat_as_allowed) per robots exclusion norms.
+    """
     try:
-        resp = requests.get(
+        # Static policy only on the robots URL (scheme/host/literal IP). DNS for
+        # each hop is enforced inside _request_with_redirect_policy so a redirect
+        # to metadata/LAN still fails closed (#1081). resolve_dns=False here avoids
+        # treating "DNS failed before fetch" as a permanent policy block.
+        try:
+            validate_http_url(robots_url, resolve_dns=False)
+        except URLPolicyError as exc:
+            logger.warning(
+                "robots.txt URL blocked by policy for %s: %s — treating as unreachable (allowed)",
+                robots_url,
+                exc,
+            )
+            return RobotsEntry(parser=None, treat_as_allowed=True)
+
+        resp = _request_with_redirect_policy(
+            "GET",
             robots_url,
             headers={"User-Agent": USER_AGENT},
             timeout=15,
             stream=True,
         )
+        if resp is None:
+            logger.debug(
+                "robots.txt fetch returned no response for %s — treating as unreachable (allowed)",
+                robots_url,
+            )
+            return RobotsEntry(parser=None, treat_as_allowed=True)
+
         content = _read_bounded_content(resp, 256 * 1024)
         if content is None:
             logger.warning(

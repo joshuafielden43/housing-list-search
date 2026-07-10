@@ -89,11 +89,12 @@ def test_bloom_ssr_path_alone_without_api_or_playwright(monkeypatch):
     assert inv.path == "ssr"
     assert not inv.empty
     assert calls == ["ssr"]
-    recs = bh.map_bloom_inventory_to_records(
+    recs, truncated = bh.map_bloom_inventory_to_records(
         inv,
         listings_url="https://housing.sanjoseca.gov/listings",
         authority="City of San José",
     )
+    assert not truncated
     assert len(recs) == 1
     assert recs[0].property_name == "Oak"
 

@@ -216,11 +216,12 @@ def _parse_embedded_geojson_js(
 
     text = resp.text
 
+    from housing_list_search.access import SourceFetchError
+
     # Find the first '{' that starts the FeatureCollection
     start = text.find("{")
     if start == -1:
-        logger.debug("No JSON object found in JS file")
-        return []
+        raise SourceFetchError(f"gis/embedded_js: no JSON object found in {url}")
 
     # Find the matching closing brace for the top-level object
     # Simple heuristic: take everything from first { to last }
@@ -230,8 +231,8 @@ def _parse_embedded_geojson_js(
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
-        logger.debug(f"Failed to parse JSON from {url}: {e}")
-        return []
+        logger.warning("[gis] Failed to parse JSON from %s: %s", url, e)
+        raise SourceFetchError(f"gis/embedded_js: JSON parse failed for {url}: {e}") from e
 
     return _features_to_records(
         data,
@@ -248,15 +249,15 @@ def _parse_direct_geojson(url: str, authority: str) -> list[dict[str, Any]]:
     """Handles direct .geojson or JSON FeatureCollection endpoints."""
     logger.debug(f"GIS (direct GeoJSON) on {url}")
 
-    from housing_list_search.access import require_response
+    from housing_list_search.access import SourceFetchError, require_response
 
     resp = require_response(polite_get(url), url, context="gis/geojson")
 
     try:
         data = resp.json()
     except Exception as e:
-        logger.debug(f"Failed to parse JSON: {e}")
-        return []
+        logger.warning("[gis] Failed to parse GeoJSON from %s: %s", url, e)
+        raise SourceFetchError(f"gis/geojson: JSON parse failed for {url}: {e}") from e
 
     return _features_to_records(data, url, authority)
 

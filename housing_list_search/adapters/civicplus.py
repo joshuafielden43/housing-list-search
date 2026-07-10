@@ -372,6 +372,9 @@ def extract_underlying_records(
     records: list[dict[str, Any]] = []
     extraction_errors = [False]
     document_urls: list[str] = list(known_document_urls or [])
+    documents_truncated = False
+    docs_over_cap = 0
+    pdfs_over_cap = 0
 
     host = urlparse(source).netloc.lower()
     for seed in CITY_SEED_DOCUMENTS.get(host, []):
@@ -443,6 +446,8 @@ def extract_underlying_records(
             pdf_urls.sort(key=lambda u: 0 if _looks_like_flyer(u) else 1)
             html_doc_urls.sort(key=lambda u: 0 if _looks_like_flyer(u) else 1)
 
+            # Track overflow before slicing — silent truncate → STALE (#1077)
+            docs_over_cap = max(0, len(html_doc_urls) - max_documents)
             for doc_url in html_doc_urls[:max_documents]:
                 _jitter(0.9)
                 try:
@@ -478,13 +483,16 @@ def extract_underlying_records(
                         extraction_errors[0] = True
                         logger.warning("[civicplus] Error on document page %s: %s", doc_url, exc)
 
+            pdf_urls = _dedupe_document_urls(pdf_urls)
+            pdfs_over_cap = max(0, len(pdf_urls) - max_documents)
             records.extend(
                 _process_pdfs(
-                    _dedupe_document_urls(pdf_urls)[:max_documents],
+                    pdf_urls[:max_documents],
                     authority,
                     extraction_errors=extraction_errors,
                 )
             )
+            documents_truncated = docs_over_cap > 0 or pdfs_over_cap > 0
 
             # --- 3. Merge list-page property names into PDF-derived records ---
             flyer_context = {
@@ -525,6 +533,23 @@ def extract_underlying_records(
     if not records and extraction_errors[0]:
         raise RuntimeError(
             f"[civicplus] {authority or source}: zero records after extraction errors"
+        )
+
+    if documents_truncated:
+        from housing_list_search.access import SourceFetchError
+
+        logger.error(
+            "[civicplus] %s: document candidates exceeded max_documents=%d "
+            "(html_over=%d pdf_over=%d) — mark SCRAPE_FAILED (#1077)",
+            authority or source,
+            max_documents,
+            docs_over_cap,
+            pdfs_over_cap,
+        )
+        raise SourceFetchError(
+            f"civicplus: document candidates exceed max_documents={max_documents} "
+            f"for {authority or source}",
+            partial=records,
         )
 
     logger.info(

@@ -67,11 +67,11 @@ class TestExtractRecordsFromPdfMarkerFallback:
         from housing_list_search.extraction.pdf import extract_records_from_pdf
 
         with (
+            patch("housing_list_search.extraction.pdf._fetch_pdf", return_value=b"%PDF-1.4"),
             patch(
-                "housing_list_search.extraction.pdf.extract_records_from_pdf_tables",
+                "housing_list_search.extraction.pdf.extract_records_from_pdf_bytes",
                 return_value=[],
             ),
-            patch("housing_list_search.extraction.pdf._fetch_pdf", return_value=b"%PDF-1.4"),
             patch(
                 "housing_list_search.extraction.pdf._extract_flyer_pages_from_pdf", return_value=[]
             ),

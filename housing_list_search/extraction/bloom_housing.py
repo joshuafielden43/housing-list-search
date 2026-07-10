@@ -973,25 +973,20 @@ def map_bloom_inventory_to_records(
     listings_url: str,
     authority: str,
     max_results: int = 200,
-) -> list[HousingRecord]:
-    """Shared mapper: raw open/closed items → HousingRecord (all fetch paths)."""
+) -> tuple[list[HousingRecord], bool]:
+    """Shared mapper: raw open/closed items → HousingRecord (all fetch paths).
+
+    Returns (records, truncated). truncated=True when source items remain after
+    hitting max_results — callers must treat that as incomplete inventory (#1077).
+    """
     records: list[HousingRecord] = []
     seen: set[str] = set()
+    truncated = False
 
     # Open listings first — higher priority for the nonprofit's daily use
     for item in inventory.open_items:
-        uid = str(item.get("id") or item.get("name") or "")
-        if uid in seen:
-            continue
-        seen.add(uid)
-        rec = _bloom_record_from_item(item, listings_url, authority)
-        if rec:
-            records.append(rec)
         if len(records) >= max_results:
-            break
-
-    for item in inventory.closed_items:
-        if len(records) >= max_results:
+            truncated = True
             break
         uid = str(item.get("id") or item.get("name") or "")
         if uid in seen:
@@ -1001,7 +996,20 @@ def map_bloom_inventory_to_records(
         if rec:
             records.append(rec)
 
-    return records
+    if not truncated:
+        for item in inventory.closed_items:
+            if len(records) >= max_results:
+                truncated = True
+                break
+            uid = str(item.get("id") or item.get("name") or "")
+            if uid in seen:
+                continue
+            seen.add(uid)
+            rec = _bloom_record_from_item(item, listings_url, authority)
+            if rec:
+                records.append(rec)
+
+    return records, truncated
 
 
 def resolve_bloom_inventory(
@@ -1094,17 +1102,26 @@ def extract_bloom_housing_listings(
             raise SourceFetchError(
                 f"[Bloom] API pagination failed with zero listings for {url}"
             )
-        logger.error(
-            "[Bloom] All three extraction paths returned zero listings for %s. "
-            "Manual investigation required. Check: "
-            "(1) Is the portal up? "
-            "(2) Has the /listings route moved? "
-            "(3) Is authentication now required?",
+        # path=="empty": every fetch path failed → hard fail (#1076 soft-success).
+        # Other paths with empty city_filter results are legitimate zeros.
+        if inventory.path == "empty":
+            logger.error(
+                "[Bloom] All extraction paths returned zero listings for %s — "
+                "mark SCRAPE_FAILED (not STALE). Check portal, /listings route, auth.",
+                url,
+            )
+            raise SourceFetchError(
+                f"[Bloom] All extraction paths returned zero listings for {url}"
+            )
+        logger.warning(
+            "[Bloom] Path %s returned no listings after city_filter=%r for %s",
+            inventory.path,
+            city_filter,
             url,
         )
         return []
 
-    records = map_bloom_inventory_to_records(
+    records, truncated = map_bloom_inventory_to_records(
         inventory,
         listings_url=url,
         authority=authority,
@@ -1116,6 +1133,15 @@ def extract_bloom_housing_listings(
         raise SourceFetchError(
             f"[Bloom] incomplete API pagination for {url} "
             f"({len(records)} records converted; mark SCRAPE_FAILED)",
+            partial=list(records),
+        )
+
+    if truncated:
+        # #1077: max_results cap must not silently amputate inventory
+        raise SourceFetchError(
+            f"[Bloom] max_results={max_results} truncated inventory for {url} "
+            f"({len(records)} records; "
+            f"{len(inventory.open_items)} open + {len(inventory.closed_items)} closed source items)",
             partial=list(records),
         )
 
