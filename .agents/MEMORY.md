@@ -21,9 +21,9 @@ Council on `adapters/`, `extraction/`, Access. Theme: **soft success → STALE a
 | **#1084** | medium | MidPen/EAH absolute URLs | **done** |
 | **#1085** | medium | Don't log_full_run on failed targets | **done** |
 | **#1086** | trivial | AGENTS Sunnyvale GIS docs | **done** |
-| **#1087** | low/explore | Housing Group / Hello Housing sources | open |
+| **#1087** | low/explore | Housing Group / Hello Housing sources | **done** (no bulk feed; TARGETS/AGENTS honesty) |
 
-Critique concrete board closed except **#1087** (explore).
+Critique concrete board closed.
 
 ## Architecture review (2026-07-10) — residual deepen candidates
 
@@ -35,7 +35,7 @@ Report: `$TMPDIR/architecture-review-20260710-090510.html` (temp; not in repo).
 | **#1071** | Cross-source mirror confirm locality — `deduplicate_for_run` | **done** (`DedupeResult`) |
 | **#1072** | Split Inventory Store vs Operator Maintenance (`db.py`) | open (worth exploring) |
 | **#1073** | Narrow Access public interface; retarget tests | open (worth exploring) |
-| **#1074** | Paginated inventory walk helper (#776) | open (worth exploring) |
+| **#1074** | Paginated inventory walk helper (#776) | **done** (`inventory_pagination.walk_paginated_inventory`) |
 | **#1075** | Machine Diff export module (optional) | open (speculative) |
 
 ## Architecture review (2026-07-09) — deepen candidates

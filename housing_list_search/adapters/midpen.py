@@ -140,52 +140,42 @@ def scrape_midpen(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     """Public entry point. Walks the county-filtered search pages."""
     print("🧩 Running MidPen adapter (county-filtered find-housing search)")
     now_iso = _dt.now().isoformat()
-    records: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
+    # partial carrier for SourceFetchError if a mid-walk fetch fails
+    so_far: list[dict[str, Any]] = []
 
     from housing_list_search.access import SourceFetchError
+    from housing_list_search.inventory_pagination import walk_paginated_inventory
 
-    last_new = 0
-    for page_num in range(1, MAX_PAGES + 1):
+    def fetch_page(page_num: int) -> tuple[list[dict[str, Any]], bool]:
         page_slot = "" if page_num == 1 else f"{page_num}/"
         page_url = SEARCH_URL_TEMPLATE.format(page=page_slot)
         resp = polite_get(page_url)
         if not resp:
-            # Page 1 failure = authority failed. Later page failure = partial + error.
             raise SourceFetchError(
                 f"midpen: fetch failed for {page_url}",
-                partial=records,
+                partial=so_far,
             )
 
         soup = BeautifulSoup(resp.text, "html.parser")
         cards = soup.find_all("div", class_=lambda c: c and "elementor-location-single" in c)
 
-        new_on_page = 0
+        new_recs: list[dict[str, Any]] = []
         for card in cards:
             rec = _parse_card(card, now_iso, page_url)
             if rec and rec["url"] not in seen_urls:
                 seen_urls.add(rec["url"])
-                records.append(rec)
-                new_on_page += 1
+                new_recs.append(rec)
+                so_far.append(rec)
 
-        last_new = new_on_page
-        if new_on_page == 0:
-            break
-    else:
-        # Exhausted MAX_PAGES without an empty page — may have truncated inventory (#776).
-        if last_new > 0:
-            logger.error(
-                "midpen: pagination hit MAX_PAGES=%d with new cards on last page "
-                "(%d records so far)",
-                MAX_PAGES,
-                len(records),
-            )
-            raise SourceFetchError.pagination_cap(
-                "midpen",
-                max_pages=MAX_PAGES,
-                partial=records,
-                detail=f"{len(records)} records so far",
-            )
+        # Empty page of new cards → exhausted; any new cards → more may exist (#1074)
+        return new_recs, bool(new_recs)
+
+    records = walk_paginated_inventory(
+        adapter="midpen",
+        max_pages=MAX_PAGES,
+        fetch_page=fetch_page,
+    )
 
     print(f"   → MidPen: {len(records)} Santa Clara County properties")
     return records

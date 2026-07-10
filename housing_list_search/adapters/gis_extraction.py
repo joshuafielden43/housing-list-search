@@ -292,13 +292,10 @@ def _parse_arcgis_rest(url: str, authority: str) -> list[dict[str, Any]]:
         query_url = query_url.rstrip("/") + "/query"
 
     from housing_list_search.access import SourceFetchError, require_response
+    from housing_list_search.inventory_pagination import walk_paginated_inventory
 
-    all_features: list[Any] = []
-    offset = 0
-    page_num = 0
-
-    while page_num < _ARCGIS_MAX_PAGES:
-        page_num += 1
+    def fetch_page(page_num: int) -> tuple[list[Any], bool]:
+        offset = (page_num - 1) * _ARCGIS_PAGE_SIZE
         full = (
             f"{query_url}?where=1%3D1&outFields=*&f=json"
             f"&returnGeometry=false"
@@ -321,36 +318,16 @@ def _parse_arcgis_rest(url: str, authority: str) -> list[dict[str, Any]]:
         if not isinstance(features, list):
             raise SourceFetchError(f"gis/arcgis: features is not a list from {url}")
 
-        all_features.extend(features)
         exceeded = bool(data.get("exceededTransferLimit"))
         full_page = len(features) >= _ARCGIS_PAGE_SIZE
-        # More pages when ArcGIS says so, or a full page with omitted flag (older servers).
-        # Never continue on an empty page (avoids infinite offset bumps).
         more = len(features) > 0 and (exceeded or full_page)
+        return features, more
 
-        if not more:
-            break
-
-        offset += len(features)
-        if page_num >= _ARCGIS_MAX_PAGES:
-            logger.error(
-                "gis/arcgis: pagination hit max_pages=%d with more data "
-                "(offset=%d features=%d exceededTransferLimit=%s)",
-                _ARCGIS_MAX_PAGES,
-                offset,
-                len(all_features),
-                exceeded,
-            )
-            partial = _arcgis_features_to_records(
-                {"features": all_features}, url, authority
-            )
-            raise SourceFetchError.pagination_cap(
-                "gis/arcgis",
-                max_pages=_ARCGIS_MAX_PAGES,
-                partial=partial,
-                detail=f"{len(all_features)} features so far",
-            )
-
+    all_features = walk_paginated_inventory(
+        adapter="gis/arcgis",
+        max_pages=_ARCGIS_MAX_PAGES,
+        fetch_page=fetch_page,
+    )
     return _arcgis_features_to_records({"features": all_features}, url, authority)
 
 

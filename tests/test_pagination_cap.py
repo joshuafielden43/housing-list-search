@@ -1,4 +1,4 @@
-"""#776: pagination safety caps must not silently truncate inventory."""
+"""#776 / #1074: pagination safety caps must not silently truncate inventory."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from housing_list_search.access import SourceFetchError
+from housing_list_search.inventory_pagination import walk_paginated_inventory
 
 
 def test_source_fetch_error_pagination_cap_helper():
@@ -17,6 +18,24 @@ def test_source_fetch_error_pagination_cap_helper():
     assert "max_pages=4" in str(err)
     assert "SCRAPE_FAILED" in str(err) or "truncated" in str(err).lower()
     assert len(err.partial) == 1
+
+
+def test_walk_paginated_inventory_stops_when_more_false():
+    def fetch(page: int):
+        if page == 1:
+            return ["a", "b"], True
+        return ["c"], False
+
+    out = walk_paginated_inventory(adapter="test", max_pages=5, fetch_page=fetch)
+    assert out == ["a", "b", "c"]
+
+
+def test_walk_paginated_inventory_raises_on_cap():
+    def fetch(_page: int):
+        return [1, 2, 3], True
+
+    with pytest.raises(SourceFetchError, match="max_pages"):
+        walk_paginated_inventory(adapter="test", max_pages=2, fetch_page=fetch)
 
 
 def test_midpen_raises_when_max_pages_full(monkeypatch):

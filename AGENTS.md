@@ -40,6 +40,11 @@ UEO maintains an impressive volunteer-curated, county-wide database (**~560 prop
 
 Menlo Park and Half Moon Bay were removed from `TARGETS.md`; they are San Mateo County Housing Group clients, not Santa Clara County scope.
 
+### Housing Group / Hello Housing (inventory honesty — #1087)
+
+- **Housing Group** (Campbell, Los Altos): administrator portal for BMR ownership/rental *programs*, interest/notification lists, and occasional lotteries — **not** a stable county-wide property inventory API. Campbell uses Validated Zero when no listings are posted; Los Altos still uses city CivicPlus DocumentCenter PDFs for BMR project lists. Do not invent a Housing Group property scraper without a public property-level feed.
+- **Hello Housing** (`hellohousingsv.org`): Santa Clara city **BMP homeownership** admin after HouseKeys7 exit. No bulk public rental property list for automation; rentals stay on **MTC Doorway / Bloom**. Treat Hello Housing as human registration/admin, not a scrape target, unless they publish an extractable inventory later.
+
 ---
 
 ## Current state (v0.8.7, 2026-07-04)

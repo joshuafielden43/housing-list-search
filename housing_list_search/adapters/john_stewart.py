@@ -438,16 +438,16 @@ def _scrape_jsco_portfolio(url: str, *, authority: str = "") -> list[dict[str, A
     auth = authority or JOHN_STEWART_AUTHORITY
 
     city_filter = ",".join(str(i) for i in _JSCO_SCC_CITIES)
-    listings: list[dict[str, Any]] = []
-    page_num = 1
     # 67 SCC properties fit in one page of 100; cap is a safety net. Hitting it
-    # with a full page means silent inventory loss — fail the authority (#776).
+    # with a full page means silent inventory loss — fail the authority (#776 / #1074).
     max_pages = 3
     per_page = 100
+    so_far: list[dict[str, Any]] = []
 
     from housing_list_search.access import SourceFetchError
+    from housing_list_search.inventory_pagination import walk_paginated_inventory
 
-    while page_num <= max_pages:
+    def fetch_page(page_num: int) -> tuple[list[dict[str, Any]], bool]:
         api_url = (
             f"{_JSCO_API_BASE}/property?city={city_filter}"
             f"&per_page={per_page}&page={page_num}"
@@ -456,7 +456,7 @@ def _scrape_jsco_portfolio(url: str, *, authority: str = "") -> list[dict[str, A
         if not resp:
             raise SourceFetchError(
                 f"john_stewart/jsco: fetch failed for {api_url}",
-                partial=listings,
+                partial=so_far,
             )
         try:
             items = resp.json()
@@ -464,12 +464,13 @@ def _scrape_jsco_portfolio(url: str, *, authority: str = "") -> list[dict[str, A
             print("   ⚠️ jsco.net API returned non-JSON — site may have changed")
             raise SourceFetchError(
                 f"john_stewart/jsco: non-JSON from {api_url}",
-                partial=listings,
+                partial=so_far,
             )
         if not isinstance(items, list) or not items:
-            break
+            return [], False
 
         now_iso = _dt.now().isoformat()
+        page_records: list[dict[str, Any]] = []
         for item in items:
             name = _html.unescape((item.get("title") or {}).get("rendered", "")).strip()
             if not name:
@@ -477,45 +478,35 @@ def _scrape_jsco_portfolio(url: str, *, authority: str = "") -> list[dict[str, A
             city_ids = item.get("city") or []
             city = next((_JSCO_SCC_CITIES[i] for i in city_ids if i in _JSCO_SCC_CITIES), "")
             modified = (item.get("modified") or "")[:10]
+            rec = {
+                "authority": auth,
+                "property_name": name,
+                "address": f"{city}, CA" if city else "",
+                "url": item.get("link") or "",
+                "status": "Check with property",
+                "notes": (
+                    f"John Stewart managed property in {city or 'Santa Clara County'}"
+                    + (f" | vendor page last updated {modified}" if modified else "")
+                ),
+                "unit_types": "Varies",
+                "confidence": "high",
+                "last_seen": now_iso,
+                "first_seen": now_iso,
+                "source": "john_stewart:jsco_portfolio",
+                "source_url": api_url.split("&page=")[0],
+                "expires_at": "",
+            }
+            page_records.append(rec)
+            so_far.append(rec)
 
-            listings.append(
-                {
-                    "authority": auth,
-                    "property_name": name,
-                    "address": f"{city}, CA" if city else "",
-                    "url": item.get("link") or "",
-                    "status": "Check with property",
-                    "notes": (
-                        f"John Stewart managed property in {city or 'Santa Clara County'}"
-                        + (f" | vendor page last updated {modified}" if modified else "")
-                    ),
-                    "unit_types": "Varies",
-                    "confidence": "high",
-                    "last_seen": now_iso,
-                    "first_seen": now_iso,
-                    "source": "john_stewart:jsco_portfolio",
-                    "source_url": api_url.split("&page=")[0],
-                    "expires_at": "",
-                }
-            )
+        # Full page → more may exist; short page → exhausted
+        return page_records, len(items) >= per_page
 
-        if len(items) < per_page:
-            break
-        page_num += 1
-    else:
-        # while-else: exited because page_num exceeded max without a short page
-        logger.error(
-            "john_stewart/jsco: pagination hit max_pages=%d with full final page "
-            "(%d records so far)",
-            max_pages,
-            len(listings),
-        )
-        raise SourceFetchError.pagination_cap(
-            "john_stewart/jsco",
-            max_pages=max_pages,
-            partial=listings,
-            detail=f"{len(listings)} records so far",
-        )
+    listings = walk_paginated_inventory(
+        adapter="john_stewart/jsco",
+        max_pages=max_pages,
+        fetch_page=fetch_page,
+    )
 
     print(f"   → jsco.net portfolio: {len(listings)} Santa Clara County properties")
     return listings
