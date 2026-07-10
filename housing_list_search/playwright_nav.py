@@ -44,25 +44,50 @@ def validated_goto_url(url: str) -> str:
     return validate_http_url(url, resolve_dns=True)
 
 
-def assert_playwright_egress_url(url: str, *, is_navigation: bool = False) -> str:
-    """Validate a browser request or response URL (#775).
+# Resource types that can carry data or scripts — resolve DNS (#1082).
+# Images/fonts/CSS stay host/IP-only so asset storms stay cheap.
+_DNS_RESOURCE_TYPES = frozenset(
+    {
+        "document",
+        "xhr",
+        "fetch",
+        "websocket",
+        "eventsource",
+        "script",
+    }
+)
 
-    Navigations use DNS resolution (same bar as polite_get / safe_goto).
-    Subresources and XHR use host/IP policy without DNS so asset storms stay cheap;
-    literal private IPs, localhost, and metadata hostnames are still blocked.
+
+def assert_playwright_egress_url(
+    url: str,
+    *,
+    is_navigation: bool = False,
+    resource_type: str = "",
+) -> str:
+    """Validate a browser request or response URL (#775 / #1082).
+
+    Navigations and data-carrying resource types (document/xhr/fetch/script/…)
+    use DNS resolution so a public name that resolves to metadata/RFC1918 is
+    blocked. Static assets (image/font/stylesheet) use host/IP policy only.
+    Literal private IPs, localhost, and metadata hostnames are always blocked.
     """
-    return validate_http_url(url, resolve_dns=is_navigation)
+    rt = (resource_type or "").lower()
+    resolve = is_navigation or rt in _DNS_RESOURCE_TYPES
+    return validate_http_url(url, resolve_dns=resolve)
 
 
 def playwright_response_url_allowed(url: str) -> bool:
-    """True if a captured response URL is safe to read (Bloom spy, etc.)."""
+    """True if a captured response URL is safe to read (Bloom spy, etc.).
+
+    Uses DNS resolution (#1082) — spies read JSON bodies, not image pixels.
+    """
     if not url or str(url).startswith(_NON_HTTP_SCHEMES):
         return False
-    return is_safe_http_url(url, resolve_dns=False)
+    return is_safe_http_url(url, resolve_dns=True)
 
 
 def attach_playwright_egress_policy(page) -> None:
-    """Abort Playwright requests to policy-blocked hosts (#775).
+    """Abort Playwright requests to policy-blocked hosts (#775 / #1082).
 
     Installed automatically by ``browser_page``. Covers XHR/fetch/img after the
     seed navigation — not only the initial ``safe_goto`` URL.
@@ -79,7 +104,10 @@ def attach_playwright_egress_policy(page) -> None:
             is_nav_fn = getattr(req, "is_navigation_request", None)
             if callable(is_nav_fn):
                 is_nav = bool(is_nav_fn())
-            assert_playwright_egress_url(url, is_navigation=is_nav)
+            resource_type = getattr(req, "resource_type", "") or ""
+            assert_playwright_egress_url(
+                url, is_navigation=is_nav, resource_type=str(resource_type)
+            )
         except URLPolicyError as exc:
             logger.warning("[playwright] blocked egress to %s: %s", url, exc)
             try:

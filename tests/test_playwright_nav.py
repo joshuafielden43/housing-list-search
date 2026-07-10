@@ -35,14 +35,54 @@ def test_assert_playwright_egress_blocks_metadata_and_loopback():
     assert assert_playwright_egress_url("https://example.com/api.json").startswith("https://")
 
 
-def test_playwright_response_url_allowed():
+def test_assert_playwright_xhr_dns_to_private_blocked(monkeypatch):
+    """#1082: data-carrying types resolve DNS — public name → RFC1918 is blocked."""
+    monkeypatch.setattr(
+        "housing_list_search.scraper.socket.getaddrinfo",
+        lambda *a, **k: [(None, None, None, None, ("10.0.0.5", 0))],
+    )
+    with pytest.raises(URLPolicyError, match="non-public"):
+        assert_playwright_egress_url(
+            "https://evil.example.org/api",
+            resource_type="xhr",
+        )
+
+
+def test_assert_playwright_image_skips_dns(monkeypatch):
+    """Static assets stay host-policy only (no DNS) for cost."""
+    called = {"dns": False}
+
+    def boom(*_a, **_k):
+        called["dns"] = True
+        raise AssertionError("DNS should not run for images")
+
+    monkeypatch.setattr("housing_list_search.scraper.socket.getaddrinfo", boom)
+    # Public hostname + image type — no DNS call
+    assert assert_playwright_egress_url(
+        "https://cdn.example.org/logo.png",
+        resource_type="image",
+    ).startswith("https://")
+    assert called["dns"] is False
+
+
+def test_playwright_response_url_allowed(monkeypatch):
+    monkeypatch.setattr(
+        "housing_list_search.playwright_nav.is_safe_http_url",
+        lambda url, **k: "169.254" not in url and not str(url).startswith("data:"),
+    )
     assert playwright_response_url_allowed("https://housing.sanjoseca.gov/api/x") is True
     assert playwright_response_url_allowed("http://169.254.169.254/") is False
     assert playwright_response_url_allowed("data:application/json,{}") is False
 
 
-def test_attach_egress_policy_aborts_blocked_request():
+def test_attach_egress_policy_aborts_blocked_request(monkeypatch):
     """Route handler aborts policy-blocked XHR without continue()."""
+    monkeypatch.setattr(
+        "housing_list_search.playwright_nav.validate_http_url",
+        lambda url, **k: url
+        if "127.0.0.1" not in url and "169.254" not in url
+        else (_ for _ in ()).throw(URLPolicyError("blocked")),
+    )
     page = MagicMock()
     handlers: list = []
 
@@ -57,6 +97,7 @@ def test_attach_egress_policy_aborts_blocked_request():
     route = MagicMock()
     route.request.url = "http://127.0.0.1/secret"
     route.request.is_navigation_request = lambda: False
+    route.request.resource_type = "xhr"
     handler(route)
     route.abort.assert_called()
     route.continue_.assert_not_called()
@@ -64,6 +105,7 @@ def test_attach_egress_policy_aborts_blocked_request():
     route2 = MagicMock()
     route2.request.url = "https://example.com/xhr.json"
     route2.request.is_navigation_request = lambda: False
+    route2.request.resource_type = "xhr"
     handler(route2)
     route2.continue_.assert_called()
 

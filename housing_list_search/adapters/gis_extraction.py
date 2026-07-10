@@ -262,6 +262,12 @@ def _parse_direct_geojson(url: str, authority: str) -> list[dict[str, Any]]:
     return _features_to_records(data, url, authority)
 
 
+# ArcGIS page size and safety cap (#1079). Hitting max_pages with more data
+# left (exceededTransferLimit or a full final page) → SourceFetchError.
+_ARCGIS_PAGE_SIZE = 500
+_ARCGIS_MAX_PAGES = 20
+
+
 def _parse_arcgis_rest(url: str, authority: str) -> list[dict[str, Any]]:
     """
     ArcGIS FeatureServer / MapServer query endpoints.
@@ -275,6 +281,9 @@ def _parse_arcgis_rest(url: str, authority: str) -> list[dict[str, Any]]:
 
     `url` may be the layer URL or a full /query URL; query params are
     normalized either way.
+
+    Paginates with resultOffset / resultRecordCount and fails loud when
+    exceededTransferLimit remains true after the page cap (#1079).
     """
     logger.debug(f"GIS (ArcGIS) on {url}")
 
@@ -284,18 +293,65 @@ def _parse_arcgis_rest(url: str, authority: str) -> list[dict[str, Any]]:
 
     from housing_list_search.access import SourceFetchError, require_response
 
-    full = f"{query_url}?where=1%3D1&outFields=*&f=json"
-    resp = require_response(polite_get(full), full, context="gis/arcgis")
+    all_features: list[Any] = []
+    offset = 0
+    page_num = 0
 
-    try:
-        data = resp.json()
-    except Exception as exc:
-        raise SourceFetchError(f"gis/arcgis: non-JSON from {url}: {exc}") from exc
+    while page_num < _ARCGIS_MAX_PAGES:
+        page_num += 1
+        full = (
+            f"{query_url}?where=1%3D1&outFields=*&f=json"
+            f"&returnGeometry=false"
+            f"&resultOffset={offset}&resultRecordCount={_ARCGIS_PAGE_SIZE}"
+        )
+        resp = require_response(polite_get(full), full, context="gis/arcgis")
 
-    if "error" in data:
-        raise SourceFetchError(f"gis/arcgis: layer error from {url}: {data['error']}")
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise SourceFetchError(f"gis/arcgis: non-JSON from {url}: {exc}") from exc
 
-    return _arcgis_features_to_records(data, url, authority)
+        if not isinstance(data, dict):
+            raise SourceFetchError(f"gis/arcgis: unexpected payload type from {url}")
+
+        if "error" in data:
+            raise SourceFetchError(f"gis/arcgis: layer error from {url}: {data['error']}")
+
+        features = data.get("features", [])
+        if not isinstance(features, list):
+            raise SourceFetchError(f"gis/arcgis: features is not a list from {url}")
+
+        all_features.extend(features)
+        exceeded = bool(data.get("exceededTransferLimit"))
+        full_page = len(features) >= _ARCGIS_PAGE_SIZE
+        # More pages when ArcGIS says so, or a full page with omitted flag (older servers).
+        # Never continue on an empty page (avoids infinite offset bumps).
+        more = len(features) > 0 and (exceeded or full_page)
+
+        if not more:
+            break
+
+        offset += len(features)
+        if page_num >= _ARCGIS_MAX_PAGES:
+            logger.error(
+                "gis/arcgis: pagination hit max_pages=%d with more data "
+                "(offset=%d features=%d exceededTransferLimit=%s)",
+                _ARCGIS_MAX_PAGES,
+                offset,
+                len(all_features),
+                exceeded,
+            )
+            partial = _arcgis_features_to_records(
+                {"features": all_features}, url, authority
+            )
+            raise SourceFetchError.pagination_cap(
+                "gis/arcgis",
+                max_pages=_ARCGIS_MAX_PAGES,
+                partial=partial,
+                detail=f"{len(all_features)} features so far",
+            )
+
+    return _arcgis_features_to_records({"features": all_features}, url, authority)
 
 
 def _arcgis_features_to_records(

@@ -149,7 +149,7 @@ Three cities share an Akamai WAF configuration (customer hash `d7ce17`) that blo
 
 - **Mountain View city-site** — viable alternative: HouseKeys13 directly (already in TARGETS.md)
 - **Santa Clara city-site** — viable alternative: MTC Doorway (already in TARGETS.md)
-- **Sunnyvale** — no viable alternative found. Document IDs 364, 366, 368 confirmed 2026-06-05 but all served via docaccess.com which fetches from the blocked domain. Marked `waf_blocked`.
+- **Sunnyvale city-site** (`sunnyvale.ca.gov`) — Akamai-blocked; DocumentCenter via docaccess still fetches from the blocked domain. **Viable inventory alternative:** public ArcGIS REST layer on `gis.sunnyvale.ca.gov` (TARGETS.md `gis` measure; ~40 properties as of 2026-06). Do not mark Sunnyvale as inventory-empty.
 
 When you hit a WAF block: document it (what you tried, the specific block signature), find an alternative entry point if one exists, update TARGETS.md. Do not attempt to bypass.
 

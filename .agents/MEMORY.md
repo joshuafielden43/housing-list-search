@@ -13,17 +13,17 @@ Council on `adapters/`, `extraction/`, Access. Theme: **soft success → STALE a
 | **#1076** | critical | Empty/partial scrapes must SCRAPE_FAILED (Bloom/PDF/GIS/Alta) | **done** |
 | **#1077** | high | Fail-loud Bloom max_results + CivicPlus max_documents | **done** |
 | **#1078** | high | Alta synthetic wrong URLs; directory is inventory | **done** |
-| **#1079** | medium | ArcGIS pagination / exceedTransferLimit | open |
+| **#1079** | medium | ArcGIS pagination / exceedTransferLimit | **done** |
 | **#1080** | medium | PDF single-fetch cascade | **done** (with #1076 single-fetch) |
 | **#1081** | high | robots.txt fetch SSRF (no blind redirects) | **done** |
-| **#1082** | medium | Playwright egress DNS resolve |
+| **#1082** | medium | Playwright egress DNS resolve | **done** |
 | **#1083** | medium | low_yield → Needs Review + portfolio floors | **done** |
 | **#1084** | medium | MidPen/EAH absolute URLs | **done** |
 | **#1085** | medium | Don't log_full_run on failed targets | **done** |
-| **#1086** | trivial | AGENTS Sunnyvale GIS docs |
-| **#1087** | low/explore | Housing Group / Hello Housing sources |
+| **#1086** | trivial | AGENTS Sunnyvale GIS docs | **done** |
+| **#1087** | low/explore | Housing Group / Hello Housing sources | open |
 
-Start with **#1076** then **#1077/#1078/#1081**.
+Critique concrete board closed except **#1087** (explore).
 
 ## Architecture review (2026-07-10) — residual deepen candidates
 

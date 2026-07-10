@@ -54,7 +54,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | Term | Meaning |
 |------|---------|
 | **Access** | `access.py` — sole outbound seam (HTTP + browser): `polite_get` / `polite_post` / `browser_page` / `safe_goto`; policy, robots, throttle. Implementation: `scraper.py`, `playwright_nav.py` (private) |
-| **Playwright egress policy** | Every `browser_page` installs a route filter (#775): navigation + XHR/subresource URLs must pass URL policy (abort private/metadata). Response spies (Bloom) skip disallowed response URLs |
+| **Playwright egress policy** | Every `browser_page` installs a route filter (#775 / #1082): navigations + data-carrying types (document/xhr/fetch/script) use DNS-resolved URL policy; static assets host/IP-only. Response spies (Bloom) DNS-check response URLs |
 | **polite_get** | Approved HTTP fetch via Access; robots.txt + delay |
 | **no_public_list** | Intentional skip — no ethical public inventory |
 | **waf_blocked** | Hard skip before network I/O |
