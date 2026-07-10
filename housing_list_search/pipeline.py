@@ -18,21 +18,23 @@ from typing import Any
 
 import housing_list_search.dispatch as dispatch_module
 from housing_list_search.changelog import generate_changelog
-from housing_list_search.coverage import classify_record_kind, summarize_coverage
+from housing_list_search.coverage import summarize_coverage
 from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
 from housing_list_search.listing import canonical_authority, canonicalize_listings
-from housing_list_search.measure_registry import expects_property_inventory, parse_target_measures
-from housing_list_search.needs_review import surface_run_review
+from housing_list_search.needs_review import (
+    CollectReview,
+    assess_collect_review,
+    build_run_review,
+    surface_run_review,
+)
 from housing_list_search.outputs import (
     PARTIAL_DAILY_SUMMARY_PATH,
     STAFF_DAILY_SUMMARY_PATH,
     generate_daily_summary,
 )
-from housing_list_search.suspicious_zero import find_suspicious_zeros
-from housing_list_search.validated_zero import find_reverification_due
 
 logger = logging.getLogger("housing_list_search")
 
@@ -42,45 +44,6 @@ TargetFn = Callable[
 
 _DEFAULT_MAX_TARGET_WORKERS = 3
 _MAX_TARGET_WORKERS_CAP = 8
-
-
-_DEFAULT_LOW_YIELD_THRESHOLD = 3
-
-
-def low_yield_threshold() -> int:
-    """Warn when inventory target returns fewer than this many property rows (#789)."""
-    raw = os.environ.get("HLS_LOW_YIELD_THRESHOLD", str(_DEFAULT_LOW_YIELD_THRESHOLD))
-    try:
-        return max(0, int(raw))
-    except ValueError:
-        return _DEFAULT_LOW_YIELD_THRESHOLD
-
-
-def _find_low_yield_targets(
-    targets: list[dict[str, Any]],
-    listings_by_authority: dict[str, list],
-    failed_targets: list[str],
-    suspicious_zero_authorities: list[str],
-) -> list[tuple[str, int]]:
-    """Inventory measures with 0 < property_count < threshold (not failed / not zero-flagged)."""
-    thr = low_yield_threshold()
-    if thr <= 0:
-        return []
-    failed = set(failed_targets)
-    zeroed = set(suspicious_zero_authorities)
-    out: list[tuple[str, int]] = []
-    for t in targets:
-        auth = (t.get("authority") or "").strip()
-        if not auth or auth in failed or auth in zeroed:
-            continue
-        measures = parse_target_measures(t.get("scraping_measures") or "")
-        if not expects_property_inventory(measures):
-            continue
-        recs = listings_by_authority.get(auth) or []
-        prop_n = sum(1 for r in recs if classify_record_kind(r) == "property")
-        if 0 < prop_n < thr:
-            out.append((auth, prop_n))
-    return out
 
 
 def max_target_workers() -> int:
@@ -221,41 +184,18 @@ class RunPipeline:
             except Exception:
                 pass
 
-        suspicious_zero_authorities = find_suspicious_zeros(
+        # RunReview collect phase (#1061) — composition + logs live in needs_review
+        collect_review = assess_collect_review(
             targets, listings_by_authority, failed_targets
         )
-        reverification_due_authorities = find_reverification_due(targets)
-        if suspicious_zero_authorities:
-            logger.warning(
-                "%d suspicious zero(s) — property-inventory target(s) returned no property "
-                "records: %s",
-                len(suspicious_zero_authorities),
-                ", ".join(suspicious_zero_authorities),
-            )
-        if reverification_due_authorities:
-            logger.warning(
-                "%d Validated Zero(s) past review date — reverification due: %s",
-                len(reverification_due_authorities),
-                ", ".join(reverification_due_authorities),
-            )
-
-        low_yield = _find_low_yield_targets(
-            targets, listings_by_authority, failed_targets, suspicious_zero_authorities
-        )
-        if low_yield:
-            logger.warning(
-                "%d low-yield inventory target(s) (possible silent partial scrape): %s",
-                len(low_yield),
-                ", ".join(f"{a}={n}" for a, n in low_yield),
-            )
 
         return _CollectResult(
             listings_raw=all_listings,
             failed_targets=failed_targets,
             listings_by_authority=listings_by_authority,
-            suspicious_zero_authorities=suspicious_zero_authorities,
-            reverification_due_authorities=reverification_due_authorities,
-            low_yield=low_yield,
+            suspicious_zero_authorities=collect_review.suspicious_zero_authorities,
+            reverification_due_authorities=collect_review.reverification_due_authorities,
+            low_yield=collect_review.low_yield,
         )
 
     def _persist(
@@ -346,17 +286,22 @@ class RunPipeline:
         partial_run: bool,
         target_filter: str | None,
     ) -> None:
-        """Staff artifacts, needs-review, run history, structured RUN_EVENT."""
+        """Staff artifacts, Needs Review surface, run history, structured RUN_EVENT."""
+        run_review = build_run_review(
+            CollectReview(
+                suspicious_zero_authorities=collected.suspicious_zero_authorities,
+                reverification_due_authorities=collected.reverification_due_authorities,
+                low_yield=collected.low_yield,
+            ),
+            stale_n=persisted.stale_n,
+            scrape_failed_n=persisted.scrape_failed_n,
+            stale_warn_threshold=DEFAULT_STALE_WARN_THRESHOLD,
+        )
         run_stats = {
             "targets_attempted": len(targets),
             "targets_succeeded": len(targets) - len(collected.failed_targets),
             "failed_authorities": collected.failed_targets,
-            "suspicious_zero_authorities": collected.suspicious_zero_authorities,
-            "reverification_due_authorities": collected.reverification_due_authorities,
-            "stale_n": persisted.stale_n,
-            "scrape_failed_n": persisted.scrape_failed_n,
-            "stale_warn_threshold": DEFAULT_STALE_WARN_THRESHOLD,
-            "low_yield": collected.low_yield,
+            **run_review.to_run_stats_fields(),
         }
 
         logger.info(
@@ -375,13 +320,7 @@ class RunPipeline:
             partial_run,
         )
 
-        surface_run_review(
-            run_id=persisted.run_id,
-            suspicious_zero_authorities=collected.suspicious_zero_authorities,
-            reverification_due_authorities=collected.reverification_due_authorities,
-            stale_n=persisted.stale_n,
-            scrape_failed_n=persisted.scrape_failed_n,
-        )
+        surface_run_review(run_review, run_id=persisted.run_id)
 
         if partial_run:
             with open("changelog_diffs.md", "w", encoding="utf-8") as f:

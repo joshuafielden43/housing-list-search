@@ -1,35 +1,221 @@
 """
-needs_review.py — optional operator notification when review signals fire.
+needs_review.py — deep RunReview / Needs Review spine (#1061).
 
-ADR-0004: suspicious zero and reverification due must not fail the run, but
-operators need a hook to notice.
+Assesses operator signals for a Run and surfaces them without failing the run
+(ADR-0002 / ADR-0004):
 
-- Logs `NEEDS_REVIEW` at WARNING
-- Optional `HLS_NEEDS_REVIEW_WEBHOOK` POST (Hermes, n8n, …)
-- Optional Vikunja sync: `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` (+ `HLS_VIKUNJA_PROJECT_ID`, default 9)
+  assess_collect_review(...)  → CollectReview  (zeros, reverify due, low-yield)
+  build_run_review(...)       → RunReview      (+ STALE / SCRAPE_FAILED counts)
+  surface_run_review(plan)    → log · webhook · Vikunja
+
+Detection helpers stay in suspicious_zero / validated_zero; this module owns
+composition, low-yield, notify policy, and transport adapters.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from housing_list_search.access import URLPolicyError, polite_post, validate_http_url
+from housing_list_search.coverage import classify_record_kind
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD
+from housing_list_search.measure_registry import expects_property_inventory, parse_target_measures
+from housing_list_search.suspicious_zero import find_suspicious_zeros
+from housing_list_search.validated_zero import find_reverification_due
 
 logger = logging.getLogger(__name__)
 
 _WEBHOOK_ENV = "HLS_NEEDS_REVIEW_WEBHOOK"
+_DEFAULT_LOW_YIELD_THRESHOLD = 3
 
 
-def _safe_operator_url(url: str, *, label: str) -> str | None:
-    """Validate operator-configured egress URL; return None when policy blocks."""
+# ---------------------------------------------------------------------------
+# Value types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CollectReview:
+    """Operator signals known after scrape collect (before persist)."""
+
+    suspicious_zero_authorities: list[str] = field(default_factory=list)
+    reverification_due_authorities: list[str] = field(default_factory=list)
+    low_yield: list[tuple[str, int]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RunReview:
+    """Full Needs Review plan for a Run — assess once, surface once."""
+
+    suspicious_zero_authorities: list[str] = field(default_factory=list)
+    reverification_due_authorities: list[str] = field(default_factory=list)
+    low_yield: list[tuple[str, int]] = field(default_factory=list)
+    stale_n: int = 0
+    scrape_failed_n: int = 0
+    stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD
+
+    @property
+    def needs_attention(self) -> bool:
+        """True when any operator signal warrants Needs Review transport."""
+        return should_notify_needs_review(
+            suspicious_zero_authorities=self.suspicious_zero_authorities,
+            reverification_due_authorities=self.reverification_due_authorities,
+            stale_n=self.stale_n,
+            scrape_failed_n=self.scrape_failed_n,
+            stale_warn_threshold=self.stale_warn_threshold,
+        )
+
+    def to_run_stats_fields(self) -> dict[str, Any]:
+        """Fields mergeable into pipeline run_stats / daily_summary."""
+        return {
+            "suspicious_zero_authorities": list(self.suspicious_zero_authorities),
+            "reverification_due_authorities": list(self.reverification_due_authorities),
+            "stale_n": self.stale_n,
+            "scrape_failed_n": self.scrape_failed_n,
+            "stale_warn_threshold": self.stale_warn_threshold,
+            "low_yield": list(self.low_yield),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Assess (compose detectors + low-yield)
+# ---------------------------------------------------------------------------
+
+
+def low_yield_threshold() -> int:
+    """Warn when inventory target returns fewer than this many property rows (#789)."""
+    raw = os.environ.get("HLS_LOW_YIELD_THRESHOLD", str(_DEFAULT_LOW_YIELD_THRESHOLD))
     try:
-        return validate_http_url(url.strip(), resolve_dns=False)
-    except URLPolicyError as exc:
-        logger.warning("%s URL blocked by policy: %s", label, exc)
-        return None
+        return max(0, int(raw))
+    except ValueError:
+        return _DEFAULT_LOW_YIELD_THRESHOLD
+
+
+def find_low_yield_targets(
+    targets: list[dict[str, Any]],
+    listings_by_authority: dict[str, list],
+    failed_targets: list[str],
+    suspicious_zero_authorities: list[str],
+) -> list[tuple[str, int]]:
+    """Inventory measures with 0 < property_count < threshold (not failed / not zero)."""
+    thr = low_yield_threshold()
+    if thr <= 0:
+        return []
+    failed = set(failed_targets)
+    zeroed = set(suspicious_zero_authorities)
+    out: list[tuple[str, int]] = []
+    for t in targets:
+        auth = (t.get("authority") or "").strip()
+        if not auth or auth in failed or auth in zeroed:
+            continue
+        measures = parse_target_measures(t.get("scraping_measures") or "")
+        if not expects_property_inventory(measures):
+            continue
+        recs = listings_by_authority.get(auth) or []
+        prop_n = sum(1 for r in recs if classify_record_kind(r) == "property")
+        if 0 < prop_n < thr:
+            out.append((auth, prop_n))
+    return out
+
+
+# Compat alias used by older tests
+_find_low_yield_targets = find_low_yield_targets
+
+
+def assess_collect_review(
+    targets: list[dict[str, Any]],
+    listings_by_authority: dict[str, list[dict[str, Any]]],
+    failed_targets: list[str],
+    *,
+    today: date | None = None,
+    log: bool = True,
+) -> CollectReview:
+    """Compose collect-phase operator signals (does not fail the Run)."""
+    suspicious = find_suspicious_zeros(
+        targets, listings_by_authority, failed_targets, today=today
+    )
+    reverify = find_reverification_due(targets, today=today)
+    low_yield = find_low_yield_targets(
+        targets, listings_by_authority, failed_targets, suspicious
+    )
+    review = CollectReview(
+        suspicious_zero_authorities=list(suspicious),
+        reverification_due_authorities=list(reverify),
+        low_yield=list(low_yield),
+    )
+    if log:
+        log_collect_review(review)
+    return review
+
+
+def log_collect_review(review: CollectReview) -> None:
+    """Emit collect-phase WARNING logs for zeros / reverify / low-yield."""
+    if review.suspicious_zero_authorities:
+        logger.warning(
+            "%d suspicious zero(s) — property-inventory target(s) returned no property "
+            "records: %s",
+            len(review.suspicious_zero_authorities),
+            ", ".join(review.suspicious_zero_authorities),
+        )
+    if review.reverification_due_authorities:
+        logger.warning(
+            "%d Validated Zero(s) past review date — reverification due: %s",
+            len(review.reverification_due_authorities),
+            ", ".join(review.reverification_due_authorities),
+        )
+    if review.low_yield:
+        logger.warning(
+            "%d low-yield inventory target(s) (possible silent partial scrape): %s",
+            len(review.low_yield),
+            ", ".join(f"{a}={n}" for a, n in review.low_yield),
+        )
+
+
+def build_run_review(
+    collect: CollectReview,
+    *,
+    stale_n: int = 0,
+    scrape_failed_n: int = 0,
+    stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
+) -> RunReview:
+    """Attach persist-phase integrity counts to collect signals."""
+    return RunReview(
+        suspicious_zero_authorities=list(collect.suspicious_zero_authorities),
+        reverification_due_authorities=list(collect.reverification_due_authorities),
+        low_yield=list(collect.low_yield),
+        stale_n=stale_n,
+        scrape_failed_n=scrape_failed_n,
+        stale_warn_threshold=stale_warn_threshold,
+    )
+
+
+def run_review_from_signals(
+    *,
+    suspicious_zero_authorities: list[str] | None = None,
+    reverification_due_authorities: list[str] | None = None,
+    low_yield: list[tuple[str, int]] | None = None,
+    stale_n: int = 0,
+    scrape_failed_n: int = 0,
+    stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
+) -> RunReview:
+    """Build a RunReview from already-computed signal lists (tests / compat)."""
+    return RunReview(
+        suspicious_zero_authorities=list(suspicious_zero_authorities or []),
+        reverification_due_authorities=list(reverification_due_authorities or []),
+        low_yield=list(low_yield or []),
+        stale_n=stale_n,
+        scrape_failed_n=scrape_failed_n,
+        stale_warn_threshold=stale_warn_threshold,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Notify policy + surface (transport adapters)
+# ---------------------------------------------------------------------------
 
 
 def should_notify_needs_review(
@@ -51,54 +237,59 @@ def should_notify_needs_review(
 
 
 def surface_run_review(
+    review: RunReview | None = None,
     *,
-    run_id: str,
+    run_id: str = "",
     suspicious_zero_authorities: list[str] | None = None,
     reverification_due_authorities: list[str] | None = None,
     stale_n: int = 0,
     scrape_failed_n: int = 0,
     stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
 ) -> None:
-    """Primary Needs Review seam (#783): detect signals → log → webhook → Vikunja.
+    """Surface a RunReview: log NEEDS_REVIEW → webhook → Vikunja.
 
-    Detection stays in suspicious_zero / validated_zero; this module owns transport
-    only. Safe no-op when no signals fire (ADR-0004: does not fail the run).
+    Prefer ``surface_run_review(plan, run_id=...)``. Kwargs remain for callers
+    that have not built a RunReview yet. Safe no-op when no signals fire
+    (ADR-0004: does not fail the run).
     """
-    suspicious_zero_authorities = list(suspicious_zero_authorities or [])
-    reverification_due_authorities = list(reverification_due_authorities or [])
-    if not should_notify_needs_review(
-        suspicious_zero_authorities=suspicious_zero_authorities,
-        reverification_due_authorities=reverification_due_authorities,
-        stale_n=stale_n,
-        scrape_failed_n=scrape_failed_n,
-        stale_warn_threshold=stale_warn_threshold,
-    ):
+    if review is None:
+        review = run_review_from_signals(
+            suspicious_zero_authorities=suspicious_zero_authorities,
+            reverification_due_authorities=reverification_due_authorities,
+            stale_n=stale_n,
+            scrape_failed_n=scrape_failed_n,
+            stale_warn_threshold=stale_warn_threshold,
+        )
+    if not review.needs_attention:
         return
 
     payload: dict[str, Any] = {
         "run_id": run_id,
-        "suspicious_zero_authorities": suspicious_zero_authorities,
-        "reverification_due_authorities": reverification_due_authorities,
-        "stale_n": stale_n,
-        "scrape_failed_n": scrape_failed_n,
+        "suspicious_zero_authorities": list(review.suspicious_zero_authorities),
+        "reverification_due_authorities": list(review.reverification_due_authorities),
+        "stale_n": review.stale_n,
+        "scrape_failed_n": review.scrape_failed_n,
+        "low_yield": [{"authority": a, "property_count": n} for a, n in review.low_yield],
     }
 
     logger.warning(
-        "NEEDS_REVIEW run_id=%s suspicious_zero=%s reverification_due=%s stale_n=%s scrape_failed_n=%s",
+        "NEEDS_REVIEW run_id=%s suspicious_zero=%s reverification_due=%s "
+        "stale_n=%s scrape_failed_n=%s low_yield=%s",
         run_id,
-        suspicious_zero_authorities,
-        reverification_due_authorities,
-        stale_n,
-        scrape_failed_n,
+        review.suspicious_zero_authorities,
+        review.reverification_due_authorities,
+        review.stale_n,
+        review.scrape_failed_n,
+        review.low_yield,
     )
 
     _post_webhook(payload)
     _sync_vikunja(
         run_id=run_id,
-        suspicious_zero_authorities=suspicious_zero_authorities,
-        reverification_due_authorities=reverification_due_authorities,
-        stale_n=stale_n,
-        scrape_failed_n=scrape_failed_n,
+        suspicious_zero_authorities=list(review.suspicious_zero_authorities),
+        reverification_due_authorities=list(review.reverification_due_authorities),
+        stale_n=review.stale_n,
+        scrape_failed_n=review.scrape_failed_n,
     )
 
 
@@ -120,6 +311,15 @@ def notify_needs_review(
         scrape_failed_n=scrape_failed_n,
         stale_warn_threshold=stale_warn_threshold,
     )
+
+
+def _safe_operator_url(url: str, *, label: str) -> str | None:
+    """Validate operator-configured egress URL; return None when policy blocks."""
+    try:
+        return validate_http_url(url.strip(), resolve_dns=False)
+    except URLPolicyError as exc:
+        logger.warning("%s URL blocked by policy: %s", label, exc)
+        return None
 
 
 def _post_webhook(payload: dict[str, Any]) -> None:

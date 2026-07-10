@@ -1,8 +1,16 @@
-"""Needs Review notification hook."""
+"""Needs Review / RunReview spine (#1061)."""
 
 import logging
 
-from housing_list_search.needs_review import notify_needs_review, should_notify_needs_review
+from housing_list_search.needs_review import (
+    CollectReview,
+    assess_collect_review,
+    build_run_review,
+    notify_needs_review,
+    run_review_from_signals,
+    should_notify_needs_review,
+    surface_run_review,
+)
 
 
 def test_notify_noop_when_no_signals():
@@ -11,6 +19,35 @@ def test_notify_noop_when_no_signals():
         suspicious_zero_authorities=[],
         reverification_due_authorities=[],
     )
+
+
+def test_assess_collect_review_composes_suspicious_zero():
+    targets = [
+        {
+            "authority": "MidPen Housing",
+            "scraping_measures": "midpen",
+            "validated_zero": "",
+            "validated_zero_review_due": "",
+        }
+    ]
+    review = assess_collect_review(targets, {"MidPen Housing": []}, [], log=False)
+    assert review.suspicious_zero_authorities == ["MidPen Housing"]
+    assert review.low_yield == []
+
+
+def test_build_and_surface_run_review(caplog):
+    collect = CollectReview(suspicious_zero_authorities=["City A"])
+    plan = build_run_review(collect, stale_n=1, scrape_failed_n=0)
+    assert plan.needs_attention
+    with caplog.at_level(logging.WARNING):
+        surface_run_review(plan, run_id="run-plan")
+    assert "NEEDS_REVIEW" in caplog.text
+    assert "City A" in caplog.text
+
+
+def test_run_review_from_signals_stale_threshold():
+    plan = run_review_from_signals(stale_n=5, scrape_failed_n=0)
+    assert plan.needs_attention
 
 
 def test_should_notify_on_stale_threshold():
