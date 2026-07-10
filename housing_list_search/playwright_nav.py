@@ -4,7 +4,12 @@ Do not import this module from adapters, extraction, or pipeline.
 Use ``housing_list_search.access`` (browser_page, safe_goto, …) instead (#1060).
 
 #761 / #769 / #987: process-wide lock serializes Playwright under parallel
-target workers; one browser reused until shutdown_playwright().
+target workers so only one page is open at a time (RAM-friendly on 8GB hosts).
+
+Playwright's *sync* API is greenlet/thread-bound: the browser must be used only
+on the thread that started ``sync_playwright()``. Under ThreadPoolExecutor,
+different workers need different owners — we relaunch Chromium when the owning
+thread changes rather than sharing a cross-thread browser (greenlet.error).
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ _NON_HTTP_SCHEMES = ("data:", "blob:", "about:")
 _PLAYWRIGHT_LOCK = threading.RLock()
 _pw_instance: Any = None
 _browser: Any = None
+_owner_ident: int | None = None  # threading.get_ident() of browser owner
 _launch_count = 0
 _page_count = 0
 
@@ -151,11 +157,36 @@ def safe_goto(page, url: str, *, delay: int = DEFAULT_PLAYWRIGHT_DELAY, **kwargs
         mark_host_fetched(validated)
 
 
+def _drop_browser_refs_unlocked() -> None:
+    """Clear process-level browser pointers without close() (may be wrong thread)."""
+    global _pw_instance, _browser, _owner_ident
+    _pw_instance = None
+    _browser = None
+    _owner_ident = None
+
+
 def _ensure_browser():
-    """Start Chromium once per process under the Playwright lock."""
-    global _pw_instance, _browser, _launch_count
-    if _browser is not None:
+    """Start Chromium on the *current* thread; relaunch if owner thread changed.
+
+    Playwright sync API is not cross-thread. ThreadPool workers that each call
+    browser_page must not share one greenlet-bound browser.
+    """
+    global _pw_instance, _browser, _launch_count, _owner_ident
+    tid = threading.get_ident()
+    if _browser is not None and _owner_ident == tid:
         return _browser
+
+    if _browser is not None and _owner_ident != tid:
+        # Cross-thread close() is unsafe (greenlet.error). Abandon prior refs;
+        # OS reaps the old Chromium when this process exits (or shortly after).
+        logger.info(
+            "[playwright] thread switch owner=%s → %s; launching Chromium on this thread "
+            "(prior instance abandoned — sync API is thread-bound)",
+            _owner_ident,
+            tid,
+        )
+        _drop_browser_refs_unlocked()
+
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -163,17 +194,38 @@ def _ensure_browser():
             "Playwright not installed. pip install playwright && playwright install chromium"
         ) from exc
 
-    logger.info("[playwright] launching shared Chromium (first use this process)")
+    logger.info("[playwright] launching Chromium (thread=%s)", tid)
     _pw_instance = sync_playwright().start()
     _browser = _pw_instance.chromium.launch(headless=True)
+    _owner_ident = tid
     _launch_count += 1
     return _browser
 
 
 def shutdown_playwright() -> None:
-    """Close shared browser (call at end of RunPipeline / tests)."""
-    global _pw_instance, _browser
+    """Close browser if owned by the current thread (end of RunPipeline / tests).
+
+    Worker-thread Chromium instances that were abandoned on thread switch are
+    not closed here (wrong-thread close is unsafe); they die with the process.
+    """
+    global _pw_instance, _browser, _owner_ident
     with _PLAYWRIGHT_LOCK:
+        tid = threading.get_ident()
+        if _browser is not None and _owner_ident is not None and _owner_ident != tid:
+            logger.info(
+                "[playwright] shutdown on thread %s but browser owned by %s — "
+                "dropping refs only (process exit reaps Chromium)",
+                tid,
+                _owner_ident,
+            )
+            _drop_browser_refs_unlocked()
+            logger.info(
+                "[playwright] shutdown (launches=%d pages_opened=%d)",
+                _launch_count,
+                _page_count,
+            )
+            return
+
         if _browser is not None:
             try:
                 _browser.close()
@@ -186,6 +238,7 @@ def shutdown_playwright() -> None:
             except Exception as exc:
                 logger.debug("playwright.stop: %s", exc)
             _pw_instance = None
+        _owner_ident = None
         logger.info(
             "[playwright] shutdown (launches=%d pages_opened=%d)",
             _launch_count,
@@ -208,6 +261,7 @@ def reset_playwright_for_tests() -> None:
     with _PLAYWRIGHT_LOCK:
         _launch_count = 0
         _page_count = 0
+        _drop_browser_refs_unlocked()
 
 
 @contextmanager
@@ -219,10 +273,12 @@ def browser_page(
     timezone_id: str = "America/Los_Angeles",
     **context_kwargs: Any,
 ) -> Iterator[Any]:
-    """Yield a new page from the shared browser; serializes under process lock.
+    """Yield a new page from the thread-owned browser; serializes under process lock.
 
-    Only one caller holds the lock at a time — safe under HLS_MAX_TARGET_WORKERS.
-    Context/page are closed on exit; the browser process stays warm (#769).
+    Only one caller holds the lock at a time — safe under HLS_MAX_TARGET_WORKERS
+    and keeps peak Chromium count to one active page. The browser is bound to the
+    calling thread; another worker re-launches on first use (no cross-thread greenlet).
+    Context/page are closed on exit; the browser stays warm for the same thread.
     """
     global _page_count
     with _PLAYWRIGHT_LOCK:

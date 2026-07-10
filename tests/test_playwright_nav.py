@@ -1,5 +1,6 @@
 """Playwright navigation URL policy, shared browser pool, per-host throttle."""
 
+import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -200,6 +201,7 @@ def test_browser_page_reuses_shared_browser(monkeypatch):
         import housing_list_search.playwright_nav as pn
 
         pn._browser = fake_browser
+        pn._owner_ident = __import__("threading").get_ident()
         return fake_browser
 
     monkeypatch.setattr(
@@ -224,6 +226,7 @@ def test_browser_page_reuses_shared_browser(monkeypatch):
         if pn._browser is None:
             launches.append(1)
             pn._browser = fake_browser
+            pn._owner_ident = __import__("threading").get_ident()
         return pn._browser
 
     monkeypatch.setattr(pn, "_ensure_browser", ensure_once)
@@ -233,3 +236,64 @@ def test_browser_page_reuses_shared_browser(monkeypatch):
         pass
     assert len(launches) == 1
     assert playwright_stats()["pages"] == 2
+
+
+def test_ensure_browser_relaunches_on_thread_switch(monkeypatch):
+    """ThreadPool workers must not share a greenlet-bound browser."""
+    import housing_list_search.playwright_nav as pn
+
+    reset_playwright_for_tests()
+    created: list[int] = []
+
+    class FakeBrowser:
+        def new_context(self, **kwargs):
+            ctx = MagicMock()
+            ctx.new_page.return_value = MagicMock()
+            return ctx
+
+        def close(self):
+            pass
+
+    class FakePw:
+        def __init__(self):
+            self.chromium = MagicMock()
+            self.chromium.launch.return_value = FakeBrowser()
+
+        def stop(self):
+            pass
+
+    def fake_sync_playwright():
+        class CM:
+            def start(self):
+                created.append(threading.get_ident())
+                return FakePw()
+
+        return CM()
+
+    monkeypatch.setattr(
+        "playwright.sync_api.sync_playwright",
+        fake_sync_playwright,
+        raising=False,
+    )
+    # Import path used inside _ensure_browser
+    import sys
+    from types import ModuleType
+
+    fake_mod = ModuleType("playwright.sync_api")
+    fake_mod.sync_playwright = fake_sync_playwright
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_mod)
+    monkeypatch.setitem(sys.modules, "playwright", ModuleType("playwright"))
+
+    # Same thread: one launch
+    b1 = pn._ensure_browser()
+    b2 = pn._ensure_browser()
+    assert b1 is b2
+    assert len(created) == 1
+
+    # Simulate another thread by forcing owner mismatch
+    pn._owner_ident = threading.get_ident() + 99999
+    b3 = pn._ensure_browser()
+    assert b3 is not b1
+    assert len(created) == 2
+    assert pn._owner_ident == threading.get_ident()
+    reset_playwright_for_tests()
