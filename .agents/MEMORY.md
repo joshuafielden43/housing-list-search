@@ -188,7 +188,7 @@ When `HLS_VIKUNJA_URL` + `HLS_VIKUNJA_TOKEN` are set, `notify_needs_review()` up
 
 | Priority | Theme | IDs |
 |----------|--------|-----|
-| investigate | marker license | **#778** (#793 done — robots single-flight + throttle tests) |
+| investigate | (cleared) | **#778 done** — marker OpenRAIL-M + GPL documented; **#770** still deferred weekly smoke |
 | architecture (optional) | seams, RunPipeline phases, measure registry, N+1 upsert, adapters | **#781–#784 #786 #794–#802 #828 #797 #795 #796 #798 #799 #801** |
 
 **Domain bar:** down ≠ gone.

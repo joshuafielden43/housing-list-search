@@ -7,5 +7,15 @@
 # Prefer pdfplumber default (ADR-0005) for daily runs.
 #
 # Do NOT `-r requirements.txt` here — that pulls Pillow 12 and conflicts with marker.
+#
+# --- License obligations (#778 / ADR-0005) ---
+# Installing this file is optional and is NOT covered by the repo MIT alone.
+#   * marker-pdf *code*: GPL-3.0 (copyleft if you distribute modified combined works)
+#   * model *weights*: modified AI Pubs OpenRAIL-M (Datalab) — research/personal and
+#     small-startup free tiers; commercial over thresholds needs Datalab commercial terms.
+#     See https://github.com/datalab-to/marker MODEL_LICENSE + README Commercial usage.
+#   * Re-read upstream licenses when bumping the pin below.
+# Local-only nonprofit operator use on a dedicated host is the intended posture;
+# do not ship OCR on the default daily cron host without accepting the above.
 marker-pdf==1.10.2
 pillow>=10.0.0,<11

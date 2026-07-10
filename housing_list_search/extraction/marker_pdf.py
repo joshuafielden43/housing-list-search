@@ -3,6 +3,13 @@ Optional marker-pdf fallback for hard PDFs (scanned flyers, scrambled layout).
 
 Loaded lazily — torch/model init is expensive (~30–60s first call).
 Disabled when HLS_DISABLE_MARKER_PDF=1 is set.
+
+License (operator must accept when enabling this tier — ADR-0005 / #778):
+  - marker *code*: GPL-3.0
+  - model *weights*: modified AI Pubs OpenRAIL-M (Datalab) — not MIT;
+    free for research/personal and startups under upstream revenue/funding
+    limits; broader commercial use may need a paid Datalab license.
+  - See requirements-ocr.txt and docs/adr/0005-*.md. Not legal advice.
 """
 
 from __future__ import annotations
@@ -46,7 +53,10 @@ def _get_converter():
     from marker.converters.pdf import PdfConverter
     from marker.models import create_model_dict
 
-    logger.info("[pdf] Loading marker-pdf models (first use may take ~30–60s)")
+    logger.info(
+        "[pdf] Loading marker-pdf models (first use may take ~30–60s). "
+        "OCR tier: GPL code + OpenRAIL-M weights — see ADR-0005 / requirements-ocr.txt (#778)"
+    )
     _CONVERTER = PdfConverter(artifact_dict=create_model_dict())
     return _CONVERTER
 

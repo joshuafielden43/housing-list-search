@@ -18,7 +18,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **DispatchRegistry** | `dispatch.py` — measures → adapter handlers; URL predicates → extraction handlers |
 | **Adapter** | Platform-scoped scraper in `adapters/` or `extraction/` — named after vendor, never city |
 | **PDF default stack** | pdfplumber for tables, text, and flyer heuristics (ADR-0005); no PyMuPDF in default install |
-| **marker fallback** | Optional GPL `marker-pdf` path in `extraction/marker_pdf.py` (`requirements-ocr.txt`) when pdfplumber paths yield zero |
+| **marker fallback** | Optional OCR tier in `extraction/marker_pdf.py` (`requirements-ocr.txt`) when pdfplumber yields zero. **Code GPL-3.0 + weights OpenRAIL-M** (not MIT) — operator obligations in ADR-0005 / #778 |
 
 ## Freshness & output
 
