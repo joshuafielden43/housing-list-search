@@ -287,7 +287,7 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 ## Tests
 
 - CI and default local runs: `pytest tests/ -m "not integration"`
-- Live portal smoke tests: `pytest tests/ -m integration` (San José Bloom + Gilroy PDF)
+- Live portal smoke: `pytest tests/ -m integration` — ground_truth bounds in `tests/ground_truth.yaml` cover adapter families (Bloom, PDF, HouseKeys, MidPen, JSCo, Charities, First Housing, Eden, EAH, GIS, Alta, SCCHA directory; #662). Filters: `HLS_GT_MODE=all|core|rotate` or `HLS_GT_NAMES=…`
 
 ---
 

@@ -53,7 +53,8 @@ Run tests:
 
 ```bash
 pytest tests/ -m "not integration"   # default — matches CI, no network
-pytest tests/ -m integration         # live San José + Gilroy portal checks
+pytest tests/ -m integration         # live ground_truth (all adapter families)
+HLS_GT_MODE=core pytest tests/ -m integration   # shorter core set only
 ```
 
 ---

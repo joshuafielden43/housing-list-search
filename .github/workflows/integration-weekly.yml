@@ -29,12 +29,18 @@ jobs:
           pip install -r requirements-dev.lock
 
       - name: Note on integration tests
-        run: echo "Live portal smoke tests (requires real network + playwright). Failures often mean portal/WAF changes — see TARGETS.md and adapters."
+        run: |
+          echo "Live portal smoke (network + Playwright). ground_truth.yaml covers adapter families (#662)."
+          echo "Failures often mean portal/WAF changes — see TARGETS.md and adapters."
+          echo "Local shorter run: HLS_GT_MODE=core pytest tests/ -m integration"
 
       - name: Install Playwright Chromium
         run: playwright install chromium --with-deps
 
       - name: Run integration + ground-truth tests
+        # HLS_GT_MODE=all (default): full adapter-family set from ground_truth.yaml
+        env:
+          HLS_GT_MODE: all
         run: python -m pytest tests/ -m integration -q --tb=short
 
   alert-on-failure:

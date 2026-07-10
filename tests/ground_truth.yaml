@@ -1,11 +1,23 @@
 # Human-validated record-count bounds for live portal checks.
-# Last reviewed: 2026-06-06. Widen ranges when a portal legitimately grows.
+# Last reviewed: 2026-07-10 (#662 — expanded beyond original 4 endpoints).
 #
 # Run: pytest tests/test_ground_truth.py -m integration
 # Also runs weekly in .github/workflows/integration-weekly.yml
+#
+# Filters (optional env):
+#   HLS_GT_MODE=all     — every case (default; weekly CI)
+#   HLS_GT_MODE=core    — fast core set only (Bloom/PDF/MTC/HouseKeys sample)
+#   HLS_GT_MODE=rotate  — core + half of expand, alternating by ISO week
+#   HLS_GT_NAMES=a,b    — explicit case name list (overrides mode)
+#
+# tier: core = longstanding weekly; expand = adapter-family coverage added #662
+# family: adapter/platform label for docs (not used by routing)
 
 targets:
+  # --- core (original weekly smoke) ---
   - name: san_jose_bloom
+    family: bloom
+    tier: core
     method: extract_target
     authority: City of San José
     url: https://housing.sanjoseca.gov/listings
@@ -13,6 +25,8 @@ targets:
     max_records: 120
 
   - name: gilroy_pdf
+    family: pdf
+    tier: core
     method: extract_target
     authority: City of Gilroy
     url: https://www.cityofgilroy.org/DocumentCenter/View/16518
@@ -20,6 +34,8 @@ targets:
     max_records: 40
 
   - name: santa_clara_mtc
+    family: bloom
+    tier: core
     method: extract_target
     authority: City of Santa Clara
     url: https://housingbayarea.mtc.ca.gov/listings
@@ -27,6 +43,8 @@ targets:
     max_records: 20
 
   - name: morgan_hill_housekeys
+    family: housekeys
+    tier: core
     method: scrape_target
     min_records: 1
     max_records: 1
@@ -40,7 +58,10 @@ targets:
       administrator_phone: ""
       administrator_contact: ""
 
+  # --- expand: vendor portfolios (HTTP, high inventory) ---
   - name: midpen_portfolio
+    family: midpen
+    tier: expand
     method: scrape_target
     min_records: 35
     max_records: 55
@@ -55,6 +76,8 @@ targets:
       administrator_contact: ""
 
   - name: jsco_portfolio
+    family: john_stewart
+    tier: expand
     method: scrape_target
     min_records: 55
     max_records: 80
@@ -69,6 +92,8 @@ targets:
       administrator_contact: ""
 
   - name: charities_portfolio
+    family: charities_housing
+    tier: expand
     method: scrape_target
     min_records: 40
     max_records: 55
@@ -79,5 +104,135 @@ targets:
       notes: ""
       administrator: ""
       administrator_url: ""
+      administrator_phone: ""
+      administrator_contact: ""
+
+  - name: first_housing_portfolio
+    family: first_housing
+    tier: expand
+    method: scrape_target
+    min_records: 15
+    max_records: 30
+    target:
+      authority: First Community Housing (portfolio)
+      url: https://www.firsthousing.org/portfolio
+      scraping_measures: first_housing,native_requests
+      notes: ""
+      administrator: First Community Housing
+      administrator_url: https://www.firsthousing.org/
+      administrator_phone: ""
+      administrator_contact: ""
+
+  - name: eden_portfolio
+    family: eden
+    tier: expand
+    method: scrape_target
+    min_records: 25
+    max_records: 50
+    target:
+      authority: Eden Housing (Santa Clara County portfolio)
+      url: https://edenhousing.org/about-us/all-properties/all-properties-list/?_sft_county=santa-clara
+      scraping_measures: eden,native_requests
+      notes: ""
+      administrator: Eden Housing
+      administrator_url: https://edenhousing.org/
+      administrator_phone: ""
+      administrator_contact: ""
+
+  - name: eah_portfolio
+    family: eah
+    tier: expand
+    method: scrape_target
+    min_records: 20
+    max_records: 40
+    target:
+      authority: EAH Housing (Santa Clara County portfolio)
+      url: https://www.eahhousing.org/apartment-search-result-never-delete/
+      scraping_measures: eah,native_requests
+      notes: ""
+      administrator: EAH Housing
+      administrator_url: https://www.eahhousing.org/
+      administrator_phone: ""
+      administrator_contact: ""
+
+  # --- expand: municipal GIS + SCCHA directory ---
+  - name: sunnyvale_gis
+    family: gis
+    tier: expand
+    method: scrape_target
+    min_records: 30
+    max_records: 55
+    target:
+      authority: City of Sunnyvale
+      url: https://gis.sunnyvale.ca.gov/arcgis/rest/services/CDD/AffordableHousing/MapServer/0/query
+      scraping_measures: gis,native_requests
+      notes: ""
+      administrator: ""
+      administrator_url: ""
+      administrator_phone: ""
+      administrator_contact: ""
+
+  - name: cupertino_gis
+    family: gis
+    tier: expand
+    method: scrape_target
+    min_records: 5
+    max_records: 25
+    target:
+      authority: City of Cupertino
+      url: https://www.cupertino.gov/Your-City/Departments/Community-Development/Housing/BMR-Program-Overview
+      scraping_measures: gis,native_requests
+      notes: ""
+      administrator: Rise Housing
+      administrator_url: https://www.risehousing.com/applicants-cupertino-bmr-rental
+      administrator_phone: ""
+      administrator_contact: ""
+
+  - name: sccha_properties_directory
+    family: john_stewart
+    tier: expand
+    method: scrape_target
+    min_records: 20
+    max_records: 45
+    target:
+      authority: Santa Clara County Housing Authority (SCCHA) Properties Directory
+      url: https://www.scchousingauthority.org/section-8/for-participants/for-new-applicants/properties-list/
+      scraping_measures: john_stewart,native_requests,html_cards
+      notes: ""
+      administrator: ""
+      administrator_url: ""
+      administrator_phone: ""
+      administrator_contact: ""
+
+  # --- expand: Alta + second HouseKeys city ---
+  - name: alta_palo_alto
+    family: alta
+    tier: expand
+    method: scrape_target
+    min_records: 5
+    max_records: 50
+    target:
+      authority: City of Palo Alto
+      url: https://www.paloalto.gov/Departments/Planning-Development-Services/Housing-Policies-Projects/Below-Market-Rate-Housing
+      scraping_measures: alta
+      notes: ""
+      administrator: Alta Housing
+      administrator_url: https://altahousing.org/
+      administrator_phone: ""
+      administrator_contact: ""
+
+  - name: milpitas_housekeys
+    family: housekeys
+    tier: expand
+    method: scrape_target
+    min_records: 1
+    max_records: 1
+    target:
+      authority: City of Milpitas
+      url: https://www.milpitas.gov/1303/Below-Market-Rate-BMR-Homeownership-Prog
+      scraping_measures: delegated_administrator,housekeys,notification_based
+      notes: ""
+      administrator: HouseKeys
+      administrator_url: https://www.housekeys24.com/
       administrator_phone: ""
       administrator_contact: ""
