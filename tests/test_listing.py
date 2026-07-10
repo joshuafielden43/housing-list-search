@@ -200,12 +200,15 @@ class TestListingSeamStability:
         assert row1["url"].startswith("hls:prop:")
         assert row2["url"].startswith("hls:prop:")
 
-    def test_canonical_listing_value_type_roundtrip(self):
-        from housing_list_search.listing import CanonicalListing
+    def test_listing_to_row_returns_plain_dict_shape(self):
+        """#1062: canonical rows are dicts from listing_to_row — no parallel value type."""
         d = listing_to_row({"authority": "T", "property_name": "P", "url": "https://x"})
-        # Construct minimal and verify to_dict preserves core + produces dict
-        cl = CanonicalListing(authority=d["authority"], property_name=d["property_name"], url=d["url"])
-        out = cl.to_dict()
-        assert out["authority"] == "T"
-        assert out["property_name"] == "P"
-        assert isinstance(out, dict)
+        assert isinstance(d, dict)
+        assert d["authority"] == "T"
+        assert d["property_name"] == "P"
+        assert d["url"] == "https://x"
+        assert d.get("scrape_date")
+        # CanonicalListing was deleted (half-depth ceremony only)
+        import housing_list_search.listing as listing_mod
+
+        assert not hasattr(listing_mod, "CanonicalListing")

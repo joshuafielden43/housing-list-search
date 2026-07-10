@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
@@ -19,44 +18,8 @@ from housing_list_search.status_labels import resolve_status_label
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class CanonicalListing:
-    """Proper value type for canonical rows after the Listing seam.
-
-    Replaces pure dict coercion for better type safety, easier evolution,
-    and clearer contract (see #983 critique). to_dict() maintains full
-    backward compatibility with DB, CSV, freshness, etc. callers.
-    """
-    authority: str
-    property_name: str
-    url: str
-    address: str = ""
-    phone: str = ""
-    email: str = ""
-    deadline: str = ""
-    bedrooms: str = ""
-    income_limits: str = ""
-    unit_types: str = ""
-    eligibility_flags: str = ""
-    status: str = ""
-    listing_status: str = ""
-    notes: str = ""
-    confidence: str = ""
-    administrator: str = ""
-    administrator_url: str = ""
-    administrator_phone: str = ""
-    administrator_contact: str = ""
-    last_seen: str = ""
-    first_seen: str = ""
-    source: str = ""
-    source_url: str = ""
-    expires_at: str = ""
-    scrape_date: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
+# Canonical row shape is a plain dict from listing_to_row() — not a parallel
+# value type. #1062 deleted CanonicalListing (half-depth: built only to to_dict()).
 ListingKey = tuple[str, str, str]
 
 _SURROGATE_PREFIX = "hls:"
@@ -329,35 +292,33 @@ def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
     authority, property_name = _canon_auth_name(raw)
     url = _persistence_url(raw)
 
-    # Build via value type for seam strength (#983), then to_dict for compat
-    listing = CanonicalListing(
-        authority=authority,
-        property_name=property_name,
-        url=url,
-        address=(raw.get("address") or "").strip(),
-        phone=(raw.get("phone") or "").strip(),
-        email=(raw.get("email") or "").strip(),
-        deadline=(raw.get("deadline") or "").strip(),
-        bedrooms=str(raw.get("bedrooms") or "").strip(),
-        income_limits=str(raw.get("income_limits") or "").strip(),
-        unit_types=str(raw.get("unit_types") or raw.get("bedrooms") or "").strip(),
-        eligibility_flags=eligibility_flags,
-        status=resolve_status_label(raw),
-        listing_status=(raw.get("listing_status") or "").lower().strip(),
-        notes=notes,
-        confidence=str(raw.get("confidence") or "").strip(),
-        administrator=str(raw.get("administrator") or "").strip(),
-        administrator_url=str(raw.get("administrator_url") or "").strip(),
-        administrator_phone=str(raw.get("administrator_phone") or "").strip(),
-        administrator_contact=str(raw.get("administrator_contact") or "").strip(),
-        last_seen=raw.get("last_seen") or ts,
-        first_seen=raw.get("first_seen") or ts,
-        source=(raw.get("source") or "").strip(),
-        source_url=(raw.get("source_url") or raw.get("document_url") or "").strip(),
-        expires_at=(raw.get("expires_at") or "").strip(),
-        scrape_date=ts,
-    )
-    return listing.to_dict()
+    return {
+        "authority": authority,
+        "property_name": property_name,
+        "url": url,
+        "address": (raw.get("address") or "").strip(),
+        "phone": (raw.get("phone") or "").strip(),
+        "email": (raw.get("email") or "").strip(),
+        "deadline": (raw.get("deadline") or "").strip(),
+        "bedrooms": str(raw.get("bedrooms") or "").strip(),
+        "income_limits": str(raw.get("income_limits") or "").strip(),
+        "unit_types": str(raw.get("unit_types") or raw.get("bedrooms") or "").strip(),
+        "eligibility_flags": eligibility_flags,
+        "status": resolve_status_label(raw),
+        "listing_status": (raw.get("listing_status") or "").lower().strip(),
+        "notes": notes,
+        "confidence": str(raw.get("confidence") or "").strip(),
+        "administrator": str(raw.get("administrator") or "").strip(),
+        "administrator_url": str(raw.get("administrator_url") or "").strip(),
+        "administrator_phone": str(raw.get("administrator_phone") or "").strip(),
+        "administrator_contact": str(raw.get("administrator_contact") or "").strip(),
+        "last_seen": raw.get("last_seen") or ts,
+        "first_seen": raw.get("first_seen") or ts,
+        "source": (raw.get("source") or "").strip(),
+        "source_url": (raw.get("source_url") or raw.get("document_url") or "").strip(),
+        "expires_at": (raw.get("expires_at") or "").strip(),
+        "scrape_date": ts,
+    }
 
 
 def listing_identity(item: Any) -> ListingKey:
