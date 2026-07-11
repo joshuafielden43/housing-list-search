@@ -161,7 +161,7 @@ def norm_address(addr: str) -> str:
 
 def _persistence_url(raw: dict[str, Any]) -> str:
     """
-    URL used for listing identity (DB unique key, changelog, freshness).
+    URL used for listing identity (DB unique key, changelog, Disappearance).
 
     When adapters have no per-property link, derive a stable surrogate so
     distinct records do not collide on empty url.

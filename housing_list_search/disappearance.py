@@ -25,7 +25,6 @@ from typing import Any, Literal
 from housing_list_search.listing import ListingKey, canonical_authority, listing_identity
 from housing_list_search.status_labels import resolve_status_label
 
-# Re-export for callers that historically took ListingKey from freshness.
 __all__ = [
     "ListingKey",
     "MACHINE_CHANGE_TYPES",

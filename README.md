@@ -90,7 +90,7 @@ housing_list_search/
   pipeline.py        # Run orchestration: scrape → dedupe → persist → export
   dispatch.py        # DispatchRegistry + collapsed Target Scrape seam (scrape_target)
   listing.py         # Canonical listing_to_row() at persistence seam
-  freshness.py       # Unified diff.csv ↔ changelog identity
+  disappearance.py   # Machine Diff labels + staff projection (ADR-0001)
   db.py              # DatabaseManager: upsert, export_csv, export_diff_csv, prune
   scraper.py         # polite_get() — rate-limited, robots.txt-respecting HTTP
   registry.py        # TARGETS.md → SQLite targets table with sanitization nanny

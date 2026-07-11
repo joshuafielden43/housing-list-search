@@ -196,7 +196,7 @@ When adding a new adapter:
 
 ## Listing shape (listing.py)
 
-The deep module at the canonical transformation seam. All adapter output crosses `canonicalize_listings()` / `listing_to_row()` (single coercion + idempotent) before dedupe/identity/persist. `listing_identity()` (and `key_from_diff_row`) provide the canonical key. Surrogate URLs, authority canonicalization, and address normalization live here for locality. Callers (db, dedupe, freshness, disappearance, pipeline, changelog) consume canonical rows or keys; no parallel field-mapping paths. Do not reach low-level helpers from outside.
+The deep module at the canonical transformation seam. All adapter output crosses `canonicalize_listings()` / `listing_to_row()` (single coercion + idempotent) before dedupe/identity/persist. `listing_identity()` (and `key_from_diff_row`) provide the canonical key. Surrogate URLs, authority canonicalization, and address normalization live here for locality. Callers (db, dedupe, disappearance, pipeline, changelog) consume canonical rows or keys; no parallel field-mapping paths. Do not reach low-level helpers from outside.
 
 ## PDF extraction (extraction/pdf.py)
 
@@ -206,7 +206,7 @@ Outbound access goes through `access.py` (`polite_get`, `safe_goto`, `browser_pa
 
 ## Disappearance (disappearance.py + changelog.py)
 
-Listing identity is `(authority, property_name, url)` everywhere. Machine `diff.csv` labels (`NEW` / `UPDATED` / `STALE` / `SCRAPE_FAILED`) come from pure `classify_machine_change` in `disappearance.py`; staff `changelog_diffs` project from those labels via `project_disappearance` (ADR-0001). `db.export_diff_csv` / `diff_counts` are storage adapters over the same rules. `freshness.py` is a compat re-export. `run_prev.csv` snapshots the deduped run set (includes `url` column) — not `current_full.csv`.
+Listing identity is `(authority, property_name, url)` everywhere. Machine `diff.csv` labels (`NEW` / `UPDATED` / `STALE` / `SCRAPE_FAILED`) come from pure `classify_machine_change` in `disappearance.py`; staff `changelog_diffs` project from those labels via `project_disappearance` (ADR-0001). `db.export_diff_csv` / `diff_counts` are storage adapters over the same rules. Do not reintroduce `freshness.py` as a re-export shim. `run_prev.csv` snapshots the deduped run set (includes `url` column) — not `current_full.csv`.
 
 ## Run artifacts
 
@@ -260,8 +260,7 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row / listing_identity; all shape, surrogate, authority canon, identity here |
 
-| `housing_list_search/disappearance.py` | Deep module: machine Diff labels + staff Disappearance projection (ADR-0001) |
-| `housing_list_search/freshness.py` | Compat shim re-exporting helpers from disappearance |
+| `housing_list_search/disappearance.py` | Deep module: machine Diff labels + staff Disappearance projection (ADR-0001). No `freshness.py` shim |
 | `housing_list_search/schema.py` | Sole owner of `housing_registry.db` DDL (`targets`, `housing_records`, `run_history`) |
 | `housing_list_search/sqlite_config.py` | `DEFAULT_DB_PATH`, WAL + busy-timeout connection helper |
 | `housing_list_search/db.py` | DatabaseManager: upsert_listings, export_csv, export_diff_csv, prune |
