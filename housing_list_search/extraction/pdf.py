@@ -133,14 +133,16 @@ def _fetch_pdf(url: str, timeout: int = 30) -> bytes:
 
 def _iter_pdf_page_text(pdf_bytes: bytes) -> list[tuple[int, str]]:
     """Extract (page_number, page_text) via pdfplumber."""
-    if pdfplumber is None:
+    if pdfplumber is None or not pdf_bytes:
         return []
     pages: list[tuple[int, str]] = []
     try:
-        with pdfplumber.open(stream=pdf_bytes) as pdf:
+        # Must be a file-like object — raw bytes as stream= fails silently.
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             for page_idx, page in enumerate(pdf.pages, start=1):
                 pages.append((page_idx, page.extract_text() or ""))
-    except Exception:
+    except Exception as exc:
+        logger.debug("[pdf] page text extract failed: %s", exc)
         return []
     return pages
 
@@ -459,6 +461,10 @@ def _extract_flyer_page(
     t_lower = t.lower()
     records: list[HousingRecord] = []
 
+    # Multi-property BMR contact cards (Los Altos) must not collapse to one flyer row.
+    if _looks_like_bmr_contact_directory(t):
+        return []
+
     if "apartments" not in t_lower and "manor" not in t_lower:
         return []
 
@@ -575,6 +581,200 @@ def _extract_flyer_pages_from_pdf(
     return records
 
 
+# Full street + city + CA ZIP (Los Altos BMR rental contact cards, two-column PDF text).
+_CA_ADDR_RE = re.compile(
+    r"\d{1,5}\s+[A-Za-z0-9 .#'/-]+?"
+    r"(?:Ave(?:nue)?|St(?:reet)?|Rd|Road|Dr(?:ive)?|Blvd|Boulevard|Way|Ln|Lane|"
+    r"Ct|Court|Pl(?:ace)?|Cir(?:cle)?|Real)\.?"
+    r",?\s*[A-Za-z .]+?,?\s*CA\s*\d{5}",
+    re.I,
+)
+_COMING_SOON_RE = re.compile(
+    r"COMING\s+SOON:\s*([^,\n]+?),\s*(\d{1,5}\s+.+?CA\s*\d{5})",
+    re.I,
+)
+
+
+def _looks_like_bmr_contact_directory(text: str) -> bool:
+    """True for multi-property BMR contact flyers (e.g. Los Altos View/2785)."""
+    lower = (text or "").lower()
+    if "bmr" not in lower and "below market" not in lower:
+        return False
+    if "wait list" not in lower and "waitlist" not in lower:
+        # still allow if many CA addresses (directory without waitlist wording)
+        if len(_CA_ADDR_RE.findall(text or "")) < 2:
+            return False
+    return len(_CA_ADDR_RE.findall(text or "")) >= 2
+
+
+def _split_side_by_side_names(name_line: str, n: int) -> list[str]:
+    """Split a two-column name line into n property titles."""
+    name_line = (name_line or "").strip()
+    if n <= 1:
+        return [name_line] if name_line else [""]
+    words = name_line.split()
+    if not words:
+        return [""] * n
+    # "The Terraces 569 Lassen Street" — second column starts with a digit
+    digit_idx = next((i for i, w in enumerate(words) if w[:1].isdigit()), None)
+    if n == 2 and digit_idx is not None and digit_idx > 0:
+        return [" ".join(words[:digit_idx]), " ".join(words[digit_idx:])]
+    if n == 2 and len(words) >= 4:
+        # "Los Altos Gardens Fremont Avenue" → first 3 words | rest
+        if words[0] in {"Los", "San", "The", "El", "La"}:
+            return [" ".join(words[:3]), " ".join(words[3:])]
+        return [" ".join(words[:2]), " ".join(words[2:])]
+    # Even split of words as last resort
+    chunk = max(1, len(words) // n)
+    out: list[str] = []
+    for i in range(n):
+        start = i * chunk
+        end = len(words) if i == n - 1 else (i + 1) * chunk
+        out.append(" ".join(words[start:end]))
+    return out
+
+
+def extract_bmr_contact_directory(
+    text: str,
+    *,
+    authority: str = "",
+    document_url: str = "",
+    page_number: int = 1,
+) -> list[HousingRecord]:
+    """
+    Parse multi-property BMR rental contact cards from prose/two-column PDF text.
+
+    Los Altos DocumentCenter View/2785 layout: intro + paired name/address/phone
+    lines (columns merged by pdfplumber) + optional COMING SOON line.
+    These are waitlist/contact directory rows — not live unit counts.
+    """
+    if not text or not _looks_like_bmr_contact_directory(text):
+        return []
+
+    records: list[HousingRecord] = []
+    coming = list(_COMING_SOON_RE.finditer(text))
+    # Strip coming-soon spans so address pairing ignores them
+    work = text
+    for m in reversed(coming):
+        work = work[: m.start()] + work[m.end() :]
+
+    addrs = list(_CA_ADDR_RE.finditer(work))
+    phones = list(PHONE_RE.finditer(work))
+    emails = list(EMAIL_RE.finditer(work))
+
+    if len(addrs) < 2:
+        return []
+
+    # Group consecutive addresses that share a line (two-column row).
+    # Map each address to the non-empty line immediately above the first address
+    # of its row, then split names for that row.
+    i = 0
+    phone_i = 0
+    email_i = 0
+    while i < len(addrs):
+        row_addrs = [addrs[i]]
+        # Same line index = side-by-side pair
+        line_no = work[: addrs[i].start()].count("\n")
+        j = i + 1
+        while j < len(addrs) and work[: addrs[j].start()].count("\n") == line_no:
+            row_addrs.append(addrs[j])
+            j += 1
+
+        # Name line: last non-empty line before this address row
+        prefix = work[: row_addrs[0].start()]
+        name_candidates = [ln.strip() for ln in prefix.splitlines() if ln.strip()]
+        name_line = name_candidates[-1] if name_candidates else ""
+        # Skip boilerplate name lines
+        if name_line.lower().startswith("please contact") or "wait list" in name_line.lower():
+            name_line = name_candidates[-2] if len(name_candidates) >= 2 else ""
+
+        names = _split_side_by_side_names(name_line, len(row_addrs))
+        for k, am in enumerate(row_addrs):
+            name = (names[k] if k < len(names) else "").strip() or "Unknown Property"
+            # Drop program headers mistaken as names
+            if name.upper().startswith("LOS ALTOS BMR") or "PROGRAM" in name.upper() and "GARDEN" not in name.upper():
+                if "Gardens" not in name and "Project" not in name:
+                    name = "Unknown Property"
+            phone = phones[phone_i].group(0) if phone_i < len(phones) else ""
+            phone_i += 1
+            email = ""
+            # Prefer email whose position is after this address and before next row
+            if email_i < len(emails):
+                em = emails[email_i]
+                next_start = (
+                    row_addrs[k + 1].start()
+                    if k + 1 < len(row_addrs)
+                    else (addrs[j].start() if j < len(addrs) else len(work))
+                )
+                if am.start() < em.start() < next_start + 120:
+                    # pdfplumber sometimes prefixes www. on email-like tokens
+                    email = re.sub(r"^www\.", "", em.group(0), flags=re.I)
+                    email_i += 1
+            records.append(
+                HousingRecord(
+                    authority=authority,
+                    property_name=name,
+                    address=am.group(0).strip(),
+                    phone=phone,
+                    email=email,
+                    confidence="medium",
+                    listing_status="waitlist",
+                    notes="BMR rental contact directory; waitlist via on-site property manager",
+                    document_url=document_url,
+                    source_url=document_url,
+                    page_number=page_number,
+                    raw_line=name_line,
+                )
+            )
+        i = j
+
+    for m in coming:
+        records.append(
+            HousingRecord(
+                authority=authority,
+                property_name=m.group(1).strip(),
+                address=m.group(2).strip(),
+                confidence="medium",
+                listing_status="coming_soon",
+                notes="COMING SOON (BMR rental flyer)",
+                document_url=document_url,
+                source_url=document_url,
+                page_number=page_number,
+                raw_line=m.group(0),
+            )
+        )
+
+    # Require at least 2 real properties (not just coming soon)
+    named = [r for r in records if r.property_name and r.property_name != "Unknown Property"]
+    if len(named) < 2 and not any(r.listing_status == "coming_soon" for r in records):
+        return []
+    if len(records) < 2:
+        return []
+    return records
+
+
+def _extract_contact_directory_from_pdf(
+    pdf_bytes: bytes,
+    authority: str,
+    document_url: str,
+) -> list[HousingRecord]:
+    """Multi-property BMR contact-card pages (Los Altos rental flyer style)."""
+    records: list[HousingRecord] = []
+    try:
+        for page_idx, text in _iter_pdf_page_text(pdf_bytes):
+            page_records = extract_bmr_contact_directory(
+                text,
+                authority=authority,
+                document_url=document_url,
+                page_number=page_idx,
+            )
+            if page_records:
+                records.extend(page_records)
+    except Exception as exc:
+        logger.warning("[pdf] Contact-directory extraction failed for %s: %s", document_url, exc)
+    return records
+
+
 def extract_records_from_pdf(
     pdf_url: str,
     authority: str = "City of Gilroy",
@@ -582,8 +782,8 @@ def extract_records_from_pdf(
 ) -> list[HousingRecord]:
     """
     High-level entry point.
-    Tries table extraction first, then flyer pages, then line-by-line parsing,
-    then marker-pdf (optional, when installed).
+    Tries table extraction first, then flyer pages, then BMR contact-directory
+    prose cards, then line-by-line parsing, then marker-pdf (optional).
 
     Fetch/policy failures raise SourceFetchError so dispatch marks SCRAPE_FAILED
     (#1076). A successful PDF with zero parseable rows still returns [] (real empty).
@@ -623,6 +823,18 @@ def extract_records_from_pdf(
             "[pdf] Flyer extraction produced %d records from %s", len(flyer_records), real_url
         )
         return flyer_records
+
+    directory_records = _extract_contact_directory_from_pdf(pdf_bytes, authority, real_url)
+    if directory_records:
+        if not include_low_confidence:
+            directory_records = [r for r in directory_records if r.confidence != "low"]
+        if directory_records:
+            logger.info(
+                "[pdf] BMR contact-directory extraction produced %d records from %s",
+                len(directory_records),
+                real_url,
+            )
+            return directory_records
 
     text_lines = extract_text_lines_from_pdf(pdf_bytes)
     records: list[HousingRecord] = []
