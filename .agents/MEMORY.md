@@ -58,7 +58,7 @@ Report: `$TMPDIR/architecture-review-20260709-162428.html` (temp; not in repo).
 
 | Vikunja | Topic | Priority |
 |---------|-------|----------|
-| **#1059** | Deepen Disappearance (#1+#3) — machine Diff labels + staff projection | **done** (pure classify; freshness shim) |
+| **#1059** | Deepen Disappearance (#1+#3) — machine Diff labels + staff projection | **done** (pure classify; freshness.py shim deleted) |
 | **#1060** | Make Access deep (#2) | **done** (adapters import access only) |
 | **#1061** | RunReview / Needs Review spine (#4) | **done** (assess→build→surface) |
 | **#1062** | Finish or delete CanonicalListing (#5) | **done** (deleted half-depth type) |
