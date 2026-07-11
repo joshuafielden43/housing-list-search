@@ -53,7 +53,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 
 | Term | Meaning |
 |------|---------|
-| **Access** | `access.py` — sole outbound seam (HTTP + browser): `polite_get` / `polite_post` / `browser_page` / `safe_goto`; policy, robots, throttle. Implementation: `scraper.py`, `playwright_nav.py` (private) |
+| **Access** | `access.py` — sole outbound seam (HTTP + browser): `polite_get` / `polite_post` / `browser_page` / `safe_goto`; policy, robots, throttle. Implementation: `scraper.py`, `playwright_nav.py` (private). Callers and public tests import Access only (#1073) |
+| **Machine Persist canonicalize** | `persist_run` owns `canonicalize_listings` once; `upsert_listings(..., canonicalize=False)` on the Run path so the Store does not re-own Listing shape |
 | **Playwright egress policy** | Every `browser_page` installs a route filter (#775 / #1082): navigations + data-carrying types (document/xhr/fetch/script) use DNS-resolved URL policy; static assets host/IP-only. Response spies (Bloom) DNS-check response URLs |
 | **polite_get** | Approved HTTP fetch via Access; robots.txt + delay |
 | **no_public_list** | Intentional skip — no ethical public inventory |

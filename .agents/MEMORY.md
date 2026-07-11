@@ -48,7 +48,7 @@ Report: `$TMPDIR/architecture-review-20260710-090510.html` (temp; not in repo).
 | **#1070** | Machine Persist — extract `pipeline._persist` → `persist_run` | **done** (`machine_persist.py`) |
 | **#1071** | Cross-source mirror confirm locality — `deduplicate_for_run` | **done** (`DedupeResult`) |
 | **#1072** | Split Inventory Store vs Operator Maintenance (`db.py`) | open (worth exploring) |
-| **#1073** | Narrow Access public interface; retarget tests | open (worth exploring) |
+| **#1073** | Narrow Access public interface; retarget tests | **done** (tight `__all__`; public tests → access; white-box scraper only) |
 | **#1074** | Paginated inventory walk helper (#776) | **done** (`inventory_pagination.walk_paginated_inventory`) |
 | **#1075** | Machine Diff export module (optional) | open (speculative) |
 

@@ -405,3 +405,32 @@ def test_full_run_id_round_trip(temp_db):
     mgr.log_full_run("20260704T120000", rows_after=10)
     mgr.log_full_run("20260704T130000", rows_after=12)
     assert mgr.get_previous_full_run_id() == "20260704T130000"
+
+
+def test_upsert_skips_re_canonicalize_when_flag_false(temp_db, monkeypatch):
+    """Run path: Machine Persist already canonicalized — Store must not re-own shape."""
+    import housing_list_search.db as db_mod
+    from housing_list_search.listing import listing_to_row
+
+    calls: list[int] = []
+    real = db_mod.canonicalize_listings
+
+    def wrap(listings, **kwargs):
+        calls.append(1)
+        return real(listings, **kwargs)
+
+    monkeypatch.setattr(db_mod, "canonicalize_listings", wrap)
+    row = listing_to_row(
+        {"authority": "City C", "property_name": "Oak", "url": "https://example.com/oak"}
+    )
+    temp_db.upsert_listings([row], run_id="run-canon", canonicalize=False)
+    assert calls == []
+    assert temp_db.get_record_count() == 1
+
+    temp_db.upsert_listings(
+        [{"authority": "City D", "property_name": "Elm", "url": "https://example.com/elm"}],
+        run_id="run-raw",
+        canonicalize=True,
+    )
+    assert calls == [1]
+    assert temp_db.get_record_count() == 2

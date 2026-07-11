@@ -655,7 +655,7 @@ class TestBloomAPIPagination:
     def test_incomplete_pagination_raises_source_fetch_error_from_extract(self):
         """#1058: extract path must not report partial feed as full success."""
         import housing_list_search.extraction.bloom_housing as bh
-        from housing_list_search.scraper import SourceFetchError
+        from housing_list_search.access import SourceFetchError
 
         partial = [
             {

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from housing_list_search.access import URLPolicyError, reset_host_throttle
 from housing_list_search.playwright_nav import (
     assert_playwright_egress_url,
     attach_playwright_egress_policy,
@@ -15,7 +16,6 @@ from housing_list_search.playwright_nav import (
     safe_goto,
     validated_goto_url,
 )
-from housing_list_search.scraper import URLPolicyError, reset_host_throttle
 
 
 def test_validated_goto_url_accepts_public_https():

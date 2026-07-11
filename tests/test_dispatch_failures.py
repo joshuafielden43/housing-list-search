@@ -1,7 +1,7 @@
 """Dispatch failure propagation when adapters error but return empty."""
 
+from housing_list_search.access import SourceFetchError
 from housing_list_search.dispatch import TargetContext, TargetScrapeResult, dispatch_target
-from housing_list_search.scraper import SourceFetchError
 
 
 def _failing_civicplus(_ctx: TargetContext) -> list[dict]:

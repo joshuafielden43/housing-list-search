@@ -252,8 +252,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `docs/adr/` | Architecture decision records (disappearance semantics, Suspicious Zero) |
 | `housing_list_search/dispatch.py` | Unified dispatch registry (measures + URL extractors) |
 | `housing_list_search/dispatch.py` | DispatchRegistry + collapsed Target Scrape seam (scrape_target → TargetScrapeResult; the core of "scrape a Target") |
-| `housing_list_search/access.py` | Deep outbound Access seam — sole public HTTP + browser import surface (#1060) |
-| `housing_list_search/scraper.py` | HTTP impl behind Access (private; do not import from adapters) |
+| `housing_list_search/access.py` | Deep outbound Access seam — sole public HTTP + browser import surface (#1060/#1073). Adapters and public tests import here only |
+| `housing_list_search/scraper.py` | HTTP impl behind Access (private; white-box tests only) |
 | `housing_list_search/pipeline.py` | Run orchestration: collect → Machine Persist → Staff Publish |
 | `housing_list_search/machine_persist.py` | Machine Persist: canonicalize, dedupe + mirror confirm, upsert, machine CSVs (#1070/#1071) |
 | `housing_list_search/staff_publish.py` | Staff Publish: partial/full artifact policy, run_prev baseline, changelog, daily_summary (#1063) |

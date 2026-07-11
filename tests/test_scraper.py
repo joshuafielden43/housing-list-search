@@ -1,5 +1,9 @@
 """
-Unit tests for scraper.py robots.txt enforcement and polite_get behaviour.
+Access public surface: robots, throttle, polite_get / polite_post.
+
+Public symbols imported from housing_list_search.access. Patches target
+scraper.py (private implementation where names are resolved). Private-only
+helpers (RobotsEntry, wait_for_host, …) still import from scraper.
 
 All tests are pure unit tests — no real network calls.
 """
@@ -10,7 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from housing_list_search.scraper import RobotsEntry, clear_robots_cache
+from housing_list_search.access import clear_robots_cache
+from housing_list_search.scraper import RobotsEntry
 
 # ---------------------------------------------------------------------------
 # is_allowed_by_robots
@@ -23,7 +28,8 @@ class TestHostThrottleAtomic:
         import threading
         import time
 
-        from housing_list_search.scraper import reset_host_throttle, wait_for_host
+        from housing_list_search.access import reset_host_throttle
+        from housing_list_search.scraper import wait_for_host
 
         reset_host_throttle()
         starts: list[float] = []
@@ -48,13 +54,13 @@ class TestHostThrottleAtomic:
 
 class TestSourceFetchError:
     def test_require_response_passes_through(self):
-        from housing_list_search.scraper import require_response
+        from housing_list_search.access import require_response
 
         resp = object()
         assert require_response(resp, "https://example.gov") is resp
 
     def test_require_response_raises_on_none(self):
-        from housing_list_search.scraper import SourceFetchError, require_response
+        from housing_list_search.access import SourceFetchError, require_response
 
         try:
             require_response(None, "https://example.gov/x", context="eah")
@@ -65,7 +71,7 @@ class TestSourceFetchError:
             assert exc.partial == []
 
     def test_source_fetch_error_carries_partial(self):
-        from housing_list_search.scraper import SourceFetchError
+        from housing_list_search.access import SourceFetchError
 
         err = SourceFetchError("mid-page fail", partial=[{"property_name": "A"}])
         assert err.partial == [{"property_name": "A"}]
@@ -94,7 +100,7 @@ class TestRobotsRespect:
         return mock_resp
 
     def test_disallowed_url_returns_false(self):
-        from housing_list_search.scraper import is_allowed_by_robots
+        from housing_list_search.access import is_allowed_by_robots
 
         mock_rp = self._make_rp(False)
         entry = RobotsEntry(parser=mock_rp, treat_as_allowed=False)
@@ -103,7 +109,7 @@ class TestRobotsRespect:
         assert result is False
 
     def test_allowed_url_returns_true(self):
-        from housing_list_search.scraper import is_allowed_by_robots
+        from housing_list_search.access import is_allowed_by_robots
 
         mock_rp = self._make_rp(True)
         entry = RobotsEntry(parser=mock_rp, treat_as_allowed=False)
@@ -115,7 +121,7 @@ class TestRobotsRespect:
         """Timeout / WAF block on robots.txt → treat as allowed (RFC-compliant)."""
         import requests as _req
 
-        from housing_list_search.scraper import is_allowed_by_robots
+        from housing_list_search.access import is_allowed_by_robots
 
         with patch(
             "housing_list_search.scraper.requests.get",
@@ -126,7 +132,7 @@ class TestRobotsRespect:
 
     def test_robots_url_constructed_from_origin(self):
         """robots.txt must be fetched from the scheme+host root, not a subpath."""
-        from housing_list_search.scraper import is_allowed_by_robots
+        from housing_list_search.access import is_allowed_by_robots
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -142,7 +148,7 @@ class TestRobotsRespect:
 
     def test_robots_403_on_fetch_treated_as_allowed(self):
         """WAF 403 on robots.txt fetch must not set disallow_all and block the site."""
-        from housing_list_search.scraper import is_allowed_by_robots
+        from housing_list_search.access import is_allowed_by_robots
 
         entry = RobotsEntry(parser=None, treat_as_allowed=True)
         with patch("housing_list_search.scraper.get_robots_entry", return_value=entry):
@@ -164,7 +170,7 @@ class TestPoliteGet:
 
     def test_disallowed_url_never_fetched(self):
         """polite_get must not issue an HTTP request when robots.txt Disallows."""
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         with (
             patch("housing_list_search.scraper.is_allowed_by_robots", return_value=False),
@@ -175,7 +181,7 @@ class TestPoliteGet:
         mock_get.assert_not_called()
 
     def test_allowed_url_is_fetched(self):
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -191,7 +197,7 @@ class TestPoliteGet:
         assert result._content == b"ok"
 
     def test_404_returns_none(self):
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         mock_resp = MagicMock()
         mock_resp.status_code = 404
@@ -205,7 +211,7 @@ class TestPoliteGet:
         assert result is None
 
     def test_403_returns_none(self):
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         mock_resp = MagicMock()
         mock_resp.status_code = 403
@@ -219,7 +225,7 @@ class TestPoliteGet:
         assert result is None
 
     def test_redirect_to_policy_blocked_target_returns_none(self):
-        from housing_list_search.scraper import URLPolicyError, polite_get
+        from housing_list_search.access import URLPolicyError, polite_get
 
         def allow_public_only(url, **kwargs):
             if "169.254" in url:
@@ -241,7 +247,7 @@ class TestPoliteGet:
         assert mock_get.call_count == 1
 
     def test_redirect_to_allowed_target_follows(self):
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         redirect = MagicMock()
         redirect.status_code = 302
@@ -264,7 +270,7 @@ class TestPoliteGet:
 
     def test_polite_get_accepts_and_forwards_headers(self):
         """#1051: optional headers= merge (Vikunja Bearer, etc.)."""
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -287,7 +293,7 @@ class TestPoliteGet:
 
     def test_cross_origin_redirect_strips_authorization(self):
         """#1056: Bearer must not follow a cross-origin Location."""
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         redirect = MagicMock()
         redirect.status_code = 302
@@ -319,7 +325,7 @@ class TestPoliteGet:
 
     def test_same_origin_redirect_keeps_authorization(self):
         """Same-origin redirect may keep auth (path-only Location)."""
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         redirect = MagicMock()
         redirect.status_code = 302
@@ -346,7 +352,7 @@ class TestPoliteGet:
 
     def test_cross_origin_redirect_strips_auth_on_post(self):
         """#1056 also applies to polite_post (Vikunja create/update)."""
-        from housing_list_search.scraper import polite_post
+        from housing_list_search.access import polite_post
 
         redirect = MagicMock()
         redirect.status_code = 302
@@ -375,7 +381,7 @@ class TestPoliteGet:
     def test_network_exception_returns_none(self):
         import requests as _req
 
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         with (
             patch("housing_list_search.scraper.is_allowed_by_robots", return_value=True),
@@ -390,7 +396,7 @@ class TestPoliteGet:
         assert result is None
 
     def test_private_ip_blocked_without_fetch(self):
-        from housing_list_search.scraper import polite_get
+        from housing_list_search.access import polite_get
 
         # The real policy in the consolidated scraper blocks private IPs
         # before any network call.
@@ -398,7 +404,7 @@ class TestPoliteGet:
         assert result is None
 
     def test_oversized_response_returns_none(self):
-        from housing_list_search.scraper import DEFAULT_MAX_RESPONSE_BYTES, polite_get
+        from housing_list_search.access import DEFAULT_MAX_RESPONSE_BYTES, polite_get
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200

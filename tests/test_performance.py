@@ -8,13 +8,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from housing_list_search.access import clear_robots_cache, reset_host_throttle
 from housing_list_search.pipeline import RunPipeline, max_target_workers
-from housing_list_search.scraper import (
+from housing_list_search.scraper import (  # private throttle/robots impl under test
     RobotsEntry,
-    clear_robots_cache,
     get_robots_entry,
     mark_host_fetched,
-    reset_host_throttle,
     wait_for_host,
 )
 
@@ -91,7 +90,7 @@ class TestRobotsCache:
         assert results[0] is results[1]
 
     def test_is_allowed_uses_cache(self):
-        from housing_list_search.scraper import is_allowed_by_robots
+        from housing_list_search.access import is_allowed_by_robots
 
         mock_rp = MagicMock()
         mock_rp.can_fetch.return_value = True

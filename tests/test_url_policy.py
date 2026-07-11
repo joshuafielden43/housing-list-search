@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from housing_list_search.scraper import URLPolicyError, is_safe_http_url, validate_http_url
+from housing_list_search.access import URLPolicyError, is_safe_http_url, validate_http_url
 
 
 class TestValidateHttpUrl:

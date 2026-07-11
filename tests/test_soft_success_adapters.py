@@ -142,7 +142,8 @@ class TestGisParseFail:
 class TestRobotsRedirectPolicy:
     def test_robots_fetch_uses_redirect_policy_not_blind_follow(self):
         """#1081: robots.txt must not requests.get(..., allow_redirects=True)."""
-        from housing_list_search.scraper import clear_robots_cache, get_robots_entry
+        from housing_list_search.access import clear_robots_cache
+        from housing_list_search.scraper import get_robots_entry
 
         clear_robots_cache()
         mock_resp = MagicMock()
@@ -167,11 +168,8 @@ class TestRobotsRedirectPolicy:
         clear_robots_cache()
 
     def test_robots_redirect_to_private_blocked(self):
-        from housing_list_search.scraper import (
-            RobotsEntry,
-            _fetch_robots_entry,
-            clear_robots_cache,
-        )
+        from housing_list_search.access import clear_robots_cache
+        from housing_list_search.scraper import RobotsEntry, _fetch_robots_entry
 
         clear_robots_cache()
         # First hop returns redirect to metadata; policy returns None

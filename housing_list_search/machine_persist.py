@@ -64,7 +64,8 @@ def persist_run(
     deduped = deduplicate_for_run(all_listings, canonical=True)
     survivors = deduped.survivors
 
-    counts = db.upsert_listings(survivors, run_id=run_id)
+    # Survivors are already listing_to_row shape — do not re-canonicalize in Store.
+    counts = db.upsert_listings(survivors, run_id=run_id, canonicalize=False)
     logger.info("DB upsert: %d inserted, %d updated", counts["inserted"], counts["updated"])
 
     mirrors_confirmed = 0

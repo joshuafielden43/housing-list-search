@@ -64,7 +64,7 @@ def test_list_open_tasks_passes_headers_to_polite_get(monkeypatch):
     import inspect
 
     import housing_list_search.vikunja_reverification as vr
-    from housing_list_search.scraper import polite_get
+    from housing_list_search.access import polite_get
 
     # Live signature must accept headers= (regression: TypeError before network)
     sig = inspect.signature(polite_get)

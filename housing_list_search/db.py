@@ -338,13 +338,24 @@ class DatabaseManager:
         except Exception:
             return 0
 
-    def upsert_listings(self, listings: list, run_id: str = "") -> dict:
+    def upsert_listings(
+        self,
+        listings: list,
+        run_id: str = "",
+        *,
+        canonicalize: bool = True,
+    ) -> dict:
         """
-        Insert or update housing_records from a list of plain dicts.
+        Insert or update housing_records from Listing rows.
 
         run_id: opaque string identifying this run (e.g. ISO timestamp). Used by
             export_diff_csv() to tag NEW vs UPDATED reliably without relying on
             timestamp equality.
+
+        canonicalize: when True (default), run ``canonicalize_listings`` so direct
+            callers (tests, CLI) get the Listing seam. Machine Persist already
+            canonicalizes before dedupe — pass ``canonicalize=False`` so the Store
+            does not re-own shape policy on the Run path.
 
         On conflict (same authority + property_name + url):
           - last_seen and last_run_id are always updated
@@ -362,8 +373,9 @@ class DatabaseManager:
             run_id = now
         inserted = updated = 0
 
-        # Ensure coercion always goes through the Listing seam (single coercion path).
-        canonical = canonicalize_listings(listings)
+        # Listing shape: Machine Persist owns canonicalize on the Run path;
+        # default True keeps a safe seam for direct upsert callers.
+        canonical = canonicalize_listings(listings) if canonicalize else list(listings)
 
         # Collect normalized rows first
         to_upsert: list[dict] = []
