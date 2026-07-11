@@ -561,14 +561,26 @@ def extract_underlying_records(
                         f["flyer_url"] for f in flyers if f["flyer_url"].lower().endswith(".pdf")
                     )
 
-                    # DocumentCenter viewer pages carry the document title even
-                    # when the content itself is a PDF embed.
+                    # DocumentCenter viewer titles are often page chrome ("Affordable
+                    # Housing | City") or PDF filenames — not property inventory (#1109).
+                    # Only keep a viewer row when the title looks like a real property.
                     if "documentcenter" in doc_url.lower():
                         h = doc_soup.find(["h1", "h2", "h3"]) or doc_soup.find("title")
                         title = h.get_text(strip=True) if h else ""
-                        if title:
+                        title_clean = re.sub(r"\s*[|–-]\s*.*$", "", title).strip()
+                        lower_t = title_clean.lower()
+                        junk_title = (
+                            not title_clean
+                            or len(title_clean) < 5
+                            or lower_t in {"affordable housing", "document center", "home"}
+                            or "housing program" in lower_t
+                            or "funding" in lower_t
+                            or title_clean.isupper()
+                            and "apartment" not in lower_t
+                        )
+                        if title_clean and not junk_title:
                             record = _base_record(authority, "documentcenter_viewer", doc_url)
-                            record["property_name"] = title
+                            record["property_name"] = title_clean
                             records.append(record)
 
                 except PlaywrightTimeout:

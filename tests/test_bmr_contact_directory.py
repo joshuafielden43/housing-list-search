@@ -56,6 +56,10 @@ def test_extracts_five_properties_plus_coming_soon():
     assert "650" in gardens.phone.replace(" ", "")
     assert gardens.listing_status == "waitlist"
     assert "waitlist" in gardens.notes.lower()
+    # Distinct per-property identity URL (not all sharing bare View/2785) (#1108)
+    assert gardens.url.endswith("#los-altos-gardens") or "#los-altos-gardens" in gardens.url
+    urls = {r.url for r in recs}
+    assert len(urls) == len(recs)
 
     mila = next(r for r in recs if "MiLa" in r.property_name)
     assert mila.listing_status == "coming_soon"

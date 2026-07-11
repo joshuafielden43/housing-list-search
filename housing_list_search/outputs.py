@@ -9,15 +9,31 @@ OPEN_LISTING_DISPLAY_CAP = 100
 
 
 def _listing_is_open(listing: dict) -> bool:
-    listing_status = (listing.get("listing_status") or "").lower()
-    status_val = (listing.get("status") or "").lower()
+    """True when a property is currently accepting applications / open units.
+
+    Waitlist *directory* cards (contact property manager; no vacancy claim) are
+    not open (#1107). Vendor "Waitlist Open" status still counts when the source
+    means the waitlist is accepting names.
+    """
+    listing_status = (listing.get("listing_status") or "").lower().strip()
+    status_val = (listing.get("status") or "").lower().strip()
     notes_val = (listing.get("notes") or "").lower()
-    return (
-        listing_status in ("open", "waitlist")
-        or status_val == "open"
-        or "accepting applications" in notes_val
-        or "waitlist open" in notes_val
-    )
+
+    # Contact-directory / COMING SOON BMR flyers are inventory, not openings.
+    if listing_status == "coming_soon":
+        return False
+    if "contact directory" in notes_val or "waitlist via on-site property manager" in notes_val:
+        return False
+
+    if listing_status == "open" or status_val == "open":
+        return True
+    if "accepting applications" in notes_val:
+        return True
+    # Vendor display labels (MidPen/Eden/JSCO) — waitlist is open for applications
+    if status_val == "waitlist open" or "waitlist open" in notes_val:
+        return True
+    # Bare listing_status=waitlist without vendor "open" language is not enough
+    return False
 
 
 def _listing_is_summary_candidate(listing: dict) -> bool:

@@ -549,6 +549,60 @@ class DatabaseManager:
             )
         return touched
 
+    def confirm_property_aliases(
+        self,
+        survivors: list[dict],
+        *,
+        run_id: str,
+    ) -> int:
+        """Confirm other authority/url rows for the same physical property (#1104).
+
+        After authority canonicalization, older rows may still use portfolio
+        TARGETS strings (e.g. "Charities Housing (… portfolio)") while survivors
+        use "Charities Housing". Same property_name + address (or same url)
+        means the property was seen this run — do not leave alias rows STALE.
+        """
+        if not survivors or not run_id:
+            return 0
+        self.init_db()
+        conn = self.connect()
+        c = conn.cursor()
+        now = datetime.now().isoformat()
+        touched = 0
+        for row in survivors:
+            name = (row.get("property_name") or "").strip()
+            if not name:
+                continue
+            url = (row.get("url") or "").strip()
+            addr = (row.get("address") or "").strip()
+            auth = (row.get("authority") or "").strip()
+            if url:
+                c.execute(
+                    """
+                    UPDATE housing_records
+                    SET last_run_id = ?, last_seen = COALESCE(last_seen, ?)
+                    WHERE property_name = ?
+                      AND url = ?
+                      AND (? = '' OR authority != ?)
+                    """,
+                    [run_id, now, name, url, auth, auth],
+                )
+                touched += c.rowcount if c.rowcount and c.rowcount > 0 else 0
+            if addr and len(addr) >= 8:
+                c.execute(
+                    """
+                    UPDATE housing_records
+                    SET last_run_id = ?, last_seen = COALESCE(last_seen, ?)
+                    WHERE property_name = ?
+                      AND address = ?
+                      AND (? = '' OR authority != ?)
+                    """,
+                    [run_id, now, name, addr, auth, auth],
+                )
+                touched += c.rowcount if c.rowcount and c.rowcount > 0 else 0
+        conn.commit()
+        return touched
+
     def export_csv(self, path: str = "current_full.csv", *, run_id: str | None = None) -> int:
         """
         Export housing_records to a CSV file. Returns row count written.

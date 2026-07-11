@@ -170,7 +170,7 @@ class TestListingToRow:
                 "SELECT status, listing_status, eligibility_flags FROM housing_records WHERE property_name=?",
                 ("Via Listing Module",),
             ).fetchone()
-            assert row[0] == "Waitlist Open"
+            assert row[0] == "Waitlist"  # directory waitlist — not "Waitlist Open" (#1107)
             assert row[1] == "waitlist"
             assert row[2] == "low_income"
 

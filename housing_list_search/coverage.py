@@ -18,6 +18,10 @@ _PROGRAM_NAME_EXACT = frozenset(
         "housing assistance",
         "rental housing",
         "unknown property",
+        # Mis-parsed PDF page titles (not properties)
+        "los altos bmr rental program",
+        "los altos bmr for-sale units",
+        "los altos bmr for sale units",
     }
 )
 

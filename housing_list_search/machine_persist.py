@@ -79,6 +79,15 @@ def persist_run(
                 mirrors_confirmed,
             )
 
+    # Pre-canon authority aliases still in DB (portfolio TARGETS strings) (#1104)
+    alias_confirmed = db.confirm_property_aliases(survivors, run_id=run_id)
+    if alias_confirmed:
+        mirrors_confirmed += alias_confirmed
+        logger.info(
+            "Confirmed %d same-property alias row(s) (authority/url variants; #1104)",
+            alias_confirmed,
+        )
+
     cov = summarize_coverage(survivors)
     logger.info(
         "Coverage: %d property, %d portal, %d program (%d total)",

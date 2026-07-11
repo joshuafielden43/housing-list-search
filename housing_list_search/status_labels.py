@@ -6,7 +6,8 @@ from typing import Any
 
 _LISTING_STATUS_MAP = {
     "open": "Open",
-    "waitlist": "Waitlist Open",
+    # Directory-style waitlist (Los Altos BMR cards) — not "Waitlist Open" vacancy
+    "waitlist": "Waitlist",
     "coming_soon": "Coming Soon",
     "closed": "Closed",
 }

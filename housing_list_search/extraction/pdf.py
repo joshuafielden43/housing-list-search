@@ -44,6 +44,9 @@ class HousingRecord:
     supportive_services: str = ""
     notes: str = ""
     document_url: str = ""
+    # Optional per-property URL; defaults to document_url in to_dict. Multi-property
+    # PDFs should set a distinct url (#1108) so Listing identity does not share one key.
+    url: str = ""
     # Normalised availability status: "open", "closed", "waitlist", "coming_soon", or ""
     # Set by structured extractors (Bloom, etc.); empty for generic/PDF records.
     listing_status: str = ""
@@ -73,7 +76,7 @@ class HousingRecord:
             "supportive_services": self.supportive_services,
             "notes": self.notes,
             "document_url": self.document_url,
-            "url": self.document_url,  # alias expected by some older code
+            "url": (self.url or self.document_url),
             "listing_status": self.listing_status,
             "confidence": self.confidence,
             "page_number": self.page_number,
@@ -81,7 +84,7 @@ class HousingRecord:
             "last_seen": self.last_seen,
             "first_seen": self.first_seen,
             "source": self.source,
-            "source_url": self.source_url,
+            "source_url": self.source_url or self.document_url,
             "expires_at": self.expires_at,
         }
 
@@ -608,7 +611,11 @@ def _looks_like_bmr_contact_directory(text: str) -> bool:
 
 
 def _split_side_by_side_names(name_line: str, n: int) -> list[str]:
-    """Split a two-column name line into n property titles."""
+    """Split a two-column name line into n property titles.
+
+    Prefer digit-led second columns and multi-word city prefixes; fall back to
+    balanced word splits (not only Los Altos-shaped first-3-words).
+    """
     name_line = (name_line or "").strip()
     if n <= 1:
         return [name_line] if name_line else [""]
@@ -620,10 +627,15 @@ def _split_side_by_side_names(name_line: str, n: int) -> list[str]:
     if n == 2 and digit_idx is not None and digit_idx > 0:
         return [" ".join(words[:digit_idx]), " ".join(words[digit_idx:])]
     if n == 2 and len(words) >= 4:
-        # "Los Altos Gardens Fremont Avenue" → first 3 words | rest
-        if words[0] in {"Los", "San", "The", "El", "La"}:
-            return [" ".join(words[:3]), " ".join(words[3:])]
-        return [" ".join(words[:2]), " ".join(words[2:])]
+        # Prefer multi-word left title when first token is a common city/article prefix
+        if words[0] in {"Los", "San", "The", "El", "La", "Santa", "Mount", "New"}:
+            # Try longest left that leaves ≥2 words for the right column
+            for left_n in (3, 2, 4):
+                if left_n < len(words) and len(words) - left_n >= 1:
+                    return [" ".join(words[:left_n]), " ".join(words[left_n:])]
+        # Balanced split (ceil half) for generic two-column names
+        mid = (len(words) + 1) // 2
+        return [" ".join(words[:mid]), " ".join(words[mid:])]
     # Even split of words as last resort
     chunk = max(1, len(words) // n)
     out: list[str] = []
@@ -632,6 +644,16 @@ def _split_side_by_side_names(name_line: str, n: int) -> list[str]:
         end = len(words) if i == n - 1 else (i + 1) * chunk
         out.append(" ".join(words[start:end]))
     return out
+
+
+def _property_fragment_url(document_url: str, property_name: str, address: str) -> str:
+    """Stable per-property URL when many rows share one DocumentCenter PDF (#1108)."""
+    base = (document_url or "").split("#", 1)[0].rstrip("/")
+    slug_src = (property_name or "").strip() or (address or "").strip() or "property"
+    slug = re.sub(r"[^a-z0-9]+", "-", slug_src.lower()).strip("-")[:48] or "property"
+    if not base:
+        return f"hls:prop:{slug}"
+    return f"{base}#{slug}"
 
 
 def extract_bmr_contact_directory(
@@ -710,17 +732,19 @@ def extract_bmr_contact_directory(
                     # pdfplumber sometimes prefixes www. on email-like tokens
                     email = re.sub(r"^www\.", "", em.group(0), flags=re.I)
                     email_i += 1
+            addr = am.group(0).strip()
             records.append(
                 HousingRecord(
                     authority=authority,
                     property_name=name,
-                    address=am.group(0).strip(),
+                    address=addr,
                     phone=phone,
                     email=email,
                     confidence="medium",
                     listing_status="waitlist",
                     notes="BMR rental contact directory; waitlist via on-site property manager",
                     document_url=document_url,
+                    url=_property_fragment_url(document_url, name, addr),
                     source_url=document_url,
                     page_number=page_number,
                     raw_line=name_line,
@@ -729,15 +753,18 @@ def extract_bmr_contact_directory(
         i = j
 
     for m in coming:
+        pname = m.group(1).strip()
+        paddr = m.group(2).strip()
         records.append(
             HousingRecord(
                 authority=authority,
-                property_name=m.group(1).strip(),
-                address=m.group(2).strip(),
+                property_name=pname,
+                address=paddr,
                 confidence="medium",
                 listing_status="coming_soon",
                 notes="COMING SOON (BMR rental flyer)",
                 document_url=document_url,
+                url=_property_fragment_url(document_url, pname, paddr),
                 source_url=document_url,
                 page_number=page_number,
                 raw_line=m.group(0),
