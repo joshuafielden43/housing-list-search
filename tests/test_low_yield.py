@@ -1,6 +1,26 @@
 """Low-yield inventory gate (#789 / #1083) — lives on RunReview / needs_review."""
 
-from housing_list_search.needs_review import find_low_yield_targets, inventory_floor_for_measures
+from housing_list_search.needs_review import (
+    RunReview,
+    find_low_yield_targets,
+    inventory_floor_for_measures,
+)
+from housing_list_search.staff_summary import generate_daily_summary
+
+
+def test_daily_summary_surfaces_low_yield_run_review(tmp_path):
+    output = tmp_path / "daily_summary.md"
+
+    generate_daily_summary(
+        [],
+        output_path=output,
+        run_review=RunReview(low_yield=[("MidPen Housing", 4)]),
+    )
+
+    summary = output.read_text(encoding="utf-8")
+    assert "## Needs Review" in summary
+    assert "Low-yield" in summary
+    assert "MidPen Housing" in summary
 
 
 def test_low_yield_flags_small_inventory(monkeypatch):

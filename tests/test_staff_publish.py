@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from housing_list_search.needs_review import CollectReview
 from housing_list_search.staff_publish import (
     StaffPublishInput,
     publish_staff_run,
@@ -110,7 +111,7 @@ def test_log_full_run_skipped_on_low_yield(tmp_path, monkeypatch):
             run_id="run-thin",
             targets_attempted=2,
             failed_targets=[],
-            low_yield=[("MidPen Housing", 5)],
+            collect_review=CollectReview(low_yield=[("MidPen Housing", 5)]),
             inserted=5,
             updated=0,
         ),
@@ -150,7 +151,9 @@ def test_log_full_run_skipped_on_suspicious_zero(tmp_path, monkeypatch):
             run_id="run-zero",
             targets_attempted=1,
             failed_targets=[],
-            suspicious_zero_authorities=["Eden Housing"],
+            collect_review=CollectReview(
+                suspicious_zero_authorities=["Eden Housing"]
+            ),
             inserted=0,
             updated=0,
         ),

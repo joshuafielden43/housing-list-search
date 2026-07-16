@@ -88,18 +88,6 @@ class RunReview:
             stale_warn_threshold=self.stale_warn_threshold,
         )
 
-    def to_run_stats_fields(self) -> dict[str, Any]:
-        """Fields mergeable into pipeline run_stats / daily_summary."""
-        return {
-            "suspicious_zero_authorities": list(self.suspicious_zero_authorities),
-            "reverification_due_authorities": list(self.reverification_due_authorities),
-            "stale_n": self.stale_n,
-            "scrape_failed_n": self.scrape_failed_n,
-            "stale_warn_threshold": self.stale_warn_threshold,
-            "low_yield": list(self.low_yield),
-        }
-
-
 # ---------------------------------------------------------------------------
 # Assess (compose detectors + low-yield)
 # ---------------------------------------------------------------------------

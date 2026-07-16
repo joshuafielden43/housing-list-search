@@ -27,6 +27,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from housing_list_search.needs_review import RunReview
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -191,8 +193,10 @@ class TestSummaryOpenDetection:
                 "targets_attempted": 18,
                 "targets_succeeded": 18,
                 "failed_authorities": [],
-                "suspicious_zero_authorities": ["City of Campbell", "MidPen Housing"],
             },
+            run_review=RunReview(
+                suspicious_zero_authorities=["City of Campbell", "MidPen Housing"]
+            ),
         )
         assert "## Needs Review" in md
         assert "Suspicious zero" in md
@@ -205,8 +209,8 @@ class TestSummaryOpenDetection:
                 "targets_attempted": 18,
                 "targets_succeeded": 18,
                 "failed_authorities": [],
-                "suspicious_zero_authorities": [],
             },
+            run_review=RunReview(),
         )
         assert "Needs Review" not in md
 
@@ -217,9 +221,8 @@ class TestSummaryOpenDetection:
                 "targets_attempted": 18,
                 "targets_succeeded": 18,
                 "failed_authorities": [],
-                "suspicious_zero_authorities": [],
-                "reverification_due_authorities": ["City of Campbell"],
             },
+            run_review=RunReview(reverification_due_authorities=["City of Campbell"]),
         )
         assert "## Needs Review" in md
         assert "Reverification due" in md
@@ -233,9 +236,8 @@ class TestSummaryOpenDetection:
                 "targets_attempted": 18,
                 "targets_succeeded": 18,
                 "failed_authorities": [],
-                "suspicious_zero_authorities": [],
-                "low_yield": [("MidPen Housing", 5)],
             },
+            run_review=RunReview(low_yield=[("MidPen Housing", 5)]),
         )
         assert "## Needs Review" in md
         assert "Low-yield" in md
@@ -248,10 +250,8 @@ class TestSummaryOpenDetection:
                 "targets_attempted": 18,
                 "targets_succeeded": 18,
                 "failed_authorities": [],
-                "stale_n": 12,
-                "scrape_failed_n": 3,
-                "stale_warn_threshold": 5,
             },
+            run_review=RunReview(stale_n=12, scrape_failed_n=3, stale_warn_threshold=5),
         )
         assert "Integrity signals" in md
         assert "STALE" in md

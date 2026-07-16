@@ -21,6 +21,7 @@ from housing_list_search.inventory_store import InventoryStore
 from housing_list_search.listing import canonical_authority
 from housing_list_search.machine_persist import PersistResult, persist_run
 from housing_list_search.needs_review import (
+    CollectReview,
     assess_collect_review,
     authorities_unreliable_for_disappearance,
 )
@@ -71,9 +72,7 @@ class _CollectResult:
     listings_raw: list[dict]
     failed_targets: list[str]
     listings_by_authority: dict[str, list[dict]]
-    suspicious_zero_authorities: list[str]
-    reverification_due_authorities: list[str]
-    low_yield: list[tuple[str, int]]
+    collect_review: CollectReview
 
 
 class RunPipeline:
@@ -114,8 +113,8 @@ class RunPipeline:
         # as hard fails for those authorities.
         unreliable = authorities_unreliable_for_disappearance(
             failed_targets=collected.failed_targets,
-            low_yield=collected.low_yield,
-            suspicious_zero_authorities=collected.suspicious_zero_authorities,
+            low_yield=collected.collect_review.low_yield,
+            suspicious_zero_authorities=collected.collect_review.suspicious_zero_authorities,
         )
         persisted = persist_run(
             collected.listings_raw,
@@ -151,8 +150,8 @@ class RunPipeline:
             n_diff=persisted.n_diff,
             diff_counts=persisted.diff_counts,
             failed_targets=collected.failed_targets,
-            suspicious_zero_authorities=collected.suspicious_zero_authorities,
-            reverification_due_authorities=collected.reverification_due_authorities,
+            suspicious_zero_authorities=collected.collect_review.suspicious_zero_authorities,
+            reverification_due_authorities=collected.collect_review.reverification_due_authorities,
             targets_attempted=len(targets),
             partial_run=partial_run,
             scrape_failed_n=persisted.scrape_failed_n,
@@ -182,9 +181,7 @@ class RunPipeline:
             listings_raw=all_listings,
             failed_targets=failed_targets,
             listings_by_authority=listings_by_authority,
-            suspicious_zero_authorities=collect_review.suspicious_zero_authorities,
-            reverification_due_authorities=collect_review.reverification_due_authorities,
-            low_yield=collect_review.low_yield,
+            collect_review=collect_review,
         )
 
     def _publish(
@@ -205,9 +202,7 @@ class RunPipeline:
                 run_id=persisted.run_id,
                 targets_attempted=len(targets),
                 failed_targets=collected.failed_targets,
-                suspicious_zero_authorities=collected.suspicious_zero_authorities,
-                reverification_due_authorities=collected.reverification_due_authorities,
-                low_yield=collected.low_yield,
+                collect_review=collected.collect_review,
                 stale_n=persisted.stale_n,
                 scrape_failed_n=persisted.scrape_failed_n,
                 cov_property=persisted.cov_property,

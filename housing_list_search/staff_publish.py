@@ -46,9 +46,7 @@ class StaffPublishInput:
     run_id: str
     targets_attempted: int
     failed_targets: list[str] = field(default_factory=list)
-    suspicious_zero_authorities: list[str] = field(default_factory=list)
-    reverification_due_authorities: list[str] = field(default_factory=list)
-    low_yield: list[tuple[str, int]] = field(default_factory=list)
+    collect_review: CollectReview = field(default_factory=CollectReview)
     stale_n: int = 0
     scrape_failed_n: int = 0
     cov_property: int = 0
@@ -95,25 +93,20 @@ def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
       (down ≠ gone; soft-thin ≠ gone; #1085 / #238)
     """
     run_review = build_run_review(
-        CollectReview(
-            suspicious_zero_authorities=inp.suspicious_zero_authorities,
-            reverification_due_authorities=inp.reverification_due_authorities,
-            low_yield=inp.low_yield,
-        ),
+        inp.collect_review,
         stale_n=inp.stale_n,
         scrape_failed_n=inp.scrape_failed_n,
         stale_warn_threshold=DEFAULT_STALE_WARN_THRESHOLD,
     )
     unreliable = authorities_unreliable_for_disappearance(
         failed_targets=inp.failed_targets,
-        low_yield=inp.low_yield,
-        suspicious_zero_authorities=inp.suspicious_zero_authorities,
+        low_yield=run_review.low_yield,
+        suspicious_zero_authorities=run_review.suspicious_zero_authorities,
     )
     run_stats: dict[str, Any] = {
         "targets_attempted": inp.targets_attempted,
         "targets_succeeded": inp.targets_attempted - len(inp.failed_targets),
         "failed_authorities": list(inp.failed_targets),
-        **run_review.to_run_stats_fields(),
     }
 
     logger.info(
@@ -127,8 +120,8 @@ def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
         inp.cov_program,
         inp.stale_n,
         inp.scrape_failed_n,
-        len(inp.suspicious_zero_authorities),
-        len(inp.low_yield),
+        len(run_review.suspicious_zero_authorities),
+        len(run_review.low_yield),
         inp.partial_run,
     )
 
@@ -141,6 +134,7 @@ def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
             skipped_targets=[],
             daily_summary_path=PARTIAL_DAILY_SUMMARY_PATH,
             run_stats=run_stats,
+            run_review=run_review,
             proposed_prune=None,
         )
         logger.info(
@@ -156,8 +150,8 @@ def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
     previous_run_id = db.get_previous_full_run_id()
     update_baseline = should_update_disappearance_baseline(
         failed_targets=inp.failed_targets,
-        low_yield=inp.low_yield,
-        suspicious_zero_authorities=inp.suspicious_zero_authorities,
+        low_yield=run_review.low_yield,
+        suspicious_zero_authorities=run_review.suspicious_zero_authorities,
     )
     generate_changelog(
         inp.listings,
@@ -173,8 +167,8 @@ def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
             "failed=%d low_yield=%d suspicious_zero=%d; incomplete scrape is not "
             "evidence of inventory removal (#1085/#238)",
             len(inp.failed_targets),
-            len(inp.low_yield),
-            len(inp.suspicious_zero_authorities),
+            len(run_review.low_yield),
+            len(run_review.suspicious_zero_authorities),
         )
         # #1085 / #238: do not log_full_run when inventory is unproven — advancing
         # previous_full_run_id would let soft-thin days promote live housing to REMOVED.
@@ -195,6 +189,7 @@ def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
         skipped_targets=inp.skipped,
         daily_summary_path=STAFF_DAILY_SUMMARY_PATH,
         run_stats=run_stats,
+        run_review=run_review,
         proposed_prune={
             "run_id": inp.run_id,
             "stale_n": inp.stale_n,

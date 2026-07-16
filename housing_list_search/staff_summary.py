@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any
 
 from housing_list_search.coverage import classify_record_kind, summarize_coverage
+from housing_list_search.needs_review import RunReview
 
 PARTIAL_DAILY_SUMMARY_PATH = "daily_summary_partial.md"
 STAFF_DAILY_SUMMARY_PATH = "daily_summary.md"
@@ -187,22 +188,10 @@ def _format_run_status(run_stats: dict | None) -> str:
     return "".join(lines)
 
 
-def _format_needs_review(run_stats: dict | None) -> str:
-    if not run_stats:
-        return ""
-
-    suspicious = list(run_stats.get("suspicious_zero_authorities") or [])
-    reverification = list(run_stats.get("reverification_due_authorities") or [])
-    # low_yield: list of (authority, property_count) or {"authority","property_count"}
-    raw_low = list(run_stats.get("low_yield") or [])
-    low_yield: list[tuple[str, int]] = []
-    for item in raw_low:
-        if isinstance(item, list | tuple) and len(item) >= 2:
-            low_yield.append((str(item[0]), int(item[1])))
-        elif isinstance(item, dict) and item.get("authority") is not None:
-            low_yield.append(
-                (str(item["authority"]), int(item.get("property_count") or 0))
-            )
+def _format_needs_review(review: RunReview) -> str:
+    suspicious = review.suspicious_zero_authorities
+    reverification = review.reverification_due_authorities
+    low_yield = review.low_yield
     if not suspicious and not reverification and not low_yield:
         return ""
 
@@ -245,12 +234,9 @@ def _format_needs_review(run_stats: dict | None) -> str:
     return "".join(lines)
 
 
-def _format_integrity_summary(run_stats: dict | None) -> str:
-    if not run_stats:
-        return ""
-
-    stale_n = int(run_stats.get("stale_n") or 0)
-    scrape_failed_n = int(run_stats.get("scrape_failed_n") or 0)
+def _format_integrity_summary(review: RunReview) -> str:
+    stale_n = review.stale_n
+    scrape_failed_n = review.scrape_failed_n
     if not stale_n and not scrape_failed_n:
         return ""
 
@@ -262,7 +248,7 @@ def _format_integrity_summary(run_stats: dict | None) -> str:
             f"- **SCRAPE_FAILED:** {scrape_failed_n} record(s) from failed authority scrapes "
             "(not confirmed closures)\n"
         )
-    if stale_n >= int(run_stats.get("stale_warn_threshold") or 5):
+    if stale_n >= review.stale_warn_threshold:
         lines.append(
             "- Review `diff.csv`, then prune when appropriate: "
             "`python scripts/db_manage.py prune --not-seen-since 45`\n"
@@ -315,14 +301,16 @@ def generate_daily_summary(
     *,
     output_path=STAFF_DAILY_SUMMARY_PATH,
     run_stats=None,
+    run_review: RunReview | None = None,
 ):
     skipped_targets = skipped_targets or []
+    run_review = run_review or RunReview()
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("# 🏠 Santa Clara County Housing Waitlist Summary\n")
         f.write(f"**Run:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
         f.write(_format_run_status(run_stats))
-        f.write(_format_needs_review(run_stats))
-        f.write(_format_integrity_summary(run_stats))
+        f.write(_format_needs_review(run_review))
+        f.write(_format_integrity_summary(run_review))
         f.write(_format_coverage_summary(listings))
 
         seen_open: set[tuple] = set()
@@ -499,6 +487,7 @@ def render_staff_summary(
     skipped_targets: list[tuple[str, str]] | None = None,
     daily_summary_path: str = STAFF_DAILY_SUMMARY_PATH,
     run_stats: dict[str, Any] | None = None,
+    run_review: RunReview | None = None,
     proposed_prune: dict[str, Any] | None = None,
 ) -> None:
     """Single Staff Summary interface: daily markdown (+ optional prune note).
@@ -512,6 +501,7 @@ def render_staff_summary(
         skipped_targets=skipped_targets,
         output_path=daily_summary_path,
         run_stats=run_stats,
+        run_review=run_review,
     )
     if not proposed_prune:
         return
