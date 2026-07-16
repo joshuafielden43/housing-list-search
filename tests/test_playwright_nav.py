@@ -18,6 +18,21 @@ from housing_list_search.playwright_nav import (
 )
 
 
+def test_kill_pids_is_best_effort(monkeypatch):
+    """#239: reclaim helper must not raise when PIDs are already gone."""
+    import housing_list_search.playwright_nav as pn
+
+    killed: list[tuple[int, int]] = []
+
+    def fake_kill(pid, sig):
+        killed.append((pid, sig))
+        raise ProcessLookupError(pid)
+
+    monkeypatch.setattr(pn.os, "kill", fake_kill)
+    pn._kill_pids({999001, 999002}, reason="test")
+    assert len(killed) >= 2
+
+
 def test_validated_goto_url_accepts_public_https():
     assert validated_goto_url("https://example.com/housing").startswith("https://")
 

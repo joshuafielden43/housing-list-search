@@ -7,6 +7,7 @@ import pytest
 from housing_list_search.extraction.marker_pdf import (
     marker_available,
     marker_ocr_explicitly_enabled,
+    marker_subprocess_env,
     records_from_marker_markdown,
 )
 
@@ -41,6 +42,37 @@ class TestMarkerAvailable:
         monkeypatch.setenv("HLS_ENABLE_MARKER_PDF", "1")
         _reset_marker_cache()
         assert marker_available() is True
+
+
+class TestMarkerSubprocessEnv:
+    def test_strips_operator_secrets(self, monkeypatch):
+        """#243: OCR child must not inherit Vikunja token / webhook URL."""
+        monkeypatch.setenv("HLS_VIKUNJA_TOKEN", "super-secret-token")
+        monkeypatch.setenv("HLS_VIKUNJA_URL", "https://vikunja.example")
+        monkeypatch.setenv("HLS_NEEDS_REVIEW_WEBHOOK", "https://hooks.example/n8n")
+        monkeypatch.setenv("PATH", "/usr/bin")
+        monkeypatch.setenv("HLS_ENABLE_MARKER_PDF", "0")
+        env = marker_subprocess_env()
+        assert "HLS_VIKUNJA_TOKEN" not in env
+        assert "HLS_VIKUNJA_URL" not in env
+        assert "HLS_NEEDS_REVIEW_WEBHOOK" not in env
+        assert env.get("HLS_ENABLE_MARKER_PDF") == "1"
+        assert "HLS_DISABLE_MARKER_PDF" not in env
+        assert env.get("PATH") == "/usr/bin"
+
+    def test_strips_generic_token_named_vars(self):
+        env = marker_subprocess_env(
+            {
+                "PATH": "/bin",
+                "OPENAI_API_KEY": "sk-test",
+                "MY_SECRET": "x",
+                "HLS_MARKER_TIMEOUT_S": "120",
+            }
+        )
+        assert "OPENAI_API_KEY" not in env
+        assert "MY_SECRET" not in env
+        assert env.get("HLS_MARKER_TIMEOUT_S") == "120"
+        assert env.get("HLS_ENABLE_MARKER_PDF") == "1"
 
 
 class TestRecordsFromMarkerMarkdown:

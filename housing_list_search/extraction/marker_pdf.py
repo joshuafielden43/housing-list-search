@@ -37,9 +37,52 @@ _MARKER_AVAILABLE = False
 # Child conversion budget (models + inference). Kill rather than hang the host.
 _MARKER_SUBPROCESS_TIMEOUT_S = int(os.environ.get("HLS_MARKER_TIMEOUT_S", "600"))
 
+# Only these HLS_* keys may enter the OCR child (#243). Tokens/webhooks stay out.
+_MARKER_HLS_ENV_ALLOW = frozenset(
+    {
+        "HLS_ENABLE_MARKER_PDF",
+        "HLS_DISABLE_MARKER_PDF",
+        "HLS_MARKER_TIMEOUT_S",
+    }
+)
+_SECRET_NAME_MARKERS = (
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "API_KEY",
+    "APIKEY",
+    "BEARER",
+    "CREDENTIAL",
+    "WEBHOOK",
+    "PRIVATE_KEY",
+)
+
 
 def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
+
+
+def marker_subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Build a minimal env for the OCR child — no operator secrets (#243).
+
+    Strips HLS_VIKUNJA_TOKEN, Needs Review webhook URL, and any env whose name
+    looks like a credential. Keeps PATH/venv/locale so torch/marker can start.
+    """
+    source = base if base is not None else os.environ
+    env: dict[str, str] = {}
+    for key, val in source.items():
+        if val is None:
+            continue
+        if key.startswith("HLS_") and key not in _MARKER_HLS_ENV_ALLOW:
+            continue
+        upper = key.upper()
+        if any(marker in upper for marker in _SECRET_NAME_MARKERS):
+            continue
+        env[key] = val
+    # Child is the only place that loads models; ensure enable is set for worker.
+    env["HLS_ENABLE_MARKER_PDF"] = "1"
+    env.pop("HLS_DISABLE_MARKER_PDF", None)
+    return env
 
 
 def marker_ocr_explicitly_enabled() -> bool:
@@ -151,10 +194,7 @@ def _markdown_via_subprocess(pdf_bytes: bytes, document_url: str) -> str:
         pdf_path = tmp.name
     out_path = pdf_path + ".md"
     try:
-        env = os.environ.copy()
-        # Child is the only place that loads models; ensure enable is set for worker.
-        env["HLS_ENABLE_MARKER_PDF"] = "1"
-        env.pop("HLS_DISABLE_MARKER_PDF", None)
+        env = marker_subprocess_env()
         cmd = [
             sys.executable,
             "-m",

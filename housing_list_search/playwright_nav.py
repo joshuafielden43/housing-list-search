@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
+import signal
+import subprocess
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -41,6 +44,8 @@ _PLAYWRIGHT_LOCK = threading.RLock()
 _pw_instance: Any = None
 _browser: Any = None
 _owner_ident: int | None = None  # threading.get_ident() of browser owner
+# PIDs spawned with the current browser (driver + Chromium subtree) for reclaim (#239)
+_browser_pids: set[int] = set()
 _launch_count = 0
 _page_count = 0
 
@@ -157,12 +162,73 @@ def safe_goto(page, url: str, *, delay: int = DEFAULT_PLAYWRIGHT_DELAY, **kwargs
         mark_host_fetched(validated)
 
 
+def _descendant_pids(root_pid: int | None = None) -> set[int]:
+    """Best-effort set of descendant PIDs (macOS/Linux pgrep -P walk)."""
+    root = root_pid if root_pid is not None else os.getpid()
+    found: set[int] = set()
+    frontier = [root]
+    while frontier:
+        parent = frontier.pop()
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-P", str(parent)],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            continue
+        for line in out.split():
+            try:
+                pid = int(line)
+            except ValueError:
+                continue
+            if pid not in found and pid != root:
+                found.add(pid)
+                frontier.append(pid)
+    return found
+
+
+def _kill_pids(pids: set[int], *, reason: str) -> None:
+    """SIGTERM then SIGKILL process tree members (cross-thread reclaim #239)."""
+    if not pids:
+        return
+    logger.info("[playwright] reclaiming %d process(es) (%s)", len(pids), reason)
+    for pid in sorted(pids):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        except PermissionError as exc:
+            logger.debug("kill(%s) SIGTERM: %s", pid, exc)
+    # Brief grace; then force
+    for pid in sorted(pids):
+        try:
+            os.kill(pid, 0)  # still alive?
+        except ProcessLookupError:
+            continue
+        except OSError:
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
 def _drop_browser_refs_unlocked() -> None:
     """Clear process-level browser pointers without close() (may be wrong thread)."""
-    global _pw_instance, _browser, _owner_ident
+    global _pw_instance, _browser, _owner_ident, _browser_pids
     _pw_instance = None
     _browser = None
     _owner_ident = None
+    _browser_pids = set()
+
+
+def _abandon_browser_unlocked(*, reason: str) -> None:
+    """Drop refs and kill tracked Chromium/driver PIDs (sync close is thread-bound)."""
+    global _browser_pids
+    pids = set(_browser_pids)
+    _drop_browser_refs_unlocked()
+    _kill_pids(pids, reason=reason)
 
 
 def _ensure_browser():
@@ -171,21 +237,20 @@ def _ensure_browser():
     Playwright sync API is not cross-thread. ThreadPool workers that each call
     browser_page must not share one greenlet-bound browser.
     """
-    global _pw_instance, _browser, _launch_count, _owner_ident
+    global _pw_instance, _browser, _launch_count, _owner_ident, _browser_pids
     tid = threading.get_ident()
     if _browser is not None and _owner_ident == tid:
         return _browser
 
     if _browser is not None and _owner_ident != tid:
-        # Cross-thread close() is unsafe (greenlet.error). Abandon prior refs;
-        # OS reaps the old Chromium when this process exits (or shortly after).
+        # Cross-thread close() is unsafe (greenlet.error). Kill tracked PIDs (#239).
         logger.info(
-            "[playwright] thread switch owner=%s → %s; launching Chromium on this thread "
-            "(prior instance abandoned — sync API is thread-bound)",
+            "[playwright] thread switch owner=%s → %s; reclaiming prior Chromium "
+            "and launching on this thread (sync API is thread-bound)",
             _owner_ident,
             tid,
         )
-        _drop_browser_refs_unlocked()
+        _abandon_browser_unlocked(reason=f"thread switch → {tid}")
 
     try:
         from playwright.sync_api import sync_playwright
@@ -195,8 +260,11 @@ def _ensure_browser():
         ) from exc
 
     logger.info("[playwright] launching Chromium (thread=%s)", tid)
+    before = _descendant_pids()
     _pw_instance = sync_playwright().start()
     _browser = _pw_instance.chromium.launch(headless=True)
+    after = _descendant_pids()
+    _browser_pids = after - before
     _owner_ident = tid
     _launch_count += 1
     return _browser
@@ -205,20 +273,20 @@ def _ensure_browser():
 def shutdown_playwright() -> None:
     """Close browser if owned by the current thread (end of RunPipeline / tests).
 
-    Worker-thread Chromium instances that were abandoned on thread switch are
-    not closed here (wrong-thread close is unsafe); they die with the process.
+    If another thread still owns the browser, reclaim via SIGTERM/SIGKILL on
+    tracked PIDs rather than leaving orphan Chromiums until process exit (#239).
     """
-    global _pw_instance, _browser, _owner_ident
+    global _pw_instance, _browser, _owner_ident, _browser_pids
     with _PLAYWRIGHT_LOCK:
         tid = threading.get_ident()
         if _browser is not None and _owner_ident is not None and _owner_ident != tid:
             logger.info(
                 "[playwright] shutdown on thread %s but browser owned by %s — "
-                "dropping refs only (process exit reaps Chromium)",
+                "reclaiming PIDs (cannot close() cross-thread)",
                 tid,
                 _owner_ident,
             )
-            _drop_browser_refs_unlocked()
+            _abandon_browser_unlocked(reason=f"shutdown from thread {tid}")
             logger.info(
                 "[playwright] shutdown (launches=%d pages_opened=%d)",
                 _launch_count,
@@ -238,7 +306,12 @@ def shutdown_playwright() -> None:
             except Exception as exc:
                 logger.debug("playwright.stop: %s", exc)
             _pw_instance = None
+        # Same-thread close should have reaped children; kill any stragglers.
+        stragglers = set(_browser_pids)
+        _browser_pids = set()
         _owner_ident = None
+        if stragglers:
+            _kill_pids(stragglers, reason="shutdown stragglers")
         logger.info(
             "[playwright] shutdown (launches=%d pages_opened=%d)",
             _launch_count,

@@ -458,6 +458,7 @@ def extract_underlying_records(
     extraction_errors = [False]
     document_urls: list[str] = list(known_document_urls or [])
     inventory_over_cap = 0
+    pending_pdfs: list[str] = []  # filled inside browser_page; processed after (#239)
 
     host = urlparse(source).netloc.lower()
     for seed in CITY_SEED_DOCUMENTS.get(host, []):
@@ -600,29 +601,11 @@ def extract_underlying_records(
             pdf_inventory, pdf_noise = partition_document_candidates(pdf_urls)
             for nu in pdf_noise:
                 logger.info("[civicplus] Skipping non-inventory PDF: %s", nu)
-            records.extend(
-                _process_pdfs(
-                    rank_inventory_documents(pdf_inventory),
-                    authority,
-                    extraction_errors=extraction_errors,
-                )
-            )
+            # PDF cascade runs *outside* browser_page so pdfplumber/HTTP does not
+            # hold _PLAYWRIGHT_LOCK for minutes while other targets wait (#239).
+            pending_pdfs = rank_inventory_documents(pdf_inventory)
 
-            # --- 3. Merge list-page property names into PDF-derived records ---
-            flyer_context = {
-                r["flyer_url"]: r["property_name"]
-                for r in records
-                if r.get("extraction_method") == "availability_list_flyer"
-                and r.get("flyer_url")
-                and r.get("property_name")
-            }
-            for r in records:
-                if r.get("source_url") in flyer_context and (
-                    not r.get("property_name") or len(str(r.get("property_name", ""))) < 5
-                ):
-                    r["property_name"] = flyer_context[r["source_url"]]
-
-            if not records:
+            if not records and not pending_pdfs:
                 try:
                     debug_slug = re.sub(r"[^\w]+", "_", (authority or "unknown").lower()).strip("_")
                     debug_path = f"/tmp/{debug_slug}_civicplus_debug.png"
@@ -643,6 +626,29 @@ def extract_underlying_records(
             "[civicplus] Error during extraction for %s: %s", authority or source, exc
         )
         raise
+
+    # --- PDF cascade + merge (after browser context released) ---
+    if pending_pdfs:
+        records.extend(
+            _process_pdfs(
+                pending_pdfs,
+                authority,
+                extraction_errors=extraction_errors,
+            )
+        )
+
+    flyer_context = {
+        r["flyer_url"]: r["property_name"]
+        for r in records
+        if r.get("extraction_method") == "availability_list_flyer"
+        and r.get("flyer_url")
+        and r.get("property_name")
+    }
+    for r in records:
+        if r.get("source_url") in flyer_context and (
+            not r.get("property_name") or len(str(r.get("property_name", ""))) < 5
+        ):
+            r["property_name"] = flyer_context[r["source_url"]]
 
     if not records and extraction_errors[0]:
         raise RuntimeError(
