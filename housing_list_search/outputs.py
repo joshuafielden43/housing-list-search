@@ -93,7 +93,7 @@ def _format_needs_review(run_stats: dict | None) -> str:
     raw_low = list(run_stats.get("low_yield") or [])
     low_yield: list[tuple[str, int]] = []
     for item in raw_low:
-        if isinstance(item, (list, tuple)) and len(item) >= 2:
+        if isinstance(item, list | tuple) and len(item) >= 2:
             low_yield.append((str(item[0]), int(item[1])))
         elif isinstance(item, dict) and item.get("authority") is not None:
             low_yield.append(
