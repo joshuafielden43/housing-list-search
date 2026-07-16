@@ -36,6 +36,12 @@ diff.csv
 run_prev.csv
 daily_summary.md
 daily_summary_partial.md
+proposed_prune.md
+diff_partial.csv
+current_full_partial.csv
+.run_daily.lock
+.run_daily.lock.meta
+.run_daily.lock.d/
 changelog_diffs.*
 housing_registry.db
 gilroy_*.csv
