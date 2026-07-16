@@ -166,3 +166,8 @@ def scrape_eden(authority: str = "", url: str = "") -> list[dict[str, Any]]:
         )
     print(f"   → Eden Housing: {len(records)} Santa Clara County properties")
     return records
+
+
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return scrape_eden(ctx.authority, ctx.url)

@@ -20,7 +20,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Staff Summary** | `staff_summary.py` — staff markdown *bodies*: daily_summary (open vs waitlist enrollment, contacts), proposed_prune. Interface: `render_staff_summary` |
 | **Measure** | Token in `scraping_measures` routing to an adapter (`bloom`, `housekeys`, `civicplus`, `waf_blocked`, …) |
 | **DispatchRegistry** | `dispatch.py` — measures → adapter handlers; URL predicates → extraction handlers |
-| **Adapter** | Platform-scoped scraper in `adapters/` or `extraction/` — named after vendor, never city |
+| **TargetContext** | `target_context.py` — inputs for one Target scrape (authority, URL, admin fields, measures). Adapter port: `run(ctx) → records` |
+| **Adapter** | Platform-scoped scraper in `adapters/` or `extraction/` — named after vendor, never city. Dispatch registers each adapter's ``run(TargetContext)`` (no lambda peel) |
 | **PDF default stack** | pdfplumber for tables, text, and flyer heuristics (ADR-0005); no PyMuPDF in default install |
 | **marker fallback** | Optional OCR tier in `extraction/marker_pdf.py` (`requirements-ocr.txt`) when pdfplumber yields zero. **Code GPL-3.0 + weights OpenRAIL-M** (not MIT) — operator obligations in ADR-0005 / #778 |
 

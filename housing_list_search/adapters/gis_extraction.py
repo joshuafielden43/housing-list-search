@@ -191,6 +191,18 @@ def extract_gis_portfolio(
     )
 
 
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return extract_gis_portfolio(
+        ctx.url,
+        ctx.authority,
+        administrator=ctx.administrator,
+        administrator_url=ctx.administrator_url,
+        administrator_phone=ctx.administrator_phone,
+        administrator_contact=ctx.administrator_contact,
+    )
+
+
 # =============================================================================
 # PARSERS
 # =============================================================================

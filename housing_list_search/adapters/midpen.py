@@ -186,3 +186,8 @@ def scrape_midpen(authority: str = "", url: str = "") -> list[dict[str, Any]]:
 
     print(f"   → MidPen: {len(records)} Santa Clara County properties")
     return records
+
+
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return scrape_midpen(ctx.authority, ctx.url)

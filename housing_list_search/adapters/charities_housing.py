@@ -157,6 +157,11 @@ def _fetch_portfolio_api(now_iso: str, known_urls: set[str]) -> list[dict[str, A
     return records
 
 
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return scrape_charities_housing(ctx.authority, ctx.url)
+
+
 def scrape_charities_housing(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     """Public entry point. `url` is accepted for runner uniformity; the
     adapter always reads the two canonical charitieshousing.org sources."""

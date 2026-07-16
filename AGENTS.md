@@ -186,10 +186,12 @@ When you hit a WAF block: document it (what you tried, the specific block signat
 Unknown measures produce a WARNING log so TARGETS.md typos surface immediately.
 
 When adding a new adapter:
-1. Create the adapter module with a stable public entry point
-2. Call `register_measure("your_measure", handler)` in `dispatch.py` `_register_measure_handlers()` (with import guard)
-3. Add the measure to `KNOWN_MEASURES` in `dispatch.py`
+1. Create the adapter module with `run(ctx: TargetContext) -> list[records]` (the Handler port)
+2. Keep a thin `scrape_*` helper for tests/REPL if useful; dispatch only calls `run`
+3. Add a row to `_HANDLER_SPECS` in `dispatch.py` and the measure to `measure_registry.py`
 4. Add a TARGETS.md row and document here
+
+Do not register with lambda peels — Handler is always `run(ctx)`.
 
 ## Run pipeline (pipeline.py)
 

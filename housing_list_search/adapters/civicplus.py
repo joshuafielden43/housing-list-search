@@ -676,3 +676,8 @@ def extract_underlying_records(
         "[civicplus] Extracted %d underlying records from %s", len(records), authority or source
     )
     return records
+
+
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return extract_underlying_records(ctx.url, ctx.authority)

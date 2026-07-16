@@ -77,6 +77,11 @@ def scrape_alta(authority: str, url: str, timeout: int = 60000) -> list[dict[str
     return records
 
 
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return scrape_alta(ctx.authority, ctx.url)
+
+
 def scrape_property_directory(authority: str = "") -> list[dict[str, Any]]:
     """Parse altahousing.org/current-properties/ into per-property records.
 

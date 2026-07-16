@@ -126,3 +126,8 @@ def scrape_eah(authority: str = "", url: str = "") -> list[dict[str, Any]]:
         )
     print(f"   → EAH Housing: {len(records)} Santa Clara County properties")
     return records
+
+
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return scrape_eah(ctx.authority, ctx.url)

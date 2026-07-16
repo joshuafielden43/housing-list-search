@@ -133,3 +133,12 @@ def scrape_housekeys(authority: str, url: str, admin_url: str = ""):
         "   → HouseKeys adapter produced 1 registration record (this is the actionable public entry point)"
     )
     return [record]
+
+
+def run(ctx) -> list:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return scrape_housekeys(
+        ctx.authority,
+        ctx.url,
+        admin_url=ctx.administrator_url,
+    )

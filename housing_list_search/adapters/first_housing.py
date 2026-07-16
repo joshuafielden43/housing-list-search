@@ -123,3 +123,8 @@ def scrape_first_housing(authority: str = "", url: str = "") -> list[dict[str, A
         )
     print(f"   → First Community Housing: {len(records)} properties")
     return records
+
+
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return scrape_first_housing(ctx.authority, ctx.url)

@@ -8,9 +8,10 @@ Measures map to adapter handlers; URL predicates map to extraction-layer handler
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from housing_list_search.listing import coerce_adapter_records
@@ -19,6 +20,9 @@ from housing_list_search.measure_registry import (
     MEASURE_ALIASES,
     parse_target_measures,
 )
+from housing_list_search.target_context import TargetContext
+
+# TargetContext is defined in target_context.py; re-exported for dispatch callers.
 
 
 @dataclass(frozen=True)
@@ -40,24 +44,12 @@ class TargetScrapeResult:
 logger = logging.getLogger(__name__)
 
 Record = dict[str, Any]
-Handler = Callable[["TargetContext"], list[Record]]
+Handler = Callable[[TargetContext], list[Record]]
 UrlPredicate = Callable[[str, str], bool]
 UrlExtractor = Callable[[str, str], list[Any]]
 
 _MEASURE_HANDLERS: dict[str, Handler] = {}
 _URL_EXTRACTORS: list[tuple[str, frozenset[str], UrlPredicate, UrlExtractor]] = []
-
-
-@dataclass
-class TargetContext:
-    authority: str
-    url: str
-    measures: set[str] = field(default_factory=set)
-    administrator: str = ""
-    administrator_url: str = ""
-    administrator_phone: str = ""
-    administrator_contact: str = ""
-    notes: str = ""
 
 
 def register_measure(measure: str, handler: Handler) -> None:
@@ -274,99 +266,36 @@ def _reset_registration_for_tests() -> None:
     _registered = False
 
 
+# measure → (module path, Handler attribute). Handler is always ``run(ctx)``.
+_HANDLER_SPECS: tuple[tuple[str, str, str], ...] = (
+    ("john_stewart", "housing_list_search.adapters.john_stewart", "run"),
+    ("gis", "housing_list_search.adapters.gis_extraction", "run"),
+    ("housekeys", "housing_list_search.adapters.housekeys", "run"),
+    ("civicplus", "housing_list_search.adapters.civicplus", "run"),
+    ("alta", "housing_list_search.adapters.alta", "run"),
+    ("charities_housing", "housing_list_search.adapters.charities_housing", "run"),
+    ("midpen", "housing_list_search.adapters.midpen", "run"),
+    ("eden", "housing_list_search.adapters.eden", "run"),
+    ("eah", "housing_list_search.adapters.eah", "run"),
+    ("first_housing", "housing_list_search.adapters.first_housing", "run"),
+)
+
+
 def _register_measure_handlers() -> None:
-    try:
-        from housing_list_search.adapters.john_stewart import scrape_john_stewart
-
-        register_measure(
-            "john_stewart", lambda ctx: scrape_john_stewart(ctx.url, authority=ctx.authority)
-        )
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.gis_extraction import extract_gis_portfolio
-
-        register_measure(
-            "gis",
-            lambda ctx: extract_gis_portfolio(
-                ctx.url,
-                ctx.authority,
-                administrator=ctx.administrator,
-                administrator_url=ctx.administrator_url,
-                administrator_phone=ctx.administrator_phone,
-                administrator_contact=ctx.administrator_contact,
-            ),
-        )
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.housekeys import scrape_housekeys
-
-        register_measure(
-            "housekeys",
-            lambda ctx: scrape_housekeys(
-                ctx.authority,
-                ctx.url,
-                admin_url=ctx.administrator_url,
-            ),
-        )
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.civicplus import extract_underlying_records
-
-        register_measure(
-            "civicplus", lambda ctx: extract_underlying_records(ctx.url, ctx.authority)
-        )
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.alta import scrape_alta
-
-        register_measure("alta", lambda ctx: scrape_alta(ctx.authority, ctx.url))
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.charities_housing import scrape_charities_housing
-
-        register_measure(
-            "charities_housing", lambda ctx: scrape_charities_housing(ctx.authority, ctx.url)
-        )
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.midpen import scrape_midpen
-
-        register_measure("midpen", lambda ctx: scrape_midpen(ctx.authority, ctx.url))
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.eden import scrape_eden
-
-        register_measure("eden", lambda ctx: scrape_eden(ctx.authority, ctx.url))
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.eah import scrape_eah
-
-        register_measure("eah", lambda ctx: scrape_eah(ctx.authority, ctx.url))
-    except ImportError:
-        pass
-
-    try:
-        from housing_list_search.adapters.first_housing import scrape_first_housing
-
-        register_measure("first_housing", lambda ctx: scrape_first_housing(ctx.authority, ctx.url))
-    except ImportError:
-        pass
+    """Register each platform Adapter's ``run(TargetContext)`` port — no lambda peel."""
+    for measure, module_path, attr in _HANDLER_SPECS:
+        try:
+            mod = importlib.import_module(module_path)
+            handler = getattr(mod, attr)
+        except (ImportError, AttributeError) as exc:
+            logger.error(
+                "Adapter registration failed for measure=%s module=%s: %s",
+                measure,
+                module_path,
+                exc,
+            )
+            continue
+        register_measure(measure, handler)
 
 
 # Registration is now lazy via ensure_registered() — no import side effects.

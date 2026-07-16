@@ -554,6 +554,11 @@ def scrape_john_stewart(url: str, *, authority: str = "") -> list[dict[str, Any]
     return _scrape_direct_john_stewart(url, authority=auth)
 
 
+def run(ctx) -> list[dict[str, Any]]:
+    """Adapter port: TargetContext → records (dispatch Handler)."""
+    return scrape_john_stewart(ctx.url, authority=ctx.authority)
+
+
 # =============================================================================
 # USAGE AS TEMPLATE FOR FUTURE ONE-OFF ADAPTERS
 # =============================================================================
