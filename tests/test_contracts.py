@@ -88,10 +88,13 @@ class TestSummaryOpenDetection:
         md = self._run(listings)
         assert "Oakwood Terrace Apartments" in md
 
-    def test_waitlist_open_in_notes_is_open(self):
+    def test_waitlist_open_in_notes_is_enrollment_section(self):
+        """#244: waitlist open lands under enrollment, not unit-available open."""
         listings = [_listing("Park View Senior", notes="waitlist open (3 spots)", source="bloom:x")]
         md = self._run(listings)
         assert "Park View Senior" in md
+        assert "WAITLISTS ACCEPTING ENROLLMENT" in md
+        assert "Park View Senior" not in md.split("CURRENTLY OPEN")[1].split("WAITLISTS")[0] if "CURRENTLY OPEN" in md else True
 
     def test_status_open_field_is_open(self):
         listings = [_listing("Sunrise Gardens", status="Open", notes="", source="generic:test")]
@@ -150,7 +153,7 @@ class TestSummaryOpenDetection:
         ]
         md = self._run(listings)
         assert "11 extracted" in md
-        assert "No open or accepting listings" in md
+        assert "No open units or enrolling waitlists" in md
         assert "registration portals" in md
         assert "No currently open lists detected" not in md
         assert "This run produced **11 listings**" not in md
@@ -258,7 +261,7 @@ class TestSummaryOpenDetection:
     def test_open_listings_show_more_cue_when_truncated(self):
         listings = [_listing(f"Open Home {i}", status="Open", source="bloom:x") for i in range(105)]
         md = self._run(listings)
-        assert "105 open or accepting applications" in md
+        assert "105 open / accepting applications (units)" in md
         assert "+ 5 more open listing" in md
 
 

@@ -10,11 +10,11 @@ OPEN_LISTING_DISPLAY_CAP = 100
 
 
 def _listing_is_open(listing: dict) -> bool:
-    """True when a property is currently accepting applications / open units.
+    """True when units appear available / applications accepted for placement now (#244).
 
-    Waitlist *directory* cards (contact property manager; no vacancy claim) are
-    not open (#1107). Vendor "Waitlist Open" status still counts when the source
-    means the waitlist is accepting names.
+    Waitlist *enrollment* (vendor "Waitlist Open") is **not** unit-available —
+    use ``_listing_is_waitlist_enrolling`` for that. Contact-directory waitlist
+    cards remain excluded (#1107).
     """
     listing_status = (listing.get("listing_status") or "").lower().strip()
     status_val = (listing.get("status") or "").lower().strip()
@@ -25,16 +25,104 @@ def _listing_is_open(listing: dict) -> bool:
         return False
     if "contact directory" in notes_val or "waitlist via on-site property manager" in notes_val:
         return False
+    # Explicit waitlist language is not "unit available now" (#244)
+    if _listing_is_waitlist_enrolling(listing):
+        return False
 
     if listing_status == "open" or status_val == "open":
         return True
     if "accepting applications" in notes_val:
         return True
-    # Vendor display labels (MidPen/Eden/JSCO) — waitlist is open for applications
+    # Bare listing_status=waitlist without open/accepting language is not enough
+    return False
+
+
+def _listing_is_waitlist_enrolling(listing: dict) -> bool:
+    """True when a waitlist is accepting names — not the same as a vacant unit (#244)."""
+    listing_status = (listing.get("listing_status") or "").lower().strip()
+    status_val = (listing.get("status") or "").lower().strip()
+    notes_val = (listing.get("notes") or "").lower()
+
+    if listing_status == "coming_soon":
+        return False
+    if "contact directory" in notes_val or "waitlist via on-site property manager" in notes_val:
+        return False
     if status_val == "waitlist open" or "waitlist open" in notes_val:
         return True
-    # Bare listing_status=waitlist without vendor "open" language is not enough
+    # MidPen-style: listing_status waitlist + status Waitlist Open already covered
+    if listing_status == "waitlist" and "open" in status_val and "waitlist" in status_val:
+        return True
     return False
+
+
+def _contact_lines(listing: dict) -> list[str]:
+    """Phone/email/admin contact lines for staff summary cards (#244)."""
+    lines: list[str] = []
+    phone = (listing.get("phone") or "").strip()
+    email = (listing.get("email") or "").strip()
+    admin_phone = (listing.get("administrator_phone") or "").strip()
+    admin_contact = (listing.get("administrator_contact") or "").strip()
+    admin = (listing.get("administrator") or "").strip()
+
+    # Prefer explicit fields; fall back to notes "phone:" / "email:" crumbs
+    notes = listing.get("notes") or ""
+    if not phone and "phone:" in notes.lower():
+        for part in notes.split("|"):
+            p = part.strip()
+            if p.lower().startswith("phone:"):
+                phone = p.split(":", 1)[-1].strip()
+                break
+    if not email and "email:" in notes.lower():
+        for part in notes.split("|"):
+            p = part.strip()
+            if p.lower().startswith("email:"):
+                email = p.split(":", 1)[-1].strip()
+                break
+
+    if phone:
+        lines.append(f"Phone: {phone}")
+    if email:
+        lines.append(f"Email: {email}")
+    if admin and (admin_phone or admin_contact):
+        bits = [admin]
+        if admin_contact:
+            bits.append(admin_contact)
+        if admin_phone:
+            bits.append(admin_phone)
+        lines.append(f"Administrator: {', '.join(bits)}")
+    elif admin_phone or admin_contact:
+        bits = [b for b in (admin_contact, admin_phone) if b]
+        lines.append(f"Contact: {', '.join(bits)}")
+    return lines
+
+
+def _write_listing_card(f, listing: dict) -> None:
+    """One staff-facing property card (name, status, contacts, link)."""
+    name = listing["property_name"][:85] + (
+        "..." if len(listing["property_name"]) > 85 else ""
+    )
+    f.write(f"**{name}**\n")
+    f.write(f"Deadline: {listing.get('deadline') or 'None listed'}\n")
+    addr = listing.get("address") or ""
+    if addr:
+        f.write(f"Address: {addr}\n")
+    br = listing.get("unit_types") or listing.get("bedrooms") or ""
+    if br:
+        f.write(f"Units/BR: {br}\n")
+    status = listing.get("status") or ""
+    if status:
+        f.write(f"Status: {status}\n")
+    for line in _contact_lines(listing):
+        f.write(f"{line}\n")
+    f.write(f"Source: {listing['authority']}\n")
+    link = (
+        listing.get("url")
+        or listing.get("source_url")
+        or listing.get("document_url")
+        or listing.get("flyer_url")
+        or ""
+    )
+    f.write(f"Link: {link}\n\n")
 
 
 def _listing_is_summary_candidate(listing: dict) -> bool:
@@ -222,21 +310,27 @@ def generate_daily_summary(
         f.write(_format_integrity_summary(run_stats))
         f.write(_format_coverage_summary(listings))
 
-        seen = {}
-        unique_opens = []
+        seen_open: set[tuple] = set()
+        seen_waitlist: set[tuple] = set()
+        unique_opens: list[dict] = []
+        unique_waitlists: list[dict] = []
 
         for listing in listings:
             name_key = listing.get("property_name", "")[:55].lower().strip()
             key = (name_key, listing.get("authority"))
-
-            if key in seen:
+            if not _listing_is_summary_candidate(listing):
                 continue
-            seen[key] = True
-
-            if _listing_is_open(listing) and _listing_is_summary_candidate(listing):
-                unique_opens.append(listing)
+            if _listing_is_open(listing):
+                if key not in seen_open:
+                    seen_open.add(key)
+                    unique_opens.append(listing)
+            elif _listing_is_waitlist_enrolling(listing):
+                if key not in seen_waitlist:
+                    seen_waitlist.add(key)
+                    unique_waitlists.append(listing)
 
         open_count = len(unique_opens)
+        waitlist_count = len(unique_waitlists)
         cov = summarize_coverage(listings)
         f.write(
             f"**Records this run:** {cov.total} extracted "
@@ -247,52 +341,53 @@ def generate_daily_summary(
         if cov.program_count:
             f.write(f", {cov.program_count} program extract{'s' if cov.program_count != 1 else ''}")
         f.write(")")
+        bits: list[str] = []
         if open_count:
-            f.write(f" · {open_count} open or accepting applications\n\n")
+            bits.append(f"{open_count} open / accepting applications (units)")
+        if waitlist_count:
+            bits.append(f"{waitlist_count} waitlist(s) accepting enrollment")
+        if bits:
+            f.write(" · " + " · ".join(bits) + "\n\n")
         else:
             f.write("\n\n")
 
         if unique_opens:
             f.write("## 🔥 CURRENTLY OPEN / ACCEPTING APPLICATIONS\n\n")
+            f.write(
+                "_Units or applications available now — not waitlist-only enrollment._\n\n"
+            )
             display = unique_opens[:OPEN_LISTING_DISPLAY_CAP]
             for listing in display:
-                name = listing["property_name"][:85] + (
-                    "..." if len(listing["property_name"]) > 85 else ""
-                )
-                f.write(f"**{name}**\n")
-                f.write(f"Deadline: {listing.get('deadline') or 'None listed'}\n")
-                addr = listing.get("address") or ""
-                if addr:
-                    f.write(f"Address: {addr}\n")
-                br = listing.get("unit_types") or listing.get("bedrooms") or ""
-                if br:
-                    f.write(f"Units/BR: {br}\n")
-                status = listing.get("status") or ""
-                if status:
-                    f.write(f"Status: {status}\n")
-                f.write(f"Source: {listing['authority']}\n")
-                link = (
-                    listing.get("url")
-                    or listing.get("source_url")
-                    or listing.get("document_url")
-                    or listing.get("flyer_url")
-                    or ""
-                )
-                f.write(f"Link: {link}\n\n")
+                _write_listing_card(f, listing)
             if open_count > len(display):
                 remaining = open_count - len(display)
                 f.write(
                     f"_+ {remaining} more open listing(s) in this run — "
                     "filter `current_full.csv` for open/accepting status._\n\n"
                 )
-        elif cov.total > 0:
+
+        if unique_waitlists:
+            f.write("## 📋 WAITLISTS ACCEPTING ENROLLMENT\n\n")
             f.write(
-                "**No open or accepting listings in this run.** "
-                f"The {cov.total} record(s) extracted are closed, waitlist-only, "
-                "registration portals, or otherwise not currently accepting applications.\n\n"
+                "_Waitlist is open for names — **not** the same as a vacant unit available "
+                "today. Confirm with the property before telling a client to apply for housing._\n\n"
             )
-        else:
-            f.write("**No listings extracted in this run.**\n\n")
+            display_wl = unique_waitlists[:OPEN_LISTING_DISPLAY_CAP]
+            for listing in display_wl:
+                _write_listing_card(f, listing)
+            if waitlist_count > len(display_wl):
+                remaining = waitlist_count - len(display_wl)
+                f.write(f"_+ {remaining} more waitlist listing(s) in this run._\n\n")
+
+        if not unique_opens and not unique_waitlists:
+            if cov.total > 0:
+                f.write(
+                    "**No open units or enrolling waitlists in this run.** "
+                    f"The {cov.total} record(s) extracted are closed, registration portals, "
+                    "static inventory without status, or otherwise not actionable for placement.\n\n"
+                )
+            else:
+                f.write("**No listings extracted in this run.**\n\n")
 
         f.write("## 📊 Full Dataset for Import\n")
         f.write(
