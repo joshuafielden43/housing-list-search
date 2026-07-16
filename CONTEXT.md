@@ -34,7 +34,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Partial run** | `--target "City"` — writes `diff_partial.csv` / `current_full_partial.csv`; preserves global `diff.csv`, `current_full.csv`, `run_prev.csv` (#241) |
 | **diff.csv** | Machine delta (`NEW` / `UPDATED` / `STALE` / `SCRAPE_FAILED`); labels from pure `classify_machine_change` |
 | **Disappearance** | `disappearance.py` — deep module: machine Diff labels + staff projection (ADDED/REMOVED/STALE/SCRAPE_FAILED/STATUS_CHANGE) from `diff.csv` (ADR-0001). `run_prev.csv` only for STATUS_CHANGE. There is no `freshness.py` — do not re-add a re-export shim under that name |
-| **Freshness** | Ordinary English for “is inventory current?” (e.g. STALE prune, daily run). Not a module. Change semantics live under **Disappearance**. Identity remains `(authority, property_name, url)` via `listing.listing_identity` |
+| **Freshness** | Ordinary English for “is inventory current?” (e.g. STALE prune, daily run). Not a module. Change semantics live under **Disappearance**. |
+| **Listing Identity** | `listing_identity.py` — persistence key `(authority, property_name, url)`, cross-source merge key, mirror confirm keys, and pure `alias_matches` for Store touch. Does not classify STALE/REMOVED (Disappearance) and does not execute SQL (Store only). |
 | **Coverage** | `coverage.py` — `record_kind`: `property` / `portal` / `program`; UEO-style count excludes portals |
 | **current_full.csv** | Full `housing_records` export |
 

@@ -18,11 +18,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from housing_list_search.listing import (
+from housing_list_search.listing import canonicalize_listings
+from housing_list_search.listing_identity import (
     ListingKey,
-    canonicalize_listings,
     cross_source_key,
-    listing_identity,
+    mirror_confirm_keys,
+    persistence_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ def deduplicate_for_run(
         return DedupeResult(survivors=[], mirrors_to_confirm=frozenset())
 
     rows = listings if canonical else canonicalize_listings(listings)
-    all_identities = {listing_identity(r) for r in rows}
+    all_identities = {persistence_key(r) for r in rows}
 
     def score(rec: dict[str, Any]) -> tuple[float, bool, bool]:
         raw_c = rec.get("confidence", 0.5)
@@ -80,7 +81,7 @@ def deduplicate_for_run(
     unique: list[dict[str, Any]] = []
 
     for rec in sorted_rows:
-        ident = listing_identity(rec)
+        ident = persistence_key(rec)
         cross = cross_source_key(rec)
 
         if ident in seen_identity:
@@ -93,8 +94,8 @@ def deduplicate_for_run(
             seen_cross.add(cross)
         unique.append(rec)
 
-    survivor_ids = {listing_identity(r) for r in unique}
-    mirrors = frozenset(all_identities - survivor_ids)
+    survivor_ids = {persistence_key(r) for r in unique}
+    mirrors = mirror_confirm_keys(all_identities, survivor_ids)
 
     dropped = len(rows) - len(unique)
     if dropped > 0:

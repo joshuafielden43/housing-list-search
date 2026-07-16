@@ -1,19 +1,17 @@
 """Tests for Disappearance run-diff helpers (listing identity + compute_run_diff)."""
 
-from housing_list_search.disappearance import (
-    compute_run_diff,
-    listing_identity,
-)
+from housing_list_search.disappearance import compute_run_diff
+from housing_list_search.listing_identity import persistence_key
 
 
-class TestListingIdentity:
+class TestPersistenceKey:
     def test_uses_url_when_present(self):
         item = {"authority": "City", "property_name": "Oak", "url": "https://x"}
-        assert listing_identity(item) == ("City", "Oak", "https://x")
+        assert persistence_key(item) == ("City", "Oak", "https://x")
 
     def test_document_url_fallback(self):
         item = {"authority": "City", "property_name": "Oak", "document_url": "https://pdf"}
-        assert listing_identity(item)[2] == "https://pdf"
+        assert persistence_key(item)[2] == "https://pdf"
 
 
 class TestComputeRunDiff:

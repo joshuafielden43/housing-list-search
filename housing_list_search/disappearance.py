@@ -22,7 +22,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from housing_list_search.listing import ListingKey, canonical_authority, listing_identity
+from housing_list_search.listing import canonical_authority
+from housing_list_search.listing_identity import ListingKey, persistence_key
 from housing_list_search.status_labels import resolve_status_label
 
 __all__ = [
@@ -39,7 +40,7 @@ __all__ = [
     "key_from_diff_row",
     "load_diff_csv_rows",
     "project_disappearance",
-    "listing_identity",
+    "persistence_key",
 ]
 
 MachineChange = Literal["NEW", "UPDATED", "STALE", "SCRAPE_FAILED"]
@@ -148,7 +149,7 @@ def _parse_iso_loose(value: str | None) -> datetime | None:
 def listings_by_key(items: list[dict[str, Any]]) -> dict[ListingKey, dict[str, Any]]:
     keyed: dict[ListingKey, dict[str, Any]] = {}
     for item in items:
-        keyed[listing_identity(item)] = item
+        keyed[persistence_key(item)] = item
     return keyed
 
 
@@ -184,7 +185,7 @@ def compute_run_diff(
 
 def key_from_diff_row(row: dict[str, str]) -> ListingKey:
     """Build ListingKey from a diff.csv row (source_authority vs authority)."""
-    return listing_identity(
+    return persistence_key(
         {
             "authority": row.get("source_authority") or row.get("authority") or "",
             "property_name": row.get("property_name") or "",
@@ -240,7 +241,7 @@ def project_disappearance(
     REMOVED: diff.csv STALE where last_run_id == previous_run_id (confirmed last full run).
     STALE (lingering): other diff.csv STALE rows.
     SCRAPE_FAILED: diff.csv SCRAPE_FAILED rows only.
-    STATUS_CHANGE: run_prev snapshot vs current listings (identity via listing_identity).
+    STATUS_CHANGE: run_prev snapshot vs current listings (identity via persistence_key).
     """
     _ = run_id  # reserved for future run_id-scoped projections
     failed = set(scrape_failed_authorities or [])

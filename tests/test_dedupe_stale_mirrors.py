@@ -7,7 +7,8 @@ from pathlib import Path
 from housing_list_search.db import DatabaseManager
 from housing_list_search.dedupe import deduplicate_for_run, deduplicate_listings
 from housing_list_search.dispatch import TargetScrapeResult
-from housing_list_search.listing import canonicalize_listings, listing_identity
+from housing_list_search.listing import canonicalize_listings
+from housing_list_search.listing_identity import persistence_key
 from housing_list_search.pipeline import RunPipeline
 
 
@@ -37,7 +38,7 @@ def test_confirm_listing_identities_bumps_last_run_id(tmp_path):
             }
         ]
     )[0]
-    key = listing_identity(row)
+    key = persistence_key(row)
     n = db.confirm_listing_identities([key], run_id="run2")
     assert n == 1
     counts = db.diff_counts("run2")
@@ -162,12 +163,12 @@ def test_deduplicate_for_run_returns_mirror_identities():
     ]
     out = deduplicate_for_run(records)
     assert len(out.survivors) == 1
-    assert listing_identity(out.survivors[0])[0]  # authority present
+    assert persistence_key(out.survivors[0])[0]  # authority present
     # Loser authority identity must be confirmed separately
     assert len(out.mirrors_to_confirm) == 1
     loser = next(iter(out.mirrors_to_confirm))
-    assert "SJ" in loser[0] or "Portal" in loser[0] or loser[0] != listing_identity(out.survivors[0])[0]
-    assert loser not in {listing_identity(s) for s in out.survivors}
+    assert "SJ" in loser[0] or "Portal" in loser[0] or loser[0] != persistence_key(out.survivors[0])[0]
+    assert loser not in {persistence_key(s) for s in out.survivors}
 
 
 def test_persist_run_confirms_mirrors(tmp_path, monkeypatch):

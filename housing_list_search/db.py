@@ -28,6 +28,7 @@ from housing_list_search.disappearance import (
     expand_scrape_failed_authorities,
 )
 from housing_list_search.listing import canonicalize_listings
+from housing_list_search.listing_identity import alias_matches
 from housing_list_search.schema import init_schema
 from housing_list_search.sqlite_config import DEFAULT_DB_PATH, connect_sqlite
 
@@ -557,10 +558,8 @@ class DatabaseManager:
     ) -> int:
         """Confirm other authority/url rows for the same physical property (#1104).
 
-        After authority canonicalization, older rows may still use portfolio
-        TARGETS strings (e.g. "Charities Housing (… portfolio)") while survivors
-        use "Charities Housing". Same property_name + address (or same url)
-        means the property was seen this run — do not leave alias rows STALE.
+        Match policy lives in listing_identity.alias_matches (pure). This method
+        only loads candidates by property_name and executes last_run_id touches.
         """
         if not survivors or not run_id:
             return 0
@@ -573,31 +572,30 @@ class DatabaseManager:
             name = (row.get("property_name") or "").strip()
             if not name:
                 continue
-            url = (row.get("url") or "").strip()
-            addr = (row.get("address") or "").strip()
-            auth = (row.get("authority") or "").strip()
-            if url:
+            c.execute(
+                """
+                SELECT authority, property_name, url, address
+                FROM housing_records
+                WHERE property_name = ?
+                """,
+                [name],
+            )
+            for auth, pname, url, addr in c.fetchall():
+                candidate = {
+                    "authority": auth or "",
+                    "property_name": pname or "",
+                    "url": url or "",
+                    "address": addr or "",
+                }
+                if not alias_matches(row, candidate):
+                    continue
                 c.execute(
                     """
                     UPDATE housing_records
                     SET last_run_id = ?, last_seen = COALESCE(last_seen, ?)
-                    WHERE property_name = ?
-                      AND url = ?
-                      AND (? = '' OR authority != ?)
+                    WHERE authority = ? AND property_name = ? AND url = ?
                     """,
-                    [run_id, now, name, url, auth, auth],
-                )
-                touched += c.rowcount if c.rowcount and c.rowcount > 0 else 0
-            if addr and len(addr) >= 8:
-                c.execute(
-                    """
-                    UPDATE housing_records
-                    SET last_run_id = ?, last_seen = COALESCE(last_seen, ?)
-                    WHERE property_name = ?
-                      AND address = ?
-                      AND (? = '' OR authority != ?)
-                    """,
-                    [run_id, now, name, addr, auth, auth],
+                    [run_id, now, candidate["authority"], candidate["property_name"], candidate["url"]],
                 )
                 touched += c.rowcount if c.rowcount and c.rowcount > 0 else 0
         conn.commit()

@@ -6,10 +6,10 @@ from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.disappearance import (
     DisappearanceResult,
     ListingKey,
-    listing_identity,
     load_diff_csv_rows,
     project_disappearance,
 )
+from housing_list_search.listing_identity import persistence_key
 
 
 def _load_run_prev(path: str) -> list[dict]:
@@ -51,7 +51,7 @@ def _write_run_snapshot(current: list) -> None:
             ]
         )
         for item in current:
-            auth, name, url = listing_identity(item)
+            auth, name, url = persistence_key(item)
             status = item.get("status") or ""
             ls = item.get("listing_status") or ""
             writer.writerow(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from housing_list_search.adapters.eah import parse_search_results
 from housing_list_search.adapters.midpen import _parse_card
-from housing_list_search.listing import listing_identity
+from housing_list_search.listing_identity import persistence_key
 
 
 def test_midpen_relative_href_becomes_absolute():
@@ -25,7 +25,7 @@ def test_midpen_relative_href_becomes_absolute():
     html_abs = html.replace('href="/property/oak-creek/"', 'href="https://www.midpen-housing.org/property/oak-creek/"')
     card2 = BeautifulSoup(html_abs, "html.parser").select_one(".elementor-location-single")
     rec2 = _parse_card(card2, "2026-07-10T00:00:00", "https://www.midpen-housing.org/find-housing/2/")
-    assert listing_identity(rec) == listing_identity(rec2)
+    assert persistence_key(rec) == persistence_key(rec2)
 
 
 def test_eah_relative_href_becomes_absolute():

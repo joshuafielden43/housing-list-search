@@ -3,7 +3,10 @@ listing.py — canonical Listing shape at the persistence seam.
 
 The deep module for turning raw adapter output into canonical Listings.
 listing_to_row() (and canonicalize_listings) is the single coercion path.
-Identity and surrogate logic live here for locality.
+Surrogate URLs and authority canon for row shape live here.
+
+Listing Identity (persistence_key, cross_source_key, confirm match policy)
+lives in listing_identity.py — not here.
 """
 
 from __future__ import annotations
@@ -20,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 # Canonical row shape is a plain dict from listing_to_row() — not a parallel
 # value type. #1062 deleted CanonicalListing (half-depth: built only to to_dict()).
-ListingKey = tuple[str, str, str]
 
 _SURROGATE_PREFIX = "hls:"
 
@@ -92,28 +94,6 @@ def norm_property_name(name: str) -> str:
     n = re.sub(r"\s+", " ", n)
     n = re.sub(r"[^a-z0-9]", "", n)
     return n.strip()
-
-
-def cross_source_key(row: dict[str, Any]) -> tuple[str, str] | None:
-    """
-    Key for merging the same physical property across authorities (#797).
-
-    Prefer shared hls:addr: surrogates; else street-level address; else name+addr.
-    Lives on the Listing seam so dedupe does not own a parallel identity world.
-    """
-    url = (row.get("url") or "").strip()
-    if url.startswith("hls:addr:"):
-        return ("url", url)
-
-    addr_key = norm_address(row.get("address") or "")
-    if len(addr_key) >= 6 and any(c.isdigit() for c in addr_key):
-        return ("addr", addr_key)
-
-    name_key = norm_property_name(row.get("property_name") or "")
-    if name_key and addr_key:
-        return ("name_addr", f"{name_key}:{addr_key}")
-
-    return None
 
 
 def norm_address(addr: str) -> str:
@@ -319,25 +299,3 @@ def listing_to_row(item: Any, *, now: str | None = None) -> dict[str, Any]:
         "expires_at": (raw.get("expires_at") or "").strip(),
         "scrape_date": ts,
     }
-
-
-def listing_identity(item: Any) -> ListingKey:
-    """Canonical (authority, property_name, url) for a listing dict or snapshot row.
-
-    Idempotent on already-canonical rows (trusts their authority/url).
-    """
-    if isinstance(item, dict) and item.get("scrape_date"):
-        # canonical row produced by listing_to_row: trust pre-computed fields
-        auth = item.get("authority") or ""
-        name = (item.get("property_name") or "").strip()
-        url = (item.get("url") or "").strip()
-        return auth, name, url
-
-    raw = coerce_listing(item)
-    auth, name = _canon_auth_name(raw)
-    stored = (item.get("url") or "").strip() if isinstance(item, dict) else ""
-    if stored.startswith(_SURROGATE_PREFIX) or "://" in stored:
-        url = stored
-    else:
-        url = _persistence_url(raw)
-    return auth, name, url

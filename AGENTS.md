@@ -197,7 +197,7 @@ When adding a new adapter:
 
 ## Listing shape (listing.py)
 
-The deep module at the canonical transformation seam. All adapter output crosses `canonicalize_listings()` / `listing_to_row()` (single coercion + idempotent) before dedupe/identity/persist. `listing_identity()` (and `key_from_diff_row`) provide the canonical key. Surrogate URLs, authority canonicalization, and address normalization live here for locality. Callers (db, dedupe, disappearance, pipeline, changelog) consume canonical rows or keys; no parallel field-mapping paths. Do not reach low-level helpers from outside.
+The deep module at the canonical transformation seam. All adapter output crosses `canonicalize_listings()` / `listing_to_row()` (single coercion + idempotent) before dedupe/identity/persist. Surrogate URLs, authority canon, and address normalization for row shape live here. **Listing Identity** (`listing_identity.py`) owns `persistence_key`, `cross_source_key`, mirror confirm sets, and `alias_matches` — Store only executes touches. Callers consume canonical rows or keys; no parallel field-mapping paths.
 
 ## PDF extraction (extraction/pdf.py)
 
@@ -259,7 +259,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/machine_persist.py` | Machine Persist: canonicalize, dedupe + mirror confirm, upsert, machine CSVs (#1070/#1071) |
 | `housing_list_search/staff_publish.py` | Staff Publish: partial/full artifact policy, run_prev baseline, changelog, daily_summary (#1063) |
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
-| `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row / listing_identity; all shape, surrogate, authority canon, identity here |
+| `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row; shape, surrogate, authority canon |
+| `housing_list_search/listing_identity.py` | Listing Identity: persistence_key, cross_source_key, mirror_confirm_keys, alias_matches |
 
 | `housing_list_search/disappearance.py` | Deep module: machine Diff labels + staff Disappearance projection (ADR-0001). No `freshness.py` shim |
 | `housing_list_search/schema.py` | Sole owner of `housing_registry.db` DDL (`targets`, `housing_records`, `run_history`) |
