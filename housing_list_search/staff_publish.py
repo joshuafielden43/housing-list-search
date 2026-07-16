@@ -2,10 +2,10 @@
 staff_publish.py — deep Staff Publish module (#1063).
 
 Owns post-persist staff artifact *policy*: partial vs full, when to rewrite
-run_prev, changelog stubs, daily_summary paths, RUN_EVENT, Needs Review surface.
+run_prev, changelog stubs, which summary path, RUN_EVENT, Needs Review surface.
 
-Does not own: Disappearance math (disappearance.py), summary markdown body
-(outputs.py), or SQLite DDL (db.py). Callers: RunPipeline publish phase.
+Does not own: Disappearance math, staff markdown body (staff_summary.py), or
+Inventory Store DDL. Callers: RunPipeline publish phase.
 """
 
 from __future__ import annotations
@@ -26,11 +26,10 @@ from housing_list_search.needs_review import (
     should_update_disappearance_baseline,
     surface_run_review,
 )
-from housing_list_search.outputs import (
+from housing_list_search.staff_summary import (
     PARTIAL_DAILY_SUMMARY_PATH,
     STAFF_DAILY_SUMMARY_PATH,
-    generate_daily_summary,
-    write_proposed_prune,
+    render_staff_summary,
 )
 
 logger = logging.getLogger("housing_list_search")
@@ -137,11 +136,12 @@ def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
 
     if inp.partial_run:
         write_partial_changelog_stubs(inp.target_filter)
-        generate_daily_summary(
+        render_staff_summary(
             inp.listings,
             skipped_targets=[],
-            output_path=PARTIAL_DAILY_SUMMARY_PATH,
+            daily_summary_path=PARTIAL_DAILY_SUMMARY_PATH,
             run_stats=run_stats,
+            proposed_prune=None,
         )
         logger.info(
             "Partial --target run: left global run_prev.csv changelog baseline unchanged"
@@ -189,15 +189,16 @@ def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
             inp.run_id,
             rows_after=inp.inserted + inp.updated,
         )
-    generate_daily_summary(
+    # Staff Summary owns markdown bodies; we only choose full vs partial + prune note
+    render_staff_summary(
         inp.listings,
         skipped_targets=inp.skipped,
+        daily_summary_path=STAFF_DAILY_SUMMARY_PATH,
         run_stats=run_stats,
-    )
-    # #240: operator prune cheat-sheet (full runs only; never auto-deletes)
-    write_proposed_prune(
-        run_id=inp.run_id,
-        stale_n=inp.stale_n,
-        scrape_failed_n=inp.scrape_failed_n,
-        diff_path=DIFF_CSV,
+        proposed_prune={
+            "run_id": inp.run_id,
+            "stale_n": inp.stale_n,
+            "scrape_failed_n": inp.scrape_failed_n,
+            "diff_path": DIFF_CSV,
+        },
     )

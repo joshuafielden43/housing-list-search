@@ -16,7 +16,8 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Run** | One `python main.py --run` invocation; identified by `run_id` (`YYYYMMDDTHHMMSS`) |
 | **RunPipeline** | `pipeline.py` — collect → Machine Persist → Staff Publish; `cli.py` delegates here |
 | **Machine Persist** | `machine_persist.py` — post-collect machine path: canonicalize → dedupe (+ mirror confirm set) → upsert → machine CSVs (`current_full` / `diff`) → STALE/SCRAPE_FAILED thresholds (`persist_run`) |
-| **Staff Publish** | `staff_publish.py` — post-persist staff artifact policy: partial stubs, run_prev baseline, changelog, daily_summary, RUN_EVENT, Needs Review surface |
+| **Staff Publish** | `staff_publish.py` — post-persist staff artifact *policy*: partial vs full, run_prev baseline, changelog, RUN_EVENT, Needs Review surface |
+| **Staff Summary** | `staff_summary.py` — staff markdown *bodies*: daily_summary (open vs waitlist enrollment, contacts), proposed_prune. Interface: `render_staff_summary` |
 | **Measure** | Token in `scraping_measures` routing to an adapter (`bloom`, `housekeys`, `civicplus`, `waf_blocked`, …) |
 | **DispatchRegistry** | `dispatch.py` — measures → adapter handlers; URL predicates → extraction handlers |
 | **Adapter** | Platform-scoped scraper in `adapters/` or `extraction/` — named after vendor, never city |

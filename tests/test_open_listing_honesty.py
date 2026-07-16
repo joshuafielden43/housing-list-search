@@ -1,6 +1,6 @@
 """#1107 / #244: staff summary honesty — open units vs waitlist enrollment; contacts."""
 
-from housing_list_search.outputs import (
+from housing_list_search.staff_summary import (
     _contact_lines,
     _listing_is_open,
     _listing_is_waitlist_enrolling,

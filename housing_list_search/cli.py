@@ -28,15 +28,15 @@ def main():
         logger = logging.getLogger("housing_list_search")
 
         from housing_list_search.db import get_manager
-        from housing_list_search.outputs import (
-            PARTIAL_DAILY_SUMMARY_PATH,
-            STAFF_DAILY_SUMMARY_PATH,
-        )
         from housing_list_search.pipeline import RunPipeline
         from housing_list_search.registry import (
             get_active_targets,
             get_skipped_targets,
             load_targets_to_db,
+        )
+        from housing_list_search.staff_summary import (
+            PARTIAL_DAILY_SUMMARY_PATH,
+            STAFF_DAILY_SUMMARY_PATH,
         )
         from housing_list_search.target_filter import filter_targets_by_authority
 

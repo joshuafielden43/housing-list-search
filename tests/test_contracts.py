@@ -58,7 +58,7 @@ class TestSummaryOpenDetection:
         import os
         import tempfile
 
-        from housing_list_search.outputs import generate_daily_summary
+        from housing_list_search.staff_summary import generate_daily_summary
 
         # Write to a temp dir so we never touch the real daily_summary.md
         orig_dir = os.getcwd()
@@ -321,7 +321,7 @@ class TestBloomListingStatus:
         import tempfile
 
         from housing_list_search.extraction.bloom_housing import _bloom_record_from_item
-        from housing_list_search.outputs import generate_daily_summary
+        from housing_list_search.staff_summary import generate_daily_summary
 
         item = {
             "id": "abc",
@@ -800,7 +800,7 @@ class TestDailySummaryUrlFallback:
         import os
         import tempfile
 
-        from housing_list_search.outputs import generate_daily_summary
+        from housing_list_search.staff_summary import generate_daily_summary
 
         orig = os.getcwd()
         with tempfile.TemporaryDirectory() as tmp:
@@ -1653,7 +1653,7 @@ class TestCliTargetRun:
 
         from housing_list_search.cli import main
         from housing_list_search.db import DatabaseManager
-        from housing_list_search.outputs import (
+        from housing_list_search.staff_summary import (
             PARTIAL_DAILY_SUMMARY_PATH,
             STAFF_DAILY_SUMMARY_PATH,
         )

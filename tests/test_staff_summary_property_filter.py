@@ -1,6 +1,6 @@
 """Staff summary excludes portal/program from open list (#989)."""
 
-from housing_list_search.outputs import _listing_is_summary_candidate
+from housing_list_search.staff_summary import _listing_is_summary_candidate
 
 
 def test_portal_not_summary_candidate():

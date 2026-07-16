@@ -211,7 +211,7 @@ Listing identity is `(authority, property_name, url)` everywhere. Machine `diff.
 
 ## Run artifacts
 
-Staff-facing artifacts (changelog, daily_summary, run_prev baseline, RUN_EVENT, Needs Review surface) live in `staff_publish.py`. Machine-facing exports (`current_full.csv`, `diff.csv`) live in `machine_persist.py` via `DatabaseManager`.
+Staff Publish (`staff_publish.py`) owns *policy* (partial vs full, run_prev, changelog, Needs Review surface). Staff Summary (`staff_summary.py`) owns markdown *bodies* (`render_staff_summary`). Machine Persist uses Inventory Store for `current_full.csv` / `diff.csv`.
 
 ---
 
@@ -257,7 +257,8 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/scraper.py` | HTTP impl behind Access (private; white-box tests only) |
 | `housing_list_search/pipeline.py` | Run orchestration: collect → Machine Persist → Staff Publish |
 | `housing_list_search/machine_persist.py` | Machine Persist: canonicalize, dedupe + mirror confirm, upsert, machine CSVs (#1070/#1071) |
-| `housing_list_search/staff_publish.py` | Staff Publish: partial/full artifact policy, run_prev baseline, changelog, daily_summary (#1063) |
+| `housing_list_search/staff_publish.py` | Staff Publish: partial/full policy, run_prev, changelog, Needs Review surface (#1063) |
+| `housing_list_search/staff_summary.py` | Staff Summary: daily_summary + proposed_prune bodies (`render_staff_summary`) |
 | `housing_list_search/cli.py` | Argparse + registry load + `RunPipeline` + exit codes |
 | `housing_list_search/listing.py` | Deep seam: canonicalize_listings / listing_to_row; shape, surrogate, authority canon |
 | `housing_list_search/listing_identity.py` | Listing Identity: persistence_key, cross_source_key, mirror_confirm_keys, alias_matches |

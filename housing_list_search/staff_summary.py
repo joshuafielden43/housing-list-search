@@ -1,5 +1,20 @@
-# outputs.py
+"""
+staff_summary.py — Staff Summary deep module.
+
+Owns staff-facing markdown *bodies*: daily_summary (open units vs waitlist
+enrollment, contacts, Needs Review / integrity sections) and proposed_prune.
+
+Staff Publish owns *policy* (partial vs full, when to rewrite baselines).
+Call Staff Summary through ``render_staff_summary`` / ``write_proposed_prune``
+— not via a bag of unrelated formatters.
+
+Formerly outputs.py.
+"""
+
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Any
 
 from housing_list_search.coverage import classify_record_kind, summarize_coverage
 
@@ -476,3 +491,33 @@ def write_proposed_prune(
         f.write(text)
     print(f"✅ Wrote {output_path} (STALE={stale_n}, SCRAPE_FAILED={scrape_failed_n})")
     return output_path
+
+
+def render_staff_summary(
+    listings: list[dict[str, Any]],
+    *,
+    skipped_targets: list[tuple[str, str]] | None = None,
+    daily_summary_path: str = STAFF_DAILY_SUMMARY_PATH,
+    run_stats: dict[str, Any] | None = None,
+    proposed_prune: dict[str, Any] | None = None,
+) -> None:
+    """Single Staff Summary interface: daily markdown (+ optional prune note).
+
+    Staff Publish decides *whether* and *which paths*; this module owns the body.
+    ``proposed_prune`` keys: run_id, stale_n, scrape_failed_n, diff_path (optional).
+    Omit or pass None to skip proposed_prune.md (partial runs).
+    """
+    generate_daily_summary(
+        listings,
+        skipped_targets=skipped_targets,
+        output_path=daily_summary_path,
+        run_stats=run_stats,
+    )
+    if not proposed_prune:
+        return
+    write_proposed_prune(
+        run_id=str(proposed_prune.get("run_id") or ""),
+        stale_n=int(proposed_prune.get("stale_n") or 0),
+        scrape_failed_n=int(proposed_prune.get("scrape_failed_n") or 0),
+        diff_path=str(proposed_prune.get("diff_path") or "diff.csv"),
+    )
