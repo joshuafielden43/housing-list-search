@@ -31,7 +31,7 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | **Pagination cap** | Safety max page count on multi-page inventory adapters. Hitting the cap with a full final page is incomplete inventory → `SourceFetchError` / SCRAPE_FAILED, not silent truncate (#776). Shared walk: `inventory_pagination.walk_paginated_inventory` (#1074) — MidPen, jsco.net, ArcGIS |
 | **REMOVED** | Staff-facing changelog event for a record absent after a successful scrape of its authority; do not emit for failed authorities |
 | **Disappearance semantics** | How the system explains records absent from this run. `diff.csv` is the source of truth: staff-facing outputs project these labels rather than deriving closure/removal independently |
-| **Partial run** | `--target "City"` — scopes `diff.csv` STALE; preserves global `run_prev.csv` |
+| **Partial run** | `--target "City"` — writes `diff_partial.csv` / `current_full_partial.csv`; preserves global `diff.csv`, `current_full.csv`, `run_prev.csv` (#241) |
 | **diff.csv** | Machine delta (`NEW` / `UPDATED` / `STALE` / `SCRAPE_FAILED`); labels from pure `classify_machine_change` |
 | **Disappearance** | `disappearance.py` — deep module: machine Diff labels + staff projection (ADDED/REMOVED/STALE/SCRAPE_FAILED/STATUS_CHANGE) from `diff.csv` (ADR-0001). `run_prev.csv` only for STATUS_CHANGE. There is no `freshness.py` — do not re-add a re-export shim under that name |
 | **Freshness** | Ordinary English for “is inventory current?” (e.g. STALE prune, daily run). Not a module. Change semantics live under **Disappearance**. Identity remains `(authority, property_name, url)` via `listing.listing_identity` |

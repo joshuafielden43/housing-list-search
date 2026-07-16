@@ -21,6 +21,12 @@ from housing_list_search.listing import canonicalize_listings
 
 logger = logging.getLogger("housing_list_search")
 
+# Machine export paths. Partial --target runs must not clobber global baselines (#241).
+CURRENT_FULL_CSV = "current_full.csv"
+DIFF_CSV = "diff.csv"
+PARTIAL_CURRENT_FULL_CSV = "current_full_partial.csv"
+PARTIAL_DIFF_CSV = "diff_partial.csv"
+
 
 @dataclass
 class PersistResult:
@@ -40,6 +46,9 @@ class PersistResult:
     cov_program: int = 0
     cov_total: int = 0
     mirrors_confirmed: int = 0
+    full_csv_path: str = CURRENT_FULL_CSV
+    diff_csv_path: str = DIFF_CSV
+    partial_run: bool = False
 
 
 def persist_run(
@@ -49,6 +58,7 @@ def persist_run(
     run_id: str,
     target_authorities: list[str] | None = None,
     failed_targets: list[str] | None = None,
+    partial_run: bool = False,
     stale_warn_threshold: int = DEFAULT_STALE_WARN_THRESHOLD,
 ) -> PersistResult:
     """
@@ -57,7 +67,11 @@ def persist_run(
     1. Canonicalize Listing rows
     2. Cross-source dedupe → survivors + mirrors_to_confirm (#1071)
     3. Upsert survivors; confirm mirror identities (no content overwrite)
-    4. Coverage summary; current_full.csv + diff.csv; operator warn thresholds
+    4. Coverage summary; machine CSVs; operator warn thresholds
+
+    Partial --target (#241): still upserts matched listings into the DB for
+    diagnostics, but writes ``current_full_partial.csv`` / ``diff_partial.csv``
+    and leaves global ``current_full.csv`` / ``diff.csv`` untouched.
     """
     failed = failed_targets or []
     all_listings = canonicalize_listings(listings_raw)
@@ -97,9 +111,23 @@ def persist_run(
         cov.total,
     )
 
-    n_full = db.export_csv("current_full.csv", run_id=run_id)
+    if partial_run:
+        full_path = PARTIAL_CURRENT_FULL_CSV
+        diff_path = PARTIAL_DIFF_CSV
+        logger.info(
+            "Partial --target run: writing %s and %s; left global %s / %s unchanged",
+            full_path,
+            diff_path,
+            CURRENT_FULL_CSV,
+            DIFF_CSV,
+        )
+    else:
+        full_path = CURRENT_FULL_CSV
+        diff_path = DIFF_CSV
+
+    n_full = db.export_csv(full_path, run_id=run_id)
     n_diff = db.export_diff_csv(
-        "diff.csv",
+        diff_path,
         run_id=run_id,
         authorities=target_authorities,
         scrape_failed_authorities=failed,
@@ -113,23 +141,26 @@ def persist_run(
     scrape_failed_n = diff_counts.get("SCRAPE_FAILED", 0)
     if scrape_failed_n:
         logger.warning(
-            "%d SCRAPE_FAILED record(s) in diff.csv — scrape errors, not confirmed closures",
+            "%d SCRAPE_FAILED record(s) in %s — scrape errors, not confirmed closures",
             scrape_failed_n,
+            diff_path,
         )
 
     stale_n = diff_counts.get("STALE", 0)
     if stale_n >= stale_warn_threshold:
         logger.warning(
-            "%d STALE record(s) in diff.csv (not confirmed this run; threshold=%d). "
-            "Review diff.csv, then (safely) prune with: "
+            "%d STALE record(s) in %s (not confirmed this run; threshold=%d). "
+            "Review the diff CSV, then (safely) prune with: "
             "python scripts/db_manage.py prune --from-diff  [or --not-seen-since 45 after review]",
             stale_n,
+            diff_path,
             stale_warn_threshold,
         )
     elif stale_n > 0:
         logger.info(
-            "%d STALE record(s) in diff.csv (below warn threshold of %d)",
+            "%d STALE record(s) in %s (below warn threshold of %d)",
             stale_n,
+            diff_path,
             stale_warn_threshold,
         )
 
@@ -148,4 +179,7 @@ def persist_run(
         cov_program=cov.program_count,
         cov_total=cov.total,
         mirrors_confirmed=mirrors_confirmed,
+        full_csv_path=full_path,
+        diff_csv_path=diff_path,
+        partial_run=partial_run,
     )

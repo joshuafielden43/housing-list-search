@@ -87,19 +87,28 @@ def main():
             f"({result.inserted} new, {result.updated} updated)."
         )
         if result.scrape_failed_n:
+            diff_name = "diff_partial.csv" if partial_run else "diff.csv"
             print(
-                f"   ⚠️  SCRAPE_FAILED: {result.scrape_failed_n} record(s) in diff.csv "
+                f"   ⚠️  SCRAPE_FAILED: {result.scrape_failed_n} record(s) in {diff_name} "
                 "(scrape errors, not confirmed closures)"
             )
         if result.stale_n:
-            print(f"   ⚠️  STALE: {result.stale_n} record(s) in diff.csv (not confirmed this run)")
+            diff_name = "diff_partial.csv" if partial_run else "diff.csv"
+            print(
+                f"   ⚠️  STALE: {result.stale_n} record(s) in {diff_name} "
+                "(not confirmed this run)"
+            )
         if skipped_targets:
             print(f"   ⚠️  Skipped {len(skipped_targets)} targets marked no_public_list")
         if partial_run:
-            print("   Partial --target run: global changelog baseline was not updated")
             print(
-                f"   Files: current_full.csv  diff.csv  {PARTIAL_DAILY_SUMMARY_PATH}  "
-                f"changelog_diffs.md  ({STAFF_DAILY_SUMMARY_PATH} preserved)"
+                "   Partial --target run: global run_prev / current_full.csv / diff.csv "
+                "were not updated (#241)"
+            )
+            print(
+                f"   Files: current_full_partial.csv  diff_partial.csv  "
+                f"{PARTIAL_DAILY_SUMMARY_PATH}  changelog_diffs.md  "
+                f"({STAFF_DAILY_SUMMARY_PATH} preserved)"
             )
         else:
             print(

@@ -123,6 +123,7 @@ class RunPipeline:
             run_id=run_id,
             target_authorities=target_authorities,
             failed_targets=unreliable,
+            partial_run=partial_run,
         )
         self._publish(
             persisted,

@@ -166,10 +166,11 @@ When you hit a WAF block: document it (what you tried, the specific block signat
 
 ## Partial runs (--target)
 
-`python main.py --run --target "Morgan Hill"` filters the active targets list to rows whose authority contains the needle (case-insensitive). All normal run outputs are produced for the matched targets only:
+`python main.py --run --target "Morgan Hill"` filters the active targets list to rows whose authority contains the needle (case-insensitive). Diagnostics still upsert matched listings into the DB, but **global machine/staff baselines stay put** (#241):
 
-- `diff.csv` and `run_prev.csv` reflect only the matched-target results for that invocation — they are **not** a global DB diff. If you run `--target` followed by a full `--run`, `diff.csv` will correctly reflect the full-run delta on the next full run.
-- Useful for rapid iteration on a single adapter without waiting for all 15 targets.
+- Writes `diff_partial.csv`, `current_full_partial.csv`, `daily_summary_partial.md` (scoped / diagnostic).
+- Leaves global `diff.csv`, `current_full.csv`, `run_prev.csv`, and staff `daily_summary.md` unchanged.
+- Useful for rapid iteration on a single adapter without waiting for all targets or clobbering yesterday’s full-run machine delta.
 
 ---
 

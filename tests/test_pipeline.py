@@ -86,6 +86,11 @@ class TestRunPipeline:
                 "City B,B Prop,Open,open\n"
             )
             Path("run_prev.csv").write_text(run_prev, encoding="utf-8")
+            # Global machine baselines from a prior full run — must survive #241.
+            global_full = "marker,global_full\nkeep,me\n"
+            global_diff = "change_type,source_authority\nUPDATED,City B\n"
+            Path("current_full.csv").write_text(global_full, encoding="utf-8")
+            Path("diff.csv").write_text(global_diff, encoding="utf-8")
 
             targets = [{"authority": "City A", "url": "https://a", "scraping_measures": ""}]
 
@@ -109,15 +114,20 @@ class TestRunPipeline:
                 run_id="test-run-partial",
             )
 
-            with open("diff.csv", newline="", encoding="utf-8") as f:
+            assert result.partial_run is True
+            assert Path("run_prev.csv").read_text(encoding="utf-8") == run_prev
+            assert Path("current_full.csv").read_text(encoding="utf-8") == global_full
+            assert Path("diff.csv").read_text(encoding="utf-8") == global_diff
+            assert Path("current_full_partial.csv").exists()
+            assert Path("diff_partial.csv").exists()
+
+            with open("diff_partial.csv", newline="", encoding="utf-8") as f:
                 diff_rows = list(csv.DictReader(f))
             with open("changelog_diffs.csv", newline="", encoding="utf-8") as f:
                 changelog_rows = list(csv.DictReader(f))
 
-            assert result.partial_run is True
             assert {r["source_authority"] for r in diff_rows} == {"City A"}
             assert not any(r["source_authority"] == "City B" for r in diff_rows)
-            assert Path("run_prev.csv").read_text(encoding="utf-8") == run_prev
             assert changelog_rows[0]["change_type"] == "PARTIAL_RUN"
         finally:
             os.chdir(orig)
@@ -341,7 +351,8 @@ class TestRunPipeline:
                 run_id="partial-mixed-fail",
             )
 
-            with open("diff.csv", newline="", encoding="utf-8") as f:
+            assert not Path("diff.csv").exists()  # #241: partial does not create global diff
+            with open("diff_partial.csv", newline="", encoding="utf-8") as f:
                 diff_rows = list(csv.DictReader(f))
 
             assert result.failed_targets == ["City A"]

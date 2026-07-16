@@ -113,7 +113,7 @@ PROJECT_CONTRACT_v0.8.6.md  # Living contract (daily run, outputs, responsibilit
   - Preferred prune after review: `python scripts/db_manage.py prune --from-diff --dry-run` then drop `--dry-run`.
   - Age-based only when intentional: `python scripts/db_manage.py prune --not-seen-since 45` (never use `--all-stale` casually).
   - `current_full.csv` is the full known inventory; filter `confirmed_this_run=Y` for this run, `record_kind=property` for UEO-style property rows.
-- `python main.py --run --target "City Name"` is a partial diagnostic run: `diff.csv` scoped to matched authorities; `run_prev.csv` and staff `daily_summary.md` unchanged; writes `daily_summary_partial.md`.
+- `python main.py --run --target "City Name"` is a partial diagnostic run: writes `diff_partial.csv` / `current_full_partial.csv` / `daily_summary_partial.md`; leaves global `diff.csv`, `current_full.csv`, `run_prev.csv`, and staff `daily_summary.md` unchanged (#241).
 - CI runs unit tests only (`pytest -m "not integration"`). Weekly live smoke: `.github/workflows/integration-weekly.yml` (adapter-family ground_truth in `tests/ground_truth.yaml`; `HLS_GT_MODE=core` for a shorter local run).
 - See [AGENTS.md](AGENTS.md) for architecture handoff and [CONTRIBUTING.md](CONTRIBUTING.md) if you change adapters.
 
