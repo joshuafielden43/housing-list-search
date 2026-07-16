@@ -18,6 +18,7 @@ from typing import Any
 from housing_list_search.changelog import generate_changelog
 from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
+from housing_list_search.machine_persist import DIFF_CSV
 from housing_list_search.needs_review import (
     CollectReview,
     authorities_unreliable_for_disappearance,
@@ -29,6 +30,7 @@ from housing_list_search.outputs import (
     PARTIAL_DAILY_SUMMARY_PATH,
     STAFF_DAILY_SUMMARY_PATH,
     generate_daily_summary,
+    write_proposed_prune,
 )
 
 logger = logging.getLogger("housing_list_search")
@@ -191,4 +193,11 @@ def publish_staff_run(inp: StaffPublishInput, *, db: DatabaseManager) -> None:
         inp.listings,
         skipped_targets=inp.skipped,
         run_stats=run_stats,
+    )
+    # #240: operator prune cheat-sheet (full runs only; never auto-deletes)
+    write_proposed_prune(
+        run_id=inp.run_id,
+        stale_n=inp.stale_n,
+        scrape_failed_n=inp.scrape_failed_n,
+        diff_path=DIFF_CSV,
     )

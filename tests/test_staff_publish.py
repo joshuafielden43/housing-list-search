@@ -37,6 +37,10 @@ def test_log_full_run_skipped_when_targets_failed(tmp_path, monkeypatch):
         "housing_list_search.staff_publish.surface_run_review",
         lambda *a, **k: None,
     )
+    monkeypatch.setattr(
+        "housing_list_search.staff_publish.write_proposed_prune",
+        lambda **k: None,
+    )
 
     publish_staff_run(
         StaffPublishInput(
@@ -67,6 +71,10 @@ def test_log_full_run_on_clean_full_run(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "housing_list_search.staff_publish.surface_run_review",
         lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "housing_list_search.staff_publish.write_proposed_prune",
+        lambda **k: None,
     )
 
     publish_staff_run(
@@ -104,6 +112,10 @@ def test_log_full_run_skipped_on_low_yield(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "housing_list_search.staff_publish.surface_run_review",
         lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "housing_list_search.staff_publish.write_proposed_prune",
+        lambda **k: None,
     )
 
     publish_staff_run(
@@ -145,6 +157,10 @@ def test_log_full_run_skipped_on_suspicious_zero(tmp_path, monkeypatch):
         "housing_list_search.staff_publish.surface_run_review",
         lambda *a, **k: None,
     )
+    monkeypatch.setattr(
+        "housing_list_search.staff_publish.write_proposed_prune",
+        lambda **k: None,
+    )
 
     publish_staff_run(
         StaffPublishInput(
@@ -161,3 +177,44 @@ def test_log_full_run_skipped_on_suspicious_zero(tmp_path, monkeypatch):
     db.log_full_run.assert_not_called()
     assert captured.get("update_run_prev") is False
     assert "Eden Housing" in (captured.get("scrape_failed_authorities") or [])
+
+
+def test_write_proposed_prune_on_full_run(tmp_path, monkeypatch):
+    """#240: full run writes proposed_prune.md with dry-run command."""
+    from pathlib import Path
+
+    monkeypatch.chdir(tmp_path)
+    db = MagicMock()
+    db.get_previous_full_run_id.return_value = None
+    monkeypatch.setattr(
+        "housing_list_search.staff_publish.generate_changelog",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "housing_list_search.staff_publish.generate_daily_summary",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "housing_list_search.staff_publish.surface_run_review",
+        lambda *a, **k: None,
+    )
+
+    publish_staff_run(
+        StaffPublishInput(
+            listings=[],
+            run_id="run-prune",
+            targets_attempted=1,
+            failed_targets=[],
+            stale_n=7,
+            scrape_failed_n=2,
+            inserted=0,
+            updated=0,
+        ),
+        db=db,
+    )
+    text = Path("proposed_prune.md").read_text(encoding="utf-8")
+    assert "STALE" in text
+    assert "**7**" in text
+    assert "SCRAPE_FAILED" in text
+    assert "prune --from-diff" in text
+    assert "--dry-run" in text

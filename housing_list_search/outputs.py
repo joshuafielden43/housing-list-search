@@ -5,6 +5,7 @@ from housing_list_search.coverage import classify_record_kind, summarize_coverag
 
 PARTIAL_DAILY_SUMMARY_PATH = "daily_summary_partial.md"
 STAFF_DAILY_SUMMARY_PATH = "daily_summary.md"
+PROPOSED_PRUNE_PATH = "proposed_prune.md"
 OPEN_LISTING_DISPLAY_CAP = 100
 
 
@@ -330,3 +331,53 @@ def generate_daily_summary(
                 f.write("\n")
 
     print(f"✅ Generated clean, deduplicated {output_path}")
+
+
+def write_proposed_prune(
+    *,
+    run_id: str,
+    stale_n: int,
+    scrape_failed_n: int = 0,
+    diff_path: str = "diff.csv",
+    output_path: str = PROPOSED_PRUNE_PATH,
+) -> str | None:
+    """Write a short operator artifact with prune guidance after a full run (#240).
+
+    Never deletes inventory — only documents how many STALE rows are candidates
+    and the exact dry-run / apply commands. SCRAPE_FAILED is called out so
+    operators do not prune failures as closures.
+    """
+    lines = [
+        "# Proposed prune\n\n",
+        f"Generated after full run `{run_id}` at {datetime.now().isoformat(timespec='seconds')}.\n\n",
+        "This file is advisory only. **Nothing is deleted until you run a prune command.**\n\n",
+        "## Counts\n\n",
+        f"- **STALE** (not confirmed this run — candidates after review): **{stale_n}**\n",
+        f"- **SCRAPE_FAILED** (authority/machinery failed — **do not prune as gone**): "
+        f"**{scrape_failed_n}**\n\n",
+    ]
+    if stale_n <= 0:
+        lines.append(
+            "## Action\n\n"
+            "No STALE rows this run. No prune needed.\n"
+        )
+    else:
+        lines.extend(
+            [
+                "## Recommended commands\n\n",
+                "1. Review candidates in the machine delta:\n\n",
+                f"   `grep '^STALE,' {diff_path} | head`\n\n",
+                "2. Dry-run prune from this run's STALE rows (preferred):\n\n",
+                f"   `python scripts/db_manage.py prune --from-diff --diff-path {diff_path} --dry-run`\n\n",
+                "3. Apply only after review:\n\n",
+                f"   `python scripts/db_manage.py prune --from-diff --diff-path {diff_path}`\n\n",
+                "4. Age-based prune only when intentional (not the default):\n\n",
+                "   `python scripts/db_manage.py prune --not-seen-since 45 --dry-run`\n\n",
+                "Avoid `--all-stale` unless you mean to wipe everything unconfirmed.\n",
+            ]
+        )
+    text = "".join(lines)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(text)
+    print(f"✅ Wrote {output_path} (STALE={stale_n}, SCRAPE_FAILED={scrape_failed_n})")
+    return output_path
