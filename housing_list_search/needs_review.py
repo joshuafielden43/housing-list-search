@@ -372,6 +372,7 @@ def surface_run_review(
         run_id=run_id,
         suspicious_zero_authorities=list(review.suspicious_zero_authorities),
         reverification_due_authorities=list(review.reverification_due_authorities),
+        low_yield=list(review.low_yield),
         stale_n=review.stale_n,
         scrape_failed_n=review.scrape_failed_n,
     )
@@ -439,6 +440,7 @@ def _sync_vikunja(
     run_id: str,
     suspicious_zero_authorities: list[str],
     reverification_due_authorities: list[str],
+    low_yield: list[tuple[str, int]] | None = None,
     stale_n: int,
     scrape_failed_n: int,
 ) -> None:
@@ -448,6 +450,7 @@ def _sync_vikunja(
         run_id=run_id,
         suspicious_zero_authorities=suspicious_zero_authorities,
         reverification_due_authorities=reverification_due_authorities,
+        low_yield=low_yield,
         stale_n=stale_n,
         scrape_failed_n=scrape_failed_n,
     )

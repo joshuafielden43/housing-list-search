@@ -135,3 +135,44 @@ def test_sync_updates_existing_task(monkeypatch):
     )
 
     assert posts == ["https://vikunja.example/api/v1/tasks/42"]
+
+
+def test_sync_creates_task_for_low_yield(monkeypatch):
+    """#242: low_yield must open Vikunja reverify tasks, not only logs."""
+    monkeypatch.setenv("HLS_VIKUNJA_URL", "https://vikunja.example")
+    monkeypatch.setenv("HLS_VIKUNJA_TOKEN", "test-token")
+    monkeypatch.setenv("HLS_VIKUNJA_PROJECT_ID", "9")
+
+    bodies: list[dict] = []
+
+    class FakeResp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def fake_get(url, **kwargs):
+        return FakeResp([])
+
+    def fake_post(url, **kwargs):
+        bodies.append(kwargs.get("json") or {})
+        return FakeResp({"id": 902})
+
+    monkeypatch.setattr("housing_list_search.vikunja_reverification.polite_get", fake_get)
+    monkeypatch.setattr("housing_list_search.vikunja_reverification.polite_post", fake_post)
+
+    sync_reverification_tasks(
+        run_id="run-thin",
+        suspicious_zero_authorities=[],
+        reverification_due_authorities=[],
+        low_yield=[("MidPen Housing", 5)],
+    )
+
+    assert len(bodies) == 1
+    assert bodies[0].get("title") == "[Reverify] MidPen Housing"
+    assert "Low-yield" in (bodies[0].get("description") or "")
+    assert "5 property" in (bodies[0].get("description") or "")

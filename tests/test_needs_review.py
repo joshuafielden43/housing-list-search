@@ -163,3 +163,28 @@ def test_vikunja_sync_without_webhook(monkeypatch):
     )
 
     assert synced == ["run-vikunja"]
+
+
+def test_vikunja_sync_receives_low_yield(monkeypatch):
+    """#242: surface_run_review must pass low_yield into Vikunja sync."""
+    captured: list[dict] = []
+
+    def fake_sync(**kwargs):
+        captured.append(kwargs)
+
+    monkeypatch.delenv("HLS_NEEDS_REVIEW_WEBHOOK", raising=False)
+    monkeypatch.setattr(
+        "housing_list_search.vikunja_reverification.sync_reverification_tasks",
+        fake_sync,
+    )
+
+    notify_needs_review(
+        run_id="run-low",
+        suspicious_zero_authorities=[],
+        reverification_due_authorities=[],
+        low_yield=[("MidPen Housing", 5)],
+    )
+
+    assert len(captured) == 1
+    assert captured[0].get("low_yield") == [("MidPen Housing", 5)]
+    assert captured[0].get("run_id") == "run-low"

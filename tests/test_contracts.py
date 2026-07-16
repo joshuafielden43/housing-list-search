@@ -222,6 +222,22 @@ class TestSummaryOpenDetection:
         assert "Reverification due" in md
         assert "City of Campbell" in md
 
+    def test_needs_review_shows_low_yield(self):
+        """#242: thin portfolios must appear on the staff summary operators read."""
+        md = self._run(
+            [],
+            run_stats={
+                "targets_attempted": 18,
+                "targets_succeeded": 18,
+                "failed_authorities": [],
+                "suspicious_zero_authorities": [],
+                "low_yield": [("MidPen Housing", 5)],
+            },
+        )
+        assert "## Needs Review" in md
+        assert "Low-yield" in md
+        assert "MidPen Housing (5)" in md
+
     def test_integrity_summary_shows_stale_and_scrape_failed(self):
         md = self._run(
             [],

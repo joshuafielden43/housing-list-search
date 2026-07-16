@@ -89,7 +89,17 @@ def _format_needs_review(run_stats: dict | None) -> str:
 
     suspicious = list(run_stats.get("suspicious_zero_authorities") or [])
     reverification = list(run_stats.get("reverification_due_authorities") or [])
-    if not suspicious and not reverification:
+    # low_yield: list of (authority, property_count) or {"authority","property_count"}
+    raw_low = list(run_stats.get("low_yield") or [])
+    low_yield: list[tuple[str, int]] = []
+    for item in raw_low:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            low_yield.append((str(item[0]), int(item[1])))
+        elif isinstance(item, dict) and item.get("authority") is not None:
+            low_yield.append(
+                (str(item["authority"]), int(item.get("property_count") or 0))
+            )
+    if not suspicious and not reverification and not low_yield:
         return ""
 
     lines = ["## Needs Review\n\n"]
@@ -103,6 +113,19 @@ def _format_needs_review(run_stats: dict | None) -> str:
             "- This is not a confirmed closure — the adapter may have broken, the source "
             "may have changed, or the inventory may genuinely be empty. Review the source "
             "and mark a Validated Zero in TARGETS.md when appropriate (ADR-0003).\n"
+        )
+    if low_yield:
+        # #242: thin portfolios are the soft-partial smoke alarm operators must see
+        lines.append(
+            f"- **Low-yield:** {len(low_yield)} inventory target(s) returned fewer "
+            "property records than expected (possible silent partial scrape)\n"
+        )
+        detail = ", ".join(f"{a} ({n})" for a, n in low_yield)
+        lines.append(f"- **Authorities:** {detail}\n")
+        lines.append(
+            "- Unconfirmed prior inventory is labelled SCRAPE_FAILED for these "
+            "authorities (not REMOVED). Re-check the source before treating missing "
+            "rows as closures.\n"
         )
     if reverification:
         lines.append(

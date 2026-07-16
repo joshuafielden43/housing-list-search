@@ -103,27 +103,41 @@ def _task_description(
     signals: set[str],
     stale_n: int,
     scrape_failed_n: int,
+    property_count: int | None = None,
 ) -> str:
     signal_lines = []
     if "suspicious_zero" in signals:
         signal_lines.append(
             "- **Suspicious zero** — inventory adapter returned no property records"
         )
+    if "low_yield" in signals:
+        count_bit = (
+            f" ({property_count} property rows this run)"
+            if property_count is not None
+            else ""
+        )
+        signal_lines.append(
+            f"- **Low-yield** — inventory returned fewer properties than expected{count_bit}; "
+            "possible silent partial scrape (not a confirmed closure)"
+        )
     if "reverification_due" in signals:
         signal_lines.append(
             "- **Reverification due** — Validated Zero review date elapsed in TARGETS.md"
         )
     signals_block = "\n".join(signal_lines)
+    actions = [
+        f'1. `python main.py --run --target "{authority}"` — confirm regression vs real inventory',
+        "2. If legitimately empty: update **Validated Zero** + **Review Due** in TARGETS.md",
+        "3. If thin/partial: check adapter selectors / portal layout; do not prune as closures",
+        "4. `python scripts/doctor.py --fix` — re-ingest targets after TARGETS.md edits",
+        "5. Close this task when resolved",
+    ]
     return (
         f"Authority: **{authority}**\n\n"
         f"Signals:\n{signals_block}\n\n"
         f"Run: `{run_id}`\n"
         f"Integrity: STALE={stale_n}, SCRAPE_FAILED={scrape_failed_n}\n\n"
-        "Actions:\n"
-        f'1. `python main.py --run --target "{authority}"` — confirm zero vs regression\n'
-        "2. If legitimately empty: update **Validated Zero** + **Review Due** in TARGETS.md\n"
-        "3. `python scripts/doctor.py --fix` — re-ingest targets\n"
-        "4. Close this task when resolved\n"
+        "Actions:\n" + "\n".join(actions) + "\n"
     )
 
 
@@ -169,22 +183,34 @@ def sync_reverification_tasks(
     run_id: str,
     suspicious_zero_authorities: list[str],
     reverification_due_authorities: list[str],
+    low_yield: list[tuple[str, int]] | None = None,
     stale_n: int = 0,
     scrape_failed_n: int = 0,
 ) -> None:
-    """Create or update open [Reverify] tasks for authorities needing review."""
+    """Create or update open [Reverify] tasks for authorities needing review.
+
+    #242: low_yield (soft-thin inventory) opens/updates tasks alongside
+    suspicious_zero and reverification_due — not log-only.
+    """
     cfg = _vikunja_config()
     if cfg is None:
         return
 
     base, token, project_id = cfg
     by_authority: dict[str, set[str]] = {}
+    property_counts: dict[str, int] = {}
     for name in suspicious_zero_authorities:
         if name.strip():
             by_authority.setdefault(name.strip(), set()).add("suspicious_zero")
     for name in reverification_due_authorities:
         if name.strip():
             by_authority.setdefault(name.strip(), set()).add("reverification_due")
+    for name, count in low_yield or []:
+        auth = (name or "").strip()
+        if not auth:
+            continue
+        by_authority.setdefault(auth, set()).add("low_yield")
+        property_counts[auth] = int(count)
     if not by_authority:
         return
 
@@ -202,6 +228,7 @@ def sync_reverification_tasks(
             signals=signals,
             stale_n=stale_n,
             scrape_failed_n=scrape_failed_n,
+            property_count=property_counts.get(authority),
         )
         existing = _find_open_task(open_tasks, title)
         try:
