@@ -79,9 +79,9 @@ def main():
             skipped_targets=skipped_targets,
         )
 
-        print(
-            f"   Exported current_full.csv ({result.n_full} rows), diff.csv ({result.n_diff} rows)"
-        )
+        full_csv = "current_full_partial.csv" if result.partial_run else "current_full.csv"
+        diff_csv = "diff_partial.csv" if result.partial_run else "diff.csv"
+        print(f"   Exported {full_csv} ({result.n_full} rows), {diff_csv} ({result.n_diff} rows)")
         print(
             f"\n✅ Run complete! {len(result.listings)} listings this run "
             f"({result.inserted} new, {result.updated} updated)."

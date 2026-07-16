@@ -1628,7 +1628,10 @@ class TestCliTargetRun:
             ):
                 main()
 
-            with open("diff.csv", newline="", encoding="utf-8") as f:
+            # #241: partial CLI run writes scoped machine CSVs only
+            assert Path("diff_partial.csv").exists()
+            assert not Path("diff.csv").exists()
+            with open("diff_partial.csv", newline="", encoding="utf-8") as f:
                 diff_rows = list(csv.DictReader(f))
             with open("changelog_diffs.csv", newline="", encoding="utf-8") as f:
                 changelog_rows = list(csv.DictReader(f))

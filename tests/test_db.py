@@ -182,7 +182,14 @@ def test_export_diff_csv_includes_record_kind(temp_db):
 
 
 def test_export_diff_csv_no_run_id_marks_stale_after_7_days(temp_db):
+    """Relative timestamps so the 7-day fallback does not rot as calendar time moves."""
+    from datetime import datetime, timedelta
+
     mgr = temp_db
+    now = datetime.now()
+    fresh_seen = (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S")
+    stale_seen = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+    first_seen = (now - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%S")
     conn = mgr.connect()
     conn.execute(
         """
@@ -190,7 +197,7 @@ def test_export_diff_csv_no_run_id_marks_stale_after_7_days(temp_db):
             authority, property_name, url, last_seen, first_seen
         ) VALUES (?, ?, ?, ?, ?)
         """,
-        ("City A", "Fresh", "https://a/fresh", "2026-07-04T12:00:00", "2026-06-01T12:00:00"),
+        ("City A", "Fresh", "https://a/fresh", fresh_seen, first_seen),
     )
     conn.execute(
         """
@@ -198,7 +205,7 @@ def test_export_diff_csv_no_run_id_marks_stale_after_7_days(temp_db):
             authority, property_name, url, last_seen, first_seen
         ) VALUES (?, ?, ?, ?, ?)
         """,
-        ("City A", "Stale", "https://a/stale", "2020-01-01T12:00:00", "2019-06-01T12:00:00"),
+        ("City A", "Stale", "https://a/stale", stale_seen, first_seen),
     )
     conn.commit()
 
