@@ -20,7 +20,10 @@ from housing_list_search.db import DatabaseManager
 from housing_list_search.dispatch import TargetScrapeResult
 from housing_list_search.listing import canonical_authority
 from housing_list_search.machine_persist import PersistResult, persist_run
-from housing_list_search.needs_review import assess_collect_review
+from housing_list_search.needs_review import (
+    assess_collect_review,
+    authorities_unreliable_for_disappearance,
+)
 from housing_list_search.staff_publish import StaffPublishInput, publish_staff_run
 
 logger = logging.getLogger("housing_list_search")
@@ -106,12 +109,20 @@ class RunPipeline:
         )
 
         collected = self._collect(targets, scrape)
+        # #238: low-yield / suspicious-zero look "successful" but must not
+        # promote unconfirmed inventory to REMOVED — same SCRAPE_FAILED labels
+        # as hard fails for those authorities.
+        unreliable = authorities_unreliable_for_disappearance(
+            failed_targets=collected.failed_targets,
+            low_yield=collected.low_yield,
+            suspicious_zero_authorities=collected.suspicious_zero_authorities,
+        )
         persisted = persist_run(
             collected.listings_raw,
             db=db,
             run_id=run_id,
             target_authorities=target_authorities,
-            failed_targets=collected.failed_targets,
+            failed_targets=unreliable,
         )
         self._publish(
             persisted,

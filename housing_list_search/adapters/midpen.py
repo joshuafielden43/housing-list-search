@@ -177,5 +177,12 @@ def scrape_midpen(authority: str = "", url: str = "") -> list[dict[str, Any]]:
         fetch_page=fetch_page,
     )
 
+    # Empty parse after successful fetch is soft-success that ages out inventory (#238).
+    if not records:
+        raise SourceFetchError(
+            "midpen: county find-housing returned zero properties "
+            "(selector drift or empty response) — mark SCRAPE_FAILED"
+        )
+
     print(f"   → MidPen: {len(records)} Santa Clara County properties")
     return records

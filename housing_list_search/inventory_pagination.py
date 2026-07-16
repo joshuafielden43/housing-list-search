@@ -51,14 +51,20 @@ def walk_paginated_inventory(
             collected.extend(items)
         if not more:
             return collected
-        # more=True with an empty page is a broken signal — stop rather than spin
+        # more=True with an empty page is a broken signal — not end-of-list.
+        # Soft-returning partial inventory ages missing rows into REMOVED (#238).
         if not items:
-            logger.warning(
-                "%s: page %d signalled more=True with zero items — stopping",
+            logger.error(
+                "%s: page %d signalled more=True with zero items — "
+                "marking incomplete (not silent truncate)",
                 adapter,
                 page_num,
             )
-            return collected
+            raise SourceFetchError(
+                f"{adapter}: page {page_num} signalled more=True with zero items "
+                f"— inventory may be truncated; mark SCRAPE_FAILED",
+                partial=collected,
+            )
         if page_num >= max_pages:
             logger.error(
                 "%s: pagination hit max_pages=%d with more data "

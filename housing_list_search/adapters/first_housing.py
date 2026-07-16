@@ -113,5 +113,13 @@ def scrape_first_housing(authority: str = "", url: str = "") -> list[dict[str, A
     resp = require_response(polite_get(target), target, context="first_housing")
 
     records = parse_portfolio(resp.text, now_iso, target)
+    # Empty parse after successful fetch is soft-success that ages out inventory (#238).
+    if not records:
+        from housing_list_search.access import SourceFetchError
+
+        raise SourceFetchError(
+            "first_housing: portfolio page returned zero properties "
+            "(selector drift or empty response) — mark SCRAPE_FAILED"
+        )
     print(f"   → First Community Housing: {len(records)} properties")
     return records

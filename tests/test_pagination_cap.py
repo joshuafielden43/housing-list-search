@@ -38,6 +38,19 @@ def test_walk_paginated_inventory_raises_on_cap():
         walk_paginated_inventory(adapter="test", max_pages=2, fetch_page=fetch)
 
 
+def test_walk_paginated_inventory_raises_when_more_true_with_empty_page():
+    """#238: more=True + zero items is incomplete inventory, not end-of-list."""
+
+    def fetch(page: int):
+        if page == 1:
+            return ["a", "b"], True
+        return [], True
+
+    with pytest.raises(SourceFetchError, match="more=True with zero items") as ei:
+        walk_paginated_inventory(adapter="test", max_pages=5, fetch_page=fetch)
+    assert ei.value.partial == ["a", "b"]
+
+
 def test_midpen_raises_when_max_pages_full(monkeypatch):
     from housing_list_search.adapters import midpen as mp
 

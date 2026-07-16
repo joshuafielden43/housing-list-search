@@ -32,18 +32,21 @@ logger = logging.getLogger(__name__)
 _WEBHOOK_ENV = "HLS_NEEDS_REVIEW_WEBHOOK"
 _DEFAULT_LOW_YIELD_THRESHOLD = 3
 
-# Soft floors for large known inventory measures (#1083). Half-broken CSS/HTML
-# often still returns a few cards — absolute threshold of 3 never catches that.
-# Values are well under today's portfolio sizes (MidPen ~46, Eden ~36, …).
+# Soft floors for large known inventory measures (#1083 / #238).
+# Half-broken CSS/HTML often still returns a few cards — absolute threshold of 3
+# never catches that. Floors sit under ground_truth.yaml min_records (~70%) for
+# single-purpose county portfolios so thin scrapes fire low-yield without
+# constant false alarms. bloom/gis/john_stewart stay conservative: same measure
+# covers both large portfolios and thin city-filtered targets.
 _INVENTORY_FLOOR_BY_MEASURE: dict[str, int] = {
-    "midpen": 15,
-    "charities_housing": 15,
-    "eden": 12,
-    "eah": 10,
-    "first_housing": 8,
-    "bloom": 15,
-    "gis": 10,
-    "john_stewart": 15,
+    "midpen": 25,  # GT min 35; full ~46
+    "charities_housing": 28,  # GT min 40; full ~48
+    "eden": 18,  # GT min 25; full ~36
+    "eah": 14,  # GT min 20; full ~27
+    "first_housing": 10,  # GT min 15; full ~21
+    "bloom": 15,  # San José large; Santa Clara city filter thin — keep modest
+    "gis": 10,  # Sunnyvale large; Cupertino small
+    "john_stewart": 15,  # jsco large; SCCHA directory smaller
     "alta": 8,
 }
 
@@ -151,6 +154,55 @@ def find_low_yield_targets(
 
 # Compat alias used by older tests
 _find_low_yield_targets = find_low_yield_targets
+
+
+def authorities_unreliable_for_disappearance(
+    *,
+    failed_targets: list[str] | None = None,
+    low_yield: list[tuple[str, int]] | None = None,
+    suspicious_zero_authorities: list[str] | None = None,
+) -> list[str]:
+    """Authorities whose unconfirmed rows must not become staff REMOVED (#238).
+
+    Hard fails already flow through failed_targets. Soft-thin (low_yield) and
+    empty inventory (suspicious_zero) look like success to collect but still
+    mean prior portfolio is unproven this run — treat them like scrape failure
+    for disappearance labels and freeze the disappearance baseline.
+    """
+    from housing_list_search.listing import canonical_authority
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(raw: str) -> None:
+        label = (canonical_authority(raw) or raw or "").strip()
+        if label and label not in seen:
+            seen.add(label)
+            out.append(label)
+
+    for a in failed_targets or []:
+        _add(a)
+    for a, _n in low_yield or []:
+        _add(a)
+    for a in suspicious_zero_authorities or []:
+        _add(a)
+    return out
+
+
+def should_update_disappearance_baseline(
+    *,
+    failed_targets: list[str] | None = None,
+    low_yield: list[tuple[str, int]] | None = None,
+    suspicious_zero_authorities: list[str] | None = None,
+) -> bool:
+    """False when any authority's inventory is incomplete or failed (#238 / #1085)."""
+    return not bool(
+        authorities_unreliable_for_disappearance(
+            failed_targets=failed_targets,
+            low_yield=low_yield,
+            suspicious_zero_authorities=suspicious_zero_authorities,
+        )
+    )
 
 
 def assess_collect_review(

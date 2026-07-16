@@ -92,6 +92,60 @@ class TestPdfSoftSuccess:
                 extract_records_from_pdf("https://example.com/x.pdf", "Test")
 
 
+class TestCssPortfolioEmptyHardFail:
+    """#238: CSS portfolio adapters must not soft-succeed on empty parse."""
+
+    def test_midpen_empty_raises(self, monkeypatch):
+        from housing_list_search.adapters import midpen as mp
+
+        monkeypatch.setattr(mp, "MAX_PAGES", 2)
+
+        def fake_get(_url):
+            resp = MagicMock()
+            resp.text = "<div>no cards</div>"
+            return resp
+
+        monkeypatch.setattr(mp, "polite_get", fake_get)
+        with pytest.raises(SourceFetchError, match="zero properties"):
+            mp.scrape_midpen()
+
+    def test_eden_empty_raises(self, monkeypatch):
+        from housing_list_search.adapters import eden
+
+        def fake_get(_url):
+            resp = MagicMock()
+            resp.text = "<html><body>no grid</body></html>"
+            return resp
+
+        monkeypatch.setattr(eden, "polite_get", fake_get)
+        with pytest.raises(SourceFetchError, match="zero properties"):
+            eden.scrape_eden()
+
+    def test_eah_empty_raises(self, monkeypatch):
+        from housing_list_search.adapters import eah
+
+        def fake_get(_url):
+            resp = MagicMock()
+            resp.text = "<html><body>no results</body></html>"
+            return resp
+
+        monkeypatch.setattr(eah, "polite_get", fake_get)
+        with pytest.raises(SourceFetchError, match="zero"):
+            eah.scrape_eah()
+
+    def test_first_housing_empty_raises(self, monkeypatch):
+        from housing_list_search.adapters import first_housing
+
+        def fake_get(_url):
+            resp = MagicMock()
+            resp.text = "<html><body>empty portfolio</body></html>"
+            return resp
+
+        monkeypatch.setattr(first_housing, "polite_get", fake_get)
+        with pytest.raises(SourceFetchError, match="zero properties"):
+            first_housing.scrape_first_housing()
+
+
 class TestAltaDirectoryOnly:
     def test_empty_directory_raises(self):
         from housing_list_search.adapters import alta

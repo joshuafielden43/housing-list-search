@@ -20,7 +20,9 @@ from housing_list_search.csv_safety import sanitize_csv_field
 from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.needs_review import (
     CollectReview,
+    authorities_unreliable_for_disappearance,
     build_run_review,
+    should_update_disappearance_baseline,
     surface_run_review,
 )
 from housing_list_search.outputs import (
@@ -86,9 +88,10 @@ def publish_staff_run(inp: StaffPublishInput, *, db: DatabaseManager) -> None:
 
     - Partial: stub changelog, partial daily_summary, preserve global run_prev
     - Full success: changelog (update run_prev), log_full_run, staff summary
-    - Full with failed targets: changelog without updating run_prev; skip
-      log_full_run so previous successful run_id remains disappearance baseline
-      (down ≠ gone; #1085)
+    - Full with failed / low-yield / suspicious-zero targets: changelog without
+      updating run_prev; skip log_full_run so previous successful run_id remains
+      disappearance baseline; label unconfirmed rows SCRAPE_FAILED not REMOVED
+      (down ≠ gone; soft-thin ≠ gone; #1085 / #238)
     """
     run_review = build_run_review(
         CollectReview(
@@ -99,6 +102,11 @@ def publish_staff_run(inp: StaffPublishInput, *, db: DatabaseManager) -> None:
         stale_n=inp.stale_n,
         scrape_failed_n=inp.scrape_failed_n,
         stale_warn_threshold=DEFAULT_STALE_WARN_THRESHOLD,
+    )
+    unreliable = authorities_unreliable_for_disappearance(
+        failed_targets=inp.failed_targets,
+        low_yield=inp.low_yield,
+        suspicious_zero_authorities=inp.suspicious_zero_authorities,
     )
     run_stats: dict[str, Any] = {
         "targets_attempted": inp.targets_attempted,
@@ -144,27 +152,35 @@ def publish_staff_run(inp: StaffPublishInput, *, db: DatabaseManager) -> None:
         return
 
     previous_run_id = db.get_previous_full_run_id()
-    update_baseline = not bool(inp.failed_targets)
+    update_baseline = should_update_disappearance_baseline(
+        failed_targets=inp.failed_targets,
+        low_yield=inp.low_yield,
+        suspicious_zero_authorities=inp.suspicious_zero_authorities,
+    )
     generate_changelog(
         inp.listings,
         skipped_targets=inp.skipped,
         run_id=inp.run_id,
         previous_run_id=previous_run_id,
-        scrape_failed_authorities=inp.failed_targets,
+        scrape_failed_authorities=unreliable,
         update_run_prev=update_baseline,
     )
     if not update_baseline:
         logger.warning(
-            "Preserved prior run_prev.csv baseline — %d failed target(s); "
-            "down/outage is not evidence of inventory removal",
+            "Preserved prior run_prev.csv baseline — unreliable inventory signal(s): "
+            "failed=%d low_yield=%d suspicious_zero=%d; incomplete scrape is not "
+            "evidence of inventory removal (#1085/#238)",
             len(inp.failed_targets),
+            len(inp.low_yield),
+            len(inp.suspicious_zero_authorities),
         )
-        # #1085: do not log_full_run when targets failed — get_previous_full_run_id
-        # would otherwise point at this outage day and degrade REMOVED → STALE.
+        # #1085 / #238: do not log_full_run when inventory is unproven — advancing
+        # previous_full_run_id would let soft-thin days promote live housing to REMOVED.
         logger.warning(
-            "Skipped log_full_run for run_id=%s — failed targets; "
+            "Skipped log_full_run for run_id=%s — unreliable authorities=%s; "
             "previous successful full run_id remains the disappearance baseline",
             inp.run_id,
+            ", ".join(unreliable) if unreliable else "(none)",
         )
     else:
         db.log_full_run(

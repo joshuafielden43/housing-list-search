@@ -156,5 +156,13 @@ def scrape_eden(authority: str = "", url: str = "") -> list[dict[str, Any]]:
     resp = require_response(resp, target, context="eden")
 
     records = parse_property_grid(resp.text, now_iso, target)
+    # Empty parse after successful fetch is soft-success that ages out inventory (#238).
+    if not records:
+        from housing_list_search.access import SourceFetchError
+
+        raise SourceFetchError(
+            "eden: county property grid returned zero properties "
+            "(selector drift or empty response) — mark SCRAPE_FAILED"
+        )
     print(f"   → Eden Housing: {len(records)} Santa Clara County properties")
     return records
