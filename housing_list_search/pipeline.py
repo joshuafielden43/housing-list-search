@@ -16,8 +16,8 @@ from datetime import datetime
 from typing import Any
 
 import housing_list_search.dispatch as dispatch_module
-from housing_list_search.db import DatabaseManager
 from housing_list_search.dispatch import TargetScrapeResult
+from housing_list_search.inventory_store import InventoryStore
 from housing_list_search.listing import canonical_authority
 from housing_list_search.machine_persist import PersistResult, persist_run
 from housing_list_search.needs_review import (
@@ -83,7 +83,7 @@ class RunPipeline:
         self,
         targets: list[dict[str, Any]],
         *,
-        db: DatabaseManager,
+        db: InventoryStore,
         partial_run: bool = False,
         target_filter: str | None = None,
         skipped_targets: list[tuple[str, str]] | None = None,
@@ -192,7 +192,7 @@ class RunPipeline:
         persisted: PersistResult,
         collected: _CollectResult,
         *,
-        db: DatabaseManager,
+        db: InventoryStore,
         targets: list[dict[str, Any]],
         skipped: list[tuple[str, str]],
         partial_run: bool,

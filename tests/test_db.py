@@ -416,17 +416,17 @@ def test_full_run_id_round_trip(temp_db):
 
 def test_upsert_skips_re_canonicalize_when_flag_false(temp_db, monkeypatch):
     """Run path: Machine Persist already canonicalized — Store must not re-own shape."""
-    import housing_list_search.db as db_mod
+    import housing_list_search.inventory_store as store_mod
     from housing_list_search.listing import listing_to_row
 
     calls: list[int] = []
-    real = db_mod.canonicalize_listings
+    real = store_mod.canonicalize_listings
 
     def wrap(listings, **kwargs):
         calls.append(1)
         return real(listings, **kwargs)
 
-    monkeypatch.setattr(db_mod, "canonicalize_listings", wrap)
+    monkeypatch.setattr(store_mod, "canonicalize_listings", wrap)
     row = listing_to_row(
         {"authority": "City C", "property_name": "Oak", "url": "https://example.com/oak"}
     )

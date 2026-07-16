@@ -17,7 +17,7 @@ from typing import Any
 
 from housing_list_search.changelog import generate_changelog
 from housing_list_search.csv_safety import sanitize_csv_field
-from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
+from housing_list_search.inventory_store import DEFAULT_STALE_WARN_THRESHOLD, InventoryStore
 from housing_list_search.machine_persist import DIFF_CSV
 from housing_list_search.needs_review import (
     CollectReview,
@@ -84,7 +84,7 @@ def write_partial_changelog_stubs(target_filter: str | None = None) -> None:
         )
 
 
-def publish_staff_run(inp: StaffPublishInput, *, db: DatabaseManager) -> None:
+def publish_staff_run(inp: StaffPublishInput, *, db: InventoryStore) -> None:
     """
     Publish staff-facing artifacts for one Run.
 

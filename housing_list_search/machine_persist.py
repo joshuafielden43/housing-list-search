@@ -15,8 +15,8 @@ import logging
 from dataclasses import dataclass, field
 
 from housing_list_search.coverage import summarize_coverage
-from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD, DatabaseManager
 from housing_list_search.dedupe import deduplicate_for_run
+from housing_list_search.inventory_store import DEFAULT_STALE_WARN_THRESHOLD, InventoryStore
 from housing_list_search.listing import canonicalize_listings
 
 logger = logging.getLogger("housing_list_search")
@@ -54,7 +54,7 @@ class PersistResult:
 def persist_run(
     listings_raw: list[dict],
     *,
-    db: DatabaseManager,
+    db: InventoryStore,
     run_id: str,
     target_authorities: list[str] | None = None,
     failed_targets: list[str] | None = None,

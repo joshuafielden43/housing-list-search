@@ -265,7 +265,9 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 | `housing_list_search/disappearance.py` | Deep module: machine Diff labels + staff Disappearance projection (ADR-0001). No `freshness.py` shim |
 | `housing_list_search/schema.py` | Sole owner of `housing_registry.db` DDL (`targets`, `housing_records`, `run_history`) |
 | `housing_list_search/sqlite_config.py` | `DEFAULT_DB_PATH`, WAL + busy-timeout connection helper |
-| `housing_list_search/db.py` | DatabaseManager: upsert_listings, export_csv, export_diff_csv, prune |
+| `housing_list_search/inventory_store.py` | Inventory Store: upsert, confirm, export, run_history (#1072) |
+| `housing_list_search/operator_maintenance.py` | Operator Maintenance: prune, snapshot, drop, info |
+| `housing_list_search/db.py` | Thin facade: DatabaseManager = Store + Maintenance for CLI/tests |
 | `housing_list_search/changelog.py` | Staff-facing changelog; reads STALE from diff.csv |
 | `housing_list_search/registry.py` | TARGETS.md → SQLite `targets` ingest + sanitization |
 | `housing_list_search/playwright_nav.py` | Browser pool / safe_goto impl behind Access (private) |
@@ -289,7 +291,7 @@ Recorded in `docs/adr/`. Ubiquitous language for these decisions lives in `CONTE
 
 `diff.csv` and `current_full.csv` serve different audiences. Use `diff.csv` when you want "what changed this run." Use `current_full.csv` when you want the full known inventory. `STALE` in `diff.csv` means a record exists in the DB but was not confirmed in the most recent run — it may have closed or been removed from the source. Prune stale records with `scripts/db_manage.py prune`.
 
-`--run` logs a WARNING when STALE count ≥ 5 (`DEFAULT_STALE_WARN_THRESHOLD` in `db.py`). Living contract: `PROJECT_CONTRACT_v0.8.6.md`.
+`--run` logs a WARNING when STALE count ≥ 5 (`DEFAULT_STALE_WARN_THRESHOLD` in `inventory_store.py`). Living contract: `PROJECT_CONTRACT_v0.8.6.md`.
 
 ## Tests
 

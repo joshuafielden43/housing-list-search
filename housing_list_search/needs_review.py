@@ -22,7 +22,7 @@ from typing import Any
 
 from housing_list_search.access import URLPolicyError, polite_post, validate_http_url
 from housing_list_search.coverage import classify_record_kind
-from housing_list_search.db import DEFAULT_STALE_WARN_THRESHOLD
+from housing_list_search.inventory_store import DEFAULT_STALE_WARN_THRESHOLD
 from housing_list_search.measure_registry import expects_property_inventory, parse_target_measures
 from housing_list_search.suspicious_zero import find_suspicious_zeros
 from housing_list_search.validated_zero import find_reverification_due

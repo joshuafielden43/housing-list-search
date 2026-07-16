@@ -9,7 +9,9 @@ Ubiquitous language for housing-list-search. Architecture reviews and adapter wo
 | Term | Meaning |
 |------|---------|
 | **Target** | One row from `TARGETS.md` → SQLite `targets`: authority, URL, `scraping_measures`, administrator fields |
-| **Schema** | `schema.py` — sole DDL owner for `housing_registry.db`; `registry.py` ingests targets, `db.py` persists listings |
+| **Schema** | `schema.py` — sole DDL owner for `housing_registry.db`; `registry.py` ingests targets |
+| **Inventory Store** | `inventory_store.py` — Run-path SQLite: upsert, identity confirm touches, machine CSV export, full-run log. Prefer this type on Machine Persist / Staff Publish (#1072) |
+| **Operator Maintenance** | `operator_maintenance.py` — prune, snapshot, drop, info. Operator CLI only. `db.DatabaseManager` is a thin facade exposing both Store + Maintenance |
 | **Listing** | One property or registration opportunity. `canonicalize_listings()` applies `listing_to_row()` before dedupe; empty URLs get `hls:` surrogate keys via listing module (persistence_url logic) |
 | **Run** | One `python main.py --run` invocation; identified by `run_id` (`YYYYMMDDTHHMMSS`) |
 | **RunPipeline** | `pipeline.py` — collect → Machine Persist → Staff Publish; `cli.py` delegates here |
